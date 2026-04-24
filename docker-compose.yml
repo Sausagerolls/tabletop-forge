@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dndvtt
+      POSTGRES_USER: vtt
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-vttpassword}
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vtt -d dndvtt"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://vtt:${DB_PASSWORD:-vttpassword}@db:5432/dndvtt
+      PORT: 3001
+      DM_MASTER_PASSWORD: ${DM_MASTER_PASSWORD:-dungeonmaster}
+    volumes:
+      - uploads:/app/uploads
+      - ./sounds:/app/sounds
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "3001"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${PORT:-80}:80"
+
+volumes:
+  pgdata:
+  uploads:

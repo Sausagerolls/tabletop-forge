@@ -1,0 +1,181 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #1a1a2e;
+  color: #e2e8f0;
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-size: 16px;
+  overflow: hidden;
+  height: 100dvh;
+  width: 100dvw;
+}
+
+#root {
+  height: 100dvh;
+  width: 100dvw;
+}
+
+/* Dice roll fade animation */
+@keyframes diceAppear {
+  0% { opacity: 0; transform: translateY(20px) scale(0.8); }
+  15% { opacity: 1; transform: translateY(0) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+
+.dice-roll-anim {
+  animation: diceAppear 5s ease-out forwards;
+}
+
+/* Stat block styling */
+.stat-block {
+  background: #fdf1dc;
+  border: 2px solid #8b1a1a;
+  color: #1a1a1a;
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-size: 15px;
+}
+
+.stat-block .section-divider {
+  border: none;
+  border-top: 3px solid #8b1a1a;
+  margin: 6px 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+/* Mobile panel slide */
+.panel-slide-up {
+  transform: translateY(0);
+  transition: transform 0.3s ease;
+}
+.panel-slide-down {
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+}
+
+/* Prevent text selection during drag */
+.konvajs-content { user-select: none; }
+
+/* Print / PDF export — show only the character stat block */
+.print-only { display: none; }
+
+@media print {
+  @page { margin: 1.5cm; size: auto; }
+
+  html, body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Hide every element in the DOM except the print-backdrop, its ancestors
+     (so the chain down from <body> still renders), and its descendants. The
+     :has() selector matches ancestors; :not() excludes the target subtree. */
+  body *:not(:has(.print-backdrop)):not(.print-backdrop):not(.print-backdrop *) {
+    display: none !important;
+  }
+
+  /* Strip positioning from the ancestor chain and the backdrop itself so
+     everything flows as normal block content — this is what makes the stat
+     block paginate across multiple pages instead of clipping to one. */
+  body *:has(.print-backdrop),
+  .print-backdrop {
+    position: static !important;
+    display: block !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    width: auto !important;
+    max-width: none !important;
+    transform: none !important;
+    z-index: auto !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .print-backdrop {
+    background: #fff !important;
+  }
+
+  /* Also force the backdrop's descendants to expand — flex-1 / overflow-auto
+     containers would otherwise clip inside. */
+  .print-backdrop * {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    max-width: none !important;
+  }
+
+  .print-sheet {
+    max-width: 700px !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+
+  /* Stat block print overrides */
+  .stat-block {
+    background: #fdf1dc !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Allow natural page breaks between major sections */
+  .stat-block > .print-section {
+    break-before: auto;
+    page-break-before: auto;
+  }
+
+  /* Shrink the avatar so it doesn't dominate page 1 */
+  .stat-block-avatar img {
+    max-height: 160px !important;
+    width: auto !important;
+    max-width: 160px !important;
+  }
+
+  /* Force spell boxes into two columns regardless of viewport width — saves
+     paper compared to the single-column layout when the md: breakpoint isn't
+     triggered on a narrow print sheet. */
+  .spell-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+
+  /* Keep each spell card on a single page — if a card won't fit on the current
+     page, push it to the next instead of splitting it in half. */
+  .spell-grid > * {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}

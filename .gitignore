@@ -1,0 +1,34 @@
+# Secrets
+.env
+.env.local
+*.env.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Frontend build output
+frontend/dist/
+
+# Backend runtime data — user uploads, generated assets
+backend/uploads/
+generated-images/
+
+# Release archives produced by make_release.sh
+releases/
+
+# Claude / agent local state
+.claude/
+
+# RTF working notes (kept locally, not in repo)
+FeaturesReadme.rtf
+FixesReadme.rtf

@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TableTop Forge — Self-Hosted D&D 5e Virtual Tabletop</title>
+<meta name="description" content="A self-hosted virtual tabletop for D&D 5e. Per-player instanced fog of war, AI-powered token generation, combat tracking, and full DM control. Runs on Docker, stays on your own machine.">
+<meta name="theme-color" content="#060404">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet">
+<script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="giantmushroomstudio" data-description="Support me on Buy me a coffee!" data-message="" data-color="#BD5FFF" data-position="Right" data-x_margin="18" data-y_margin="18"></script>
+<style>
+/* ════════════════════════════════════════════════
+   RESET & VARIABLES
+════════════════════════════════════════════════ */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-solid:    #060404;
+  --surface:     #0e0808;
+  --surface2:    #160c0c;
+  --surface3:    #1e1010;
+  --border:      #281616;
+  --border-mid:  #3a1e1e;
+  --border-hi:   #4e2828;
+  --accent:      #b83232;
+  --accent-l:    #d84848;
+  --accent-d:    #6e1414;
+  --gold:        #c89840;
+  --gold-l:      #e8b860;
+  --gold-d:      #7a5a18;
+  --text:        #ede4d2;
+  --text-m:      #9a8868;
+  --text-d:      #5a4e38;
+}
+
+html { scroll-behavior: smooth; font-size: 16px; }
+body {
+  background: var(--bg-solid);
+  color: var(--text);
+  font-family: 'Crimson Pro', serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+a { text-decoration: none; color: inherit; }
+
+/* ════════════════════════════════════════════════
+   STARFIELD
+════════════════════════════════════════════════ */
+#starfield { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+
+/* ════════════════════════════════════════════════
+   AMBIENT ORBS
+════════════════════════════════════════════════ */
+.orb { position: fixed; border-radius: 50%; pointer-events: none; filter: blur(90px); z-index: 0; }
+.orb-red {
+  width: 700px; height: 700px;
+  background: radial-gradient(circle, rgba(184,50,50,0.13) 0%, transparent 70%);
+  top: -180px; left: -200px;
+  animation: driftA 20s ease-in-out infinite;
+}
+.orb-gold {
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(200,152,64,0.08) 0%, transparent 70%);
+  top: 40vh; right: -120px;
+  animation: driftB 26s ease-in-out infinite;
+}
+@keyframes driftA { 0%,100%{transform:translate(0,0)} 33%{transform:translate(40px,30px)} 66%{transform:translate(-20px,50px)} }
+@keyframes driftB { 0%,100%{transform:translate(0,0)} 33%{transform:translate(-30px,-40px)} 66%{transform:translate(20px,-20px)} }
+
+/* ════════════════════════════════════════════════
+   NAV
+════════════════════════════════════════════════ */
+nav {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 90; padding: 22px 52px;
+  display: flex; align-items: center; justify-content: space-between;
+  transition: background 0.4s, border-color 0.4s, backdrop-filter 0.4s;
+  border-bottom: 1px solid transparent;
+}
+nav.stuck {
+  background: rgba(6,4,4,0.85);
+  backdrop-filter: blur(20px);
+  border-color: var(--border);
+}
+.nav-logo {
+  font-family: 'Cinzel', serif; font-size: 17px; font-weight: 700;
+  color: var(--accent-l); letter-spacing: 0.14em;
+  display: flex; align-items: center; gap: 9px;
+}
+.nav-logo-icon { font-size: 22px; }
+.nav-links { display: flex; gap: 38px; list-style: none; }
+.nav-links a {
+  font-size: 13px; font-family: 'Cinzel', serif;
+  letter-spacing: 0.08em; color: var(--text-m); transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--text); }
+.nav-cta {
+  padding: 8px 22px; border: 1px solid var(--accent-d);
+  border-radius: 6px; font-family: 'Cinzel', serif;
+  font-size: 12px; letter-spacing: 0.09em; color: var(--accent-l);
+  transition: all 0.22s;
+}
+.nav-cta:hover { background: var(--accent-d); color: #fff; border-color: var(--accent); }
+.nav-hamburger {
+  display: none; flex-direction: column; justify-content: center;
+  align-items: center; gap: 5px; width: 36px; height: 36px;
+  background: none; border: none; cursor: pointer; padding: 4px; border-radius: 6px;
+}
+.nav-hamburger span { display: block; width: 20px; height: 1.5px; background: var(--text-m); border-radius: 2px; transition: transform 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.2s; transform-origin: center; }
+.nav-hamburger.open span:nth-child(1) { transform: translateY(6.5px) rotate(45deg); background: var(--accent-l); }
+.nav-hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+.nav-hamburger.open span:nth-child(3) { transform: translateY(-6.5px) rotate(-45deg); background: var(--accent-l); }
+.mobile-menu {
+  display: none; position: fixed; top: 65px; left: 0; right: 0;
+  background: rgba(14,8,8,0.97); backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(184,50,50,0.14);
+  z-index: 998; padding: 0 24px 20px;
+  transform: translateY(-12px); opacity: 0; pointer-events: none;
+  transition: transform 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.22s ease;
+}
+.mobile-menu.open { transform: translateY(0); opacity: 1; pointer-events: all; }
+.mobile-menu ul { list-style: none; padding: 12px 0 0; border-top: 1px solid rgba(184,50,50,0.1); }
+.mobile-menu ul li a { display: block; padding: 13px 0; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.09em; color: var(--text-m); border-bottom: 1px solid rgba(255,255,255,0.04); transition: color 0.2s; }
+.mobile-menu ul li:last-child a { border-bottom: none; }
+.mobile-menu ul li a:hover { color: var(--accent-l); }
+.mobile-menu-cta { display: block; margin-top: 16px; padding: 11px 0; text-align: center; border: 1px solid var(--accent-d); border-radius: 7px; font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.09em; color: var(--accent-l); transition: all 0.22s; }
+.mobile-menu-cta:hover { background: var(--accent-d); color: #fff; }
+
+/* ════════════════════════════════════════════════
+   HERO
+════════════════════════════════════════════════ */
+.hero {
+  position: relative; z-index: 1;
+  min-height: 100vh; display: flex; align-items: center;
+  padding: 130px 52px 80px; gap: 64px;
+  max-width: 1260px; margin: 0 auto;
+}
+.hero-copy { flex: 1; max-width: 560px; z-index: 1; }
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--gold); margin-bottom: 26px;
+  opacity: 0; animation: riseUp 0.9s cubic-bezier(0.4,0,0.2,1) 0.1s both;
+}
+.hero-eyebrow-line { width: 32px; height: 1px; background: linear-gradient(to right, transparent, var(--gold)); }
+h1.hero-title {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(44px, 5.2vw, 72px); font-weight: 700;
+  line-height: 1.04; letter-spacing: -0.015em; margin-bottom: 28px;
+  opacity: 0; animation: riseUp 0.9s cubic-bezier(0.4,0,0.2,1) 0.25s both;
+}
+.grad {
+  background: linear-gradient(135deg, var(--accent-l) 0%, var(--gold-l) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.hero-desc {
+  font-size: 18px; color: var(--text-m); line-height: 1.75;
+  margin-bottom: 44px; max-width: 470px;
+  opacity: 0; animation: riseUp 0.9s cubic-bezier(0.4,0,0.2,1) 0.4s both;
+}
+.hero-btns {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  opacity: 0; animation: riseUp 0.9s cubic-bezier(0.4,0,0.2,1) 0.55s both;
+}
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 30px;
+  background: linear-gradient(145deg, var(--accent-d), var(--accent));
+  border: none; border-radius: 8px; font-family: 'Cinzel', serif;
+  font-size: 13px; font-weight: 600; letter-spacing: 0.07em; color: #fff;
+  cursor: pointer; box-shadow: 0 4px 28px rgba(184,50,50,0.42);
+  transition: transform 0.28s cubic-bezier(0.34,1.12,0.64,1), box-shadow 0.28s ease;
+}
+.btn-primary:hover { transform: translateY(-3px); box-shadow: 0 10px 40px rgba(184,50,50,0.55); }
+.btn-primary:active { transform: translateY(-1px) scale(0.98); }
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 30px; background: transparent;
+  border: 1px solid var(--border-mid); border-radius: 8px;
+  font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.07em;
+  color: var(--text-m); cursor: pointer; transition: all 0.22s;
+}
+.btn-ghost:hover { border-color: var(--accent-d); color: var(--accent-l); background: rgba(184,50,50,0.05); }
+
+/* Hero visual — mock VTT canvas */
+.hero-visual {
+  flex: 1; display: flex; justify-content: center; align-items: center;
+  z-index: 1; opacity: 0; animation: fadeIn 1.1s ease 0.7s both;
+}
+.vtt-mockup {
+  width: 100%; max-width: 540px;
+  background: #0e0808; border: 1px solid #3a1e1e;
+  border-radius: 14px; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.03), 0 32px 80px rgba(0,0,0,0.7), 0 0 60px rgba(184,50,50,0.12);
+}
+.vtt-titlebar {
+  background: #160c0c; padding: 10px 16px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid #281616;
+}
+.vtt-dot { width: 10px; height: 10px; border-radius: 50%; }
+.vtt-dot.r { background: #c0392b; }
+.vtt-dot.y { background: #b8860b; }
+.vtt-dot.g { background: #27ae60; }
+.vtt-label { font-family: 'Cinzel', serif; font-size: 11px; color: var(--text-d); letter-spacing: 0.1em; margin-left: 4px; }
+.vtt-canvas {
+  aspect-ratio: 16/10; background: #0a0606;
+  position: relative; overflow: hidden;
+}
+.vtt-grid {
+  position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(184,50,50,0.07) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(184,50,50,0.07) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.vtt-fow {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 55% 45% at 38% 52%, transparent 0%, rgba(6,4,4,0.75) 60%, rgba(6,4,4,0.96) 100%);
+}
+.vtt-light {
+  position: absolute;
+  border-radius: 50%; pointer-events: none;
+}
+.vtt-light.l1 {
+  width: 180px; height: 180px; left: 26%; top: 38%;
+  background: radial-gradient(circle, rgba(251,191,36,0.22) 0%, transparent 70%);
+  transform: translate(-50%,-50%);
+}
+.vtt-light.l2 {
+  width: 120px; height: 120px; left: 62%; top: 55%;
+  background: radial-gradient(circle, rgba(251,191,36,0.16) 0%, transparent 70%);
+  transform: translate(-50%,-50%);
+}
+.vtt-token {
+  position: absolute; border-radius: 50%; border: 2px solid;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; transform: translate(-50%,-50%);
+}
+.vtt-token.player { width: 32px; height: 32px; border-color: #d84848; background: #160c0c; box-shadow: 0 0 12px rgba(216,72,72,0.5); }
+.vtt-token.monster { width: 36px; height: 36px; border-color: #c89840; background: #0e0808; box-shadow: 0 0 12px rgba(200,152,64,0.4); }
+.vtt-token.p1 { left: 38%; top: 52%; }
+.vtt-token.p2 { left: 42%; top: 44%; }
+.vtt-token.p3 { left: 34%; top: 58%; }
+.vtt-token.m1 { left: 62%; top: 55%; }
+.vtt-wall { position: absolute; background: rgba(200,152,64,0.7); }
+.vtt-wall.w1 { width: 2px; height: 80px; left: 52%; top: 28%; }
+.vtt-wall.w2 { width: 80px; height: 2px; left: 52%; top: 28%; }
+.vtt-wall.w3 { width: 2px; height: 80px; left: 68%; top: 28%; }
+.vtt-ui-bar {
+  background: #160c0c; padding: 10px 16px;
+  display: flex; align-items: center; gap: 12px;
+  border-top: 1px solid #281616;
+}
+.vtt-pill {
+  padding: 4px 10px; border-radius: 20px;
+  font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.08em;
+}
+.vtt-pill.red { background: rgba(184,50,50,0.2); color: #d84848; border: 1px solid rgba(184,50,50,0.3); }
+.vtt-pill.gold { background: rgba(200,152,64,0.15); color: #c89840; border: 1px solid rgba(200,152,64,0.25); }
+.vtt-pill.dim { background: rgba(255,255,255,0.04); color: var(--text-d); border: 1px solid rgba(255,255,255,0.06); }
+
+/* ════════════════════════════════════════════════
+   SEPARATORS & LAYOUT
+════════════════════════════════════════════════ */
+.sep {
+  max-width: 880px; margin: 0 auto; height: 1px;
+  background: linear-gradient(to right, transparent, var(--border-mid), transparent);
+}
+section { position: relative; z-index: 1; }
+.eyebrow {
+  font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--gold); margin-bottom: 18px;
+  display: flex; align-items: center; gap: 10px;
+}
+.eyebrow::before, .eyebrow::after {
+  content: ''; flex: 1; max-width: 40px; height: 1px;
+  background: linear-gradient(to right, transparent, var(--gold-d));
+}
+.eyebrow::after { background: linear-gradient(to left, transparent, var(--gold-d)); }
+.sec-title {
+  font-family: 'Cinzel', serif; font-weight: 700;
+  font-size: clamp(28px, 3.5vw, 42px); line-height: 1.12; margin-bottom: 16px;
+}
+.sec-body { font-size: 17px; color: var(--text-m); line-height: 1.8; max-width: 600px; }
+
+/* ════════════════════════════════════════════════
+   FEATURES
+════════════════════════════════════════════════ */
+.features-section { padding: 96px 52px; max-width: 1260px; margin: 0 auto; }
+.features-header { text-align: center; margin-bottom: 64px; }
+.features-header .sec-body { margin: 0 auto; }
+.features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.feat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 30px 28px;
+  transition: border-color 0.28s, box-shadow 0.28s, transform 0.28s cubic-bezier(0.34,1.12,0.64,1);
+}
+.feat-card:hover {
+  border-color: var(--border-hi);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5), 0 0 20px rgba(184,50,50,0.08);
+  transform: translateY(-3px);
+}
+.feat-card.highlight {
+  border-color: var(--accent-d);
+  background: linear-gradient(160deg, rgba(110,20,20,0.18) 0%, var(--surface) 100%);
+}
+.feat-card.highlight:hover { border-color: var(--accent); box-shadow: 0 8px 40px rgba(0,0,0,0.5), 0 0 30px rgba(184,50,50,0.18); }
+.feat-icon { font-size: 28px; margin-bottom: 16px; }
+.feat-title { font-family: 'Cinzel', serif; font-size: 15px; font-weight: 600; letter-spacing: 0.05em; margin-bottom: 10px; color: var(--text); }
+.feat-desc { font-size: 15px; color: var(--text-m); line-height: 1.7; }
+.feat-badge {
+  display: inline-block; margin-top: 12px; padding: 3px 9px;
+  border-radius: 20px; font-size: 11px; font-family: 'Cinzel', serif;
+  letter-spacing: 0.08em; background: rgba(184,50,50,0.15); color: var(--accent-l);
+  border: 1px solid rgba(184,50,50,0.25);
+}
+
+/* ════════════════════════════════════════════════
+   REQUIREMENTS (Docker)
+════════════════════════════════════════════════ */
+.req-section { padding: 80px 52px; }
+.req-inner { max-width: 920px; margin: 0 auto; }
+.req-header { text-align: center; margin-bottom: 56px; }
+.req-header .sec-body { margin: 0 auto; }
+.req-note {
+  background: linear-gradient(135deg, rgba(184,50,50,0.1) 0%, rgba(110,20,20,0.05) 100%);
+  border: 1px solid var(--accent-d); border-radius: 10px;
+  padding: 18px 24px; margin-bottom: 40px;
+  display: flex; align-items: flex-start; gap: 14px; font-size: 15px; color: var(--text-m); line-height: 1.6;
+}
+.req-note-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+.req-note a { color: var(--accent-l); text-decoration: underline; text-decoration-color: rgba(216,72,72,0.4); }
+.req-note a:hover { color: var(--gold-l); }
+.os-tabs { display: flex; gap: 8px; margin-bottom: 32px; flex-wrap: wrap; }
+.os-tab {
+  padding: 9px 22px; border-radius: 8px; cursor: pointer;
+  font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.06em;
+  border: 1px solid var(--border-mid); color: var(--text-m); background: var(--surface);
+  transition: all 0.2s;
+}
+.os-tab.active { background: var(--accent-d); border-color: var(--accent); color: #fff; }
+.os-tab:hover:not(.active) { border-color: var(--border-hi); color: var(--text); }
+.os-panel { display: none; }
+.os-panel.active { display: block; }
+.steps { display: flex; flex-direction: column; gap: 20px; }
+.step {
+  display: flex; gap: 20px; align-items: flex-start;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 20px 22px;
+}
+.step-num {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(145deg, var(--accent-d), var(--accent));
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Cinzel', serif; font-size: 13px; font-weight: 700; color: #fff;
+  box-shadow: 0 2px 10px rgba(184,50,50,0.35);
+}
+.step-body { flex: 1; }
+.step-title { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.05em; margin-bottom: 6px; color: var(--text); }
+.step-desc { font-size: 15px; color: var(--text-m); line-height: 1.65; }
+.step-desc a { color: var(--accent-l); text-decoration: underline; text-decoration-color: rgba(216,72,72,0.35); }
+.step-desc a:hover { color: var(--gold-l); }
+code {
+  background: rgba(255,255,255,0.06); border: 1px solid var(--border-mid);
+  border-radius: 4px; padding: 1px 6px; font-family: 'Courier New', monospace;
+  font-size: 13px; color: var(--gold-l);
+}
+.code-block {
+  background: #0a0606; border: 1px solid var(--border-mid); border-radius: 8px;
+  padding: 14px 18px; margin-top: 10px; font-family: 'Courier New', monospace;
+  font-size: 13px; color: #a0e870; line-height: 1.6; overflow-x: auto;
+  white-space: pre;
+}
+
+/* ════════════════════════════════════════════════
+   AI SETUP
+════════════════════════════════════════════════ */
+.ai-section { padding: 80px 52px; }
+.ai-inner { max-width: 920px; margin: 0 auto; }
+.ai-header { text-align: center; margin-bottom: 56px; }
+.ai-header .sec-body { margin: 0 auto; }
+.ai-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-bottom: 40px; }
+.ai-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+}
+.ai-card-head {
+  padding: 20px 24px; border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.ai-card-name {
+  font-family: 'Cinzel', serif; font-size: 16px; font-weight: 600;
+  letter-spacing: 0.06em; margin-bottom: 4px;
+}
+.ai-card-sub { font-size: 14px; color: var(--text-m); }
+.ai-card-body { padding: 22px 24px; }
+.ai-step { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+.ai-step:last-child { margin-bottom: 0; }
+.ai-step-num {
+  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+  border: 1px solid var(--accent-d); display: flex; align-items: center; justify-content: center;
+  font-family: 'Cinzel', serif; font-size: 10px; color: var(--accent-l);
+}
+.ai-step-text { font-size: 14px; color: var(--text-m); line-height: 1.6; }
+.ai-step-text a { color: var(--accent-l); text-decoration: underline; text-decoration-color: rgba(216,72,72,0.35); }
+.ai-step-text a:hover { color: var(--gold-l); }
+.ai-connect {
+  background: linear-gradient(135deg, rgba(200,152,64,0.08) 0%, rgba(122,90,24,0.04) 100%);
+  border: 1px solid var(--gold-d); border-radius: 10px; padding: 24px 28px;
+}
+.ai-connect-title { font-family: 'Cinzel', serif; font-size: 15px; letter-spacing: 0.06em; margin-bottom: 12px; color: var(--gold); }
+.ai-connect-body { font-size: 15px; color: var(--text-m); line-height: 1.7; }
+.ai-rec {
+  margin-top: 14px; padding: 12px 16px;
+  background: rgba(200,152,64,0.08); border-radius: 7px;
+  border: 1px solid rgba(200,152,64,0.18);
+  font-size: 14px; color: var(--text-m); line-height: 1.6;
+}
+.ai-rec strong { color: var(--gold); font-weight: 500; }
+
+/* ════════════════════════════════════════════════
+   DOWNLOAD
+════════════════════════════════════════════════ */
+.dl-section { padding: 80px 52px; }
+.dl-inner { max-width: 680px; margin: 0 auto; text-align: center; }
+.dl-icon { font-size: 56px; margin-bottom: 20px; }
+.dl-title { font-family: 'Cinzel', serif; font-size: clamp(24px,3vw,36px); font-weight: 700; margin-bottom: 14px; }
+.dl-desc { font-size: 17px; color: var(--text-m); line-height: 1.75; margin-bottom: 36px; }
+.dl-btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 16px 40px;
+  background: linear-gradient(145deg, var(--accent-d), var(--accent));
+  border-radius: 10px; font-family: 'Cinzel', serif;
+  font-size: 14px; font-weight: 600; letter-spacing: 0.07em; color: #fff;
+  box-shadow: 0 4px 28px rgba(184,50,50,0.45);
+  transition: transform 0.28s cubic-bezier(0.34,1.12,0.64,1), box-shadow 0.28s;
+}
+.dl-btn:hover { transform: translateY(-3px); box-shadow: 0 10px 40px rgba(184,50,50,0.6); }
+.dl-note { margin-top: 18px; font-size: 14px; color: var(--text-d); }
+.dl-req { margin-top: 12px; font-size: 13px; color: var(--text-d); }
+
+/* ════════════════════════════════════════════════
+   ALSO FROM
+════════════════════════════════════════════════ */
+.also-section { padding: 80px 52px; }
+.also-inner { max-width: 800px; margin: 0 auto; }
+.also-header { text-align: center; margin-bottom: 44px; }
+.also-header .eyebrow { justify-content: center; }
+.also-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.also-card {
+  display: flex; gap: 18px; align-items: flex-start;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 24px 22px;
+  transition: border-color 0.22s, box-shadow 0.22s, transform 0.22s;
+  cursor: pointer;
+}
+.also-card:hover { border-color: var(--gold-d); box-shadow: 0 6px 28px rgba(0,0,0,0.4), 0 0 16px rgba(200,152,64,0.08); transform: translateY(-2px); }
+.also-card-icon { font-size: 28px; flex-shrink: 0; width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; background: var(--surface2); border-radius: 10px; border: 1px solid var(--border-mid); }
+.also-card-body { flex: 1; }
+.also-card-name { font-family: 'Cinzel', serif; font-size: 14px; font-weight: 600; letter-spacing: 0.06em; margin-bottom: 6px; }
+.also-card-desc { font-size: 14px; color: var(--text-m); line-height: 1.6; margin-bottom: 10px; }
+.also-card-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-family: 'Cinzel', serif; letter-spacing: 0.07em; color: var(--gold);
+}
+
+/* ════════════════════════════════════════════════
+   FOOTER
+════════════════════════════════════════════════ */
+footer {
+  padding: 32px 52px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  position: relative; z-index: 1; flex-wrap: wrap; gap: 12px;
+}
+.foot-brand { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.14em; color: var(--accent-l); display: flex; align-items: center; gap: 8px; }
+.foot-copy { font-size: 14px; color: var(--text-d); }
+.foot-link { color: var(--text-m); transition: color 0.2s; }
+.foot-link:hover { color: var(--accent-l); }
+
+/* ════════════════════════════════════════════════
+   REVEAL ANIMATIONS
+════════════════════════════════════════════════ */
+@keyframes riseUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.8s cubic-bezier(0.4,0,0.2,1), transform 0.8s cubic-bezier(0.4,0,0.2,1); }
+.reveal.visible { opacity: 1; transform: none; }
+
+/* ════════════════════════════════════════════════
+   RESPONSIVE
+════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  nav { padding: 18px 24px; }
+  .nav-links, .nav-cta { display: none; }
+  .nav-hamburger { display: flex; }
+  .mobile-menu { display: block; }
+  .hero { flex-direction: column; padding: 100px 24px 60px; gap: 40px; }
+  .hero-visual { width: 100%; }
+  .hero-copy { max-width: 100%; }
+  .features-section, .req-section, .ai-section, .dl-section, .also-section { padding: 60px 24px; }
+  .features-grid { grid-template-columns: 1fr 1fr; }
+  .ai-cards { grid-template-columns: 1fr; }
+  .also-cards { grid-template-columns: 1fr; }
+  footer { padding: 24px; }
+}
+@media (max-width: 560px) {
+  .features-grid { grid-template-columns: 1fr; }
+  .hero-btns { flex-direction: column; }
+}
+</style>
+</head>
+<body>
+
+<canvas id="starfield"></canvas>
+<div class="orb orb-red"></div>
+<div class="orb orb-gold"></div>
+
+<!-- ═══════════ NAV ═══════════ -->
+<nav id="nav">
+  <div class="nav-logo">
+    <span class="nav-logo-icon">⚒️</span>
+    TABLETOP FORGE
+  </div>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#setup">Setup</a></li>
+    <li><a href="#ai">AI Integration</a></li>
+    <li><a href="#download">Download</a></li>
+  </ul>
+  <a href="#download" class="nav-cta">Download</a>
+  <button class="nav-hamburger" id="hamburger" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+</nav>
+
+<div class="mobile-menu" id="mobileMenu">
+  <ul>
+    <li><a href="#features" onclick="closeMobile()">Features</a></li>
+    <li><a href="#setup" onclick="closeMobile()">Setup</a></li>
+    <li><a href="#ai" onclick="closeMobile()">AI Integration</a></li>
+    <li><a href="#download" onclick="closeMobile()">Download</a></li>
+  </ul>
+  <a href="#download" class="mobile-menu-cta" onclick="closeMobile()">Download</a>
+</div>
+
+<!-- ═══════════ HERO ═══════════ -->
+<section>
+  <div class="hero">
+    <div class="hero-copy">
+      <div class="hero-eyebrow">
+        <span class="hero-eyebrow-line"></span>
+        Giant Mushroom Studio
+        <span class="hero-eyebrow-line"></span>
+      </div>
+      <h1 class="hero-title">Your table.<br><span class="grad">Your rules.</span><br>Your server.</h1>
+      <p class="hero-desc">
+        A fully self-hosted virtual tabletop for D&amp;D 5e. Per-player instanced fog of war, AI-generated tokens, real-time combat tracking, and complete DM control — all running on your own machine with Docker.
+      </p>
+      <div class="hero-btns">
+        <a href="#download" class="btn-primary">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M3.5 6l3.5 4 3.5-4M2 11h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Download Forge
+        </a>
+        <a href="#features" class="btn-ghost">
+          Explore Features
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 6.5h9M7.5 3l3.5 3.5L7.5 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="vtt-mockup">
+        <div class="vtt-titlebar">
+          <div class="vtt-dot r"></div>
+          <div class="vtt-dot y"></div>
+          <div class="vtt-dot g"></div>
+          <div class="vtt-label">TableTop Forge — The Sunken Keep</div>
+        </div>
+        <div class="vtt-canvas">
+          <div class="vtt-grid"></div>
+          <div class="vtt-wall w1"></div>
+          <div class="vtt-wall w2"></div>
+          <div class="vtt-wall w3"></div>
+          <div class="vtt-light l1"></div>
+          <div class="vtt-light l2"></div>
+          <div class="vtt-fow"></div>
+          <div class="vtt-token player p1">🧙</div>
+          <div class="vtt-token player p2">⚔️</div>
+          <div class="vtt-token player p3">🏹</div>
+          <div class="vtt-token monster m1">💀</div>
+        </div>
+        <div class="vtt-ui-bar">
+          <div class="vtt-pill red">⚔️ Combat</div>
+          <div class="vtt-pill gold">Round 3</div>
+          <div class="vtt-pill dim">3 Players · 1 Enemy</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ═══════════ FEATURES ═══════════ -->
+<section id="features">
+  <div class="features-section reveal">
+    <div class="features-header">
+      <div class="eyebrow">What It Does</div>
+      <h2 class="sec-title">Built for the Table</h2>
+      <p class="sec-body">Everything a Dungeon Master needs to run a compelling session — and everything players need to feel genuinely present in the world.</p>
+    </div>
+
+    <div class="features-grid">
+
+      <div class="feat-card highlight">
+        <div class="feat-icon">👁️</div>
+        <div class="feat-title">Per-Player Fog of War</div>
+        <div class="feat-desc">Every player sees only what their character can see. Vision is computed individually per token using ray-cast line-of-sight against walls and obstacles. Darkvision, Truesight, and Blindsight all behave differently.</div>
+        <span class="feat-badge">Standout Feature</span>
+      </div>
+
+      <div class="feat-card highlight">
+        <div class="feat-icon">🤖</div>
+        <div class="feat-title">AI Token Generation</div>
+        <div class="feat-desc">Generate full D&amp;D stat blocks and token portraits using a local model (Ollama or LM Studio) or an OpenAI-compatible API. No cloud required — your data stays on your network.</div>
+        <span class="feat-badge">Standout Feature</span>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon">🕯️</div>
+        <div class="feat-title">Dynamic Lighting</div>
+        <div class="feat-desc">Place candles, torches, lanterns, and magical light sources anywhere on the map. Light radiates as bright and dim rings that interact with walls and the fog of war in real time.</div>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon">🌑</div>
+        <div class="feat-title">Magical Darkness</div>
+        <div class="feat-desc">Place zones of magical darkness that block all vision except Truesight and Blindsight. The darkness occludes everything beyond it like a solid wall for characters without penetrating senses.</div>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon">⚔️</div>
+        <div class="feat-title">Combat Tracker</div>
+        <div class="feat-desc">Full initiative order, HP and temp HP, conditions (blinded, stunned, invisible, etc.), and round tracking. Start and end combat with a single click. Players see the tracker live.</div>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon">🗺️</div>
+        <div class="feat-title">Per-Map State</div>
+        <div class="feat-desc">Tokens, walls, lights, doors, magical darkness zones, and spawn points are all instanced per map. Switch maps mid-session and everything snaps back to exactly how you left it.</div>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon">🧱</div>
+        <div class="feat-title">Wall & Door Editor</div>
+        <div class="feat-desc">Draw line walls, rectangles, polygons, and circles directly on the map. Place standard, heavy, and portcullis-style doors that open and close with a click — visible to all players.</div>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon">📖</div>
+        <div class="feat-title">Creature Library</div>
+        <div class="feat-desc">Store a full library of monsters and player characters. View D&amp;D-style stat blocks, drag creatures onto the map as tokens, and edit stats at any time during the session.</div>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon">🔒</div>
+        <div class="feat-title">Fully Self-Hosted</div>
+        <div class="feat-desc">TableTop Forge runs entirely on your own machine inside a Docker container. No accounts, no subscriptions, no data sent anywhere. Your campaign is yours.</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ═══════════ SETUP / DOCKER ═══════════ -->
+<section id="setup">
+  <div class="req-section">
+    <div class="req-inner reveal">
+      <div class="req-header">
+        <div class="eyebrow">Requirements</div>
+        <h2 class="sec-title">Getting Started with Docker</h2>
+        <p class="sec-body">TableTop Forge runs inside Docker — a lightweight container system that handles all dependencies automatically. You only need to install Docker once.</p>
+      </div>
+
+      <div class="req-note">
+        <span class="req-note-icon">🐳</span>
+        <span>TableTop Forge requires <strong>Docker Desktop</strong> (Windows &amp; Mac) or <strong>Docker Engine</strong> (Linux).
+        Download it free at <a href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noopener">docker.com/products/docker-desktop</a>.
+        No Docker account is needed to run the app.</span>
+      </div>
+
+      <div class="os-tabs">
+        <button class="os-tab active" onclick="switchOS('mac', this)">🍎 macOS</button>
+        <button class="os-tab" onclick="switchOS('windows', this)">🪟 Windows</button>
+        <button class="os-tab" onclick="switchOS('linux', this)">🐧 Linux</button>
+      </div>
+
+      <!-- macOS -->
+      <div class="os-panel active" id="panel-mac">
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Install Docker Desktop for Mac</div>
+              <div class="step-desc">Download <a href="https://www.docker.com/products/docker-desktop/" target="_blank">Docker Desktop for Mac</a> (choose Apple Silicon or Intel depending on your chip). Open the downloaded <code>.dmg</code> and drag Docker to Applications. Launch it from Applications and wait for the whale icon in your menu bar.</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Extract TableTop Forge</div>
+              <div class="step-desc">Unzip <code>TabletopForge.zip</code> anywhere on your Mac — your Desktop or Documents folder works well. You should see a folder containing a <code>docker-compose.yml</code> file and a <code>backend</code> folder.</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Open Terminal and navigate to the folder</div>
+              <div class="step-desc">Open Terminal (search Spotlight for "Terminal"). Navigate to the extracted folder:
+                <div class="code-block">cd ~/Desktop/TabletopForge</div>
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Start the app</div>
+              <div class="step-desc">Run the following command. Docker will download and build everything automatically on first run (this takes a few minutes):
+                <div class="code-block">docker compose up -d</div>
+              Once complete, open your browser and go to <code>http://localhost</code>
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <div class="step-title">Stopping and restarting</div>
+              <div class="step-desc">To stop the app: <code>docker compose down</code>. To start it again later: <code>docker compose up -d</code>. Your session data is preserved automatically.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Windows -->
+      <div class="os-panel" id="panel-windows">
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Install Docker Desktop for Windows</div>
+              <div class="step-desc">Download <a href="https://www.docker.com/products/docker-desktop/" target="_blank">Docker Desktop for Windows</a>. Run the installer and follow the prompts. When asked, enable the <strong>WSL 2</strong> backend (recommended). Restart your computer if prompted. Launch Docker Desktop from the Start menu and wait for it to show "Engine running".</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Extract TableTop Forge</div>
+              <div class="step-desc">Right-click <code>TabletopForge.zip</code> and choose <strong>Extract All</strong>. Place the extracted folder somewhere accessible, like your Desktop or <code>C:\Projects</code>.</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Open PowerShell in the folder</div>
+              <div class="step-desc">Navigate to the extracted folder in File Explorer. Hold <strong>Shift</strong> and right-click an empty area, then choose <strong>Open PowerShell window here</strong> (or <strong>Open Terminal here</strong> on Windows 11).</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Start the app</div>
+              <div class="step-desc">In PowerShell, run:
+                <div class="code-block">docker compose up -d</div>
+              Docker will build and start all services. Once complete, open your browser and go to <code>http://localhost</code>
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <div class="step-title">Stopping and restarting</div>
+              <div class="step-desc">To stop: <code>docker compose down</code>. To restart: <code>docker compose up -d</code>. Your data is stored in Docker volumes and persists between restarts.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Linux -->
+      <div class="os-panel" id="panel-linux">
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Install Docker Engine</div>
+              <div class="step-desc">Follow the official guide for your distro at <a href="https://docs.docker.com/engine/install/" target="_blank">docs.docker.com/engine/install</a>. For Ubuntu/Debian, the quick install is:
+                <div class="code-block">curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER</div>
+              Log out and back in after running these commands.
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Extract and enter the folder</div>
+              <div class="step-desc">
+                <div class="code-block">unzip TabletopForge.zip
+cd TabletopForge</div>
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Start the app</div>
+              <div class="step-desc">
+                <div class="code-block">docker compose up -d</div>
+              Once running, open <code>http://localhost</code> in your browser.
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Accessing from other devices on your network</div>
+              <div class="step-desc">Other players on the same local network can connect using your machine's local IP address — e.g. <code>http://192.168.1.x</code>. Find your IP with <code>ip a</code> or <code>hostname -I</code>.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ═══════════ AI SETUP ═══════════ -->
+<section id="ai">
+  <div class="ai-section">
+    <div class="ai-inner reveal">
+      <div class="ai-header">
+        <div class="eyebrow">Local AI Integration</div>
+        <h2 class="sec-title">Generate Creatures with AI</h2>
+        <p class="sec-body">TableTop Forge can connect to a local AI model to generate D&amp;D stat blocks and token images on demand. No API keys or internet connection required — everything runs on your hardware.</p>
+      </div>
+
+      <div class="ai-cards">
+
+        <div class="ai-card">
+          <div class="ai-card-head">
+            <div class="ai-card-name">LM Studio</div>
+            <div class="ai-card-sub">GUI-based local LLM runner — easiest to set up</div>
+          </div>
+          <div class="ai-card-body">
+            <div class="ai-step">
+              <div class="ai-step-num">1</div>
+              <div class="ai-step-text">Download LM Studio from <a href="https://lmstudio.ai" target="_blank" rel="noopener">lmstudio.ai</a> and install it for your OS.</div>
+            </div>
+            <div class="ai-step">
+              <div class="ai-step-num">2</div>
+              <div class="ai-step-text">Open LM Studio, go to the <strong>Discover</strong> tab and search for <strong>Gemma 3</strong> or <strong>Gemma 4</strong>. Download a 4B or 12B variant depending on your VRAM.</div>
+            </div>
+            <div class="ai-step">
+              <div class="ai-step-num">3</div>
+              <div class="ai-step-text">Go to the <strong>Developer</strong> tab (or Local Server tab). Load your model and click <strong>Start Server</strong>. It will listen on <code>http://localhost:1234</code> by default.</div>
+            </div>
+            <div class="ai-step">
+              <div class="ai-step-num">4</div>
+              <div class="ai-step-text">In TableTop Forge's DM view, open the Session tab and paste <code>http://localhost:1234</code> as the AI Base URL. Enter any model name shown in LM Studio.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ai-card">
+          <div class="ai-card-head">
+            <div class="ai-card-name">Ollama</div>
+            <div class="ai-card-sub">Lightweight CLI model runner — ideal for always-on servers</div>
+          </div>
+          <div class="ai-card-body">
+            <div class="ai-step">
+              <div class="ai-step-num">1</div>
+              <div class="ai-step-text">Install Ollama from <a href="https://ollama.com" target="_blank" rel="noopener">ollama.com</a>. On macOS and Linux it's a single installer; on Windows it's a setup exe.</div>
+            </div>
+            <div class="ai-step">
+              <div class="ai-step-num">2</div>
+              <div class="ai-step-text">Pull the Gemma model. Open a terminal and run:
+                <div class="code-block" style="margin-top:8px">ollama pull gemma3</div>
+              </div>
+            </div>
+            <div class="ai-step">
+              <div class="ai-step-num">3</div>
+              <div class="ai-step-text">Ollama starts automatically and serves on <code>http://localhost:11434</code>. You can verify with: <code>ollama list</code></div>
+            </div>
+            <div class="ai-step">
+              <div class="ai-step-num">4</div>
+              <div class="ai-step-text">In TableTop Forge, set the AI Base URL to <code>http://localhost:11434</code> and the model name to <code>gemma3</code> (or whatever you pulled).</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="ai-connect">
+        <div class="ai-connect-title">Connecting to TableTop Forge</div>
+        <div class="ai-connect-body">
+          Once your local AI is running, open the DM view and go to the <strong>Session</strong> tab in the right panel. Enter your AI server's base URL and model name. The <strong>✨ AI</strong> button in the Creature Library will then be active — click it to generate a complete stat block from a text description.
+          <div class="ai-rec">
+            <strong>Recommended model:</strong> Gemma 4 (Google) performs excellently at structured D&amp;D stat block generation. A 4B parameter variant runs well on most modern laptops with 8GB+ VRAM, and the 12B variant produces more creative and detailed results on higher-end hardware. You can also use any OpenAI-compatible endpoint — including the OpenAI API itself — by entering your API base URL and key.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ═══════════ DOWNLOAD ═══════════ -->
+<section id="download">
+  <div class="dl-section">
+    <div class="dl-inner reveal">
+      <div class="dl-icon">⚒️</div>
+      <h2 class="dl-title">Download TableTop Forge</h2>
+      <p class="dl-desc">Free, self-hosted, and open for your table. No accounts, no subscriptions, no data leaving your network.</p>
+      <a href="TabletopForge.zip" class="dl-btn">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v9M4 8l4 5 4-5M2 13h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        TabletopForge.zip
+      </a>
+      <div class="dl-note">Requires Docker Desktop (Windows &amp; macOS) or Docker Engine (Linux)</div>
+      <div class="dl-req">Windows 10/11 · macOS 12+ · Any modern Linux with Docker support</div>
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ═══════════ ALSO FROM ═══════════ -->
+<section class="also-section reveal">
+  <div class="also-inner">
+    <div class="also-header">
+      <div class="eyebrow">Also from Giant Mushroom Studio</div>
+      <h2 class="sec-title">More Tools for Your Campaign</h2>
+    </div>
+    <div class="also-cards">
+      <a href="https://cronos.giantmushroom.studio" target="_blank" rel="noopener" class="also-card">
+        <div class="also-card-icon">⚔️</div>
+        <div class="also-card-body">
+          <div class="also-card-name">Cronos</div>
+          <div class="also-card-desc">The fantasy calendar for dungeon masters. Design custom months, moon cycles, seasons, and weather — then track every arc of your campaign in one beautiful desktop app.</div>
+          <span class="also-card-link">
+            cronos.giantmushroom.studio
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M2 5.5h7M5.5 2l3.5 3.5L5.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </div>
+      </a>
+      <a href="https://rune.giantmushroom.studio" target="_blank" rel="noopener" class="also-card">
+        <div class="also-card-icon">᚛</div>
+        <div class="also-card-body">
+          <div class="also-card-name">RuneScribe</div>
+          <div class="also-card-desc">Translate between 31 fantasy languages — Dwarvish, Elvish, Draconic, Infernal and more. Perfect for handouts, in-world props, and immersive world-building at your table.</div>
+          <span class="also-card-link">
+            rune.giantmushroom.studio
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M2 5.5h7M5.5 2l3.5 3.5L5.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ═══════════ DONATE ═══════════ -->
+<section style="padding:60px 52px; text-align:center; position:relative; z-index:1;" id="support">
+  <div style="max-width:520px;margin:0 auto;">
+    <div style="font-size:44px;margin-bottom:16px;">☕</div>
+    <h2 style="font-family:'Cinzel',serif;font-size:clamp(20px,2.5vw,30px);margin-bottom:12px;">Support the Project</h2>
+    <p style="font-size:17px;color:var(--text-m);line-height:1.75;margin-bottom:28px;">TableTop Forge is completely free and always will be. If it helps your sessions run smoother and you'd like to say thanks, buying me a coffee keeps the forge burning.</p>
+    <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="giantmushroomstudio" data-color="#BD5FFF" data-emoji="" data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#ffffff" data-coffee-color="#FFDD00"></script>
+  </div>
+</section>
+
+<!-- ═══════════ FOOTER ═══════════ -->
+<footer>
+  <div class="foot-brand">⚒️ TABLETP FORGE</div>
+  <div class="foot-copy">© 2025 <a href="https://giantmushroom.studio" class="foot-link" target="_blank">Giant Mushroom Studio</a> · Free &amp; Open for all adventurers</div>
+</footer>
+
+<script>
+/* ── Starfield ── */
+(function(){
+  const cvs = document.getElementById('starfield');
+  const ctx = cvs.getContext('2d');
+  let W, H, stars = [];
+  function resize(){ W = cvs.width = innerWidth; H = cvs.height = innerHeight; }
+  function init(){
+    resize();
+    stars = Array.from({length:220}, () => ({
+      x: Math.random()*W, y: Math.random()*H,
+      r: Math.random()*1.1+0.2,
+      a: Math.random(),
+      sp: Math.random()*0.004+0.001,
+      tw: Math.random()*Math.PI*2,
+    }));
+  }
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    stars.forEach(s => {
+      s.tw += s.sp;
+      s.a = 0.15 + Math.abs(Math.sin(s.tw)) * 0.65;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(237,228,210,${s.a})`;
+      ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  window.addEventListener('resize', () => { resize(); });
+  init(); draw();
+})();
+
+/* ── Nav sticky ── */
+const nav = document.getElementById('nav');
+window.addEventListener('scroll', () => {
+  nav.classList.toggle('stuck', window.scrollY > 40);
+});
+
+/* ── Hamburger ── */
+const ham = document.getElementById('hamburger');
+const mob = document.getElementById('mobileMenu');
+ham.addEventListener('click', () => {
+  ham.classList.toggle('open');
+  mob.classList.toggle('open');
+});
+function closeMobile(){ ham.classList.remove('open'); mob.classList.remove('open'); }
+
+/* ── OS Tabs ── */
+function switchOS(os, btn){
+  document.querySelectorAll('.os-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.os-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('panel-'+os).classList.add('active');
+}
+
+/* ── Reveal on scroll ── */
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: 0.08 });
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

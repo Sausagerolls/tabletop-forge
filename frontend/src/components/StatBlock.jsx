@@ -431,6 +431,9 @@ export default function StatBlock({ creature, onRoll = null }) {
   const classLine = creature.is_player_character && (creature.char_class || creature.char_subclass)
     ? [creature.char_class, creature.char_subclass].filter(Boolean).join(' / ')
     : '';
+  const levelLine = creature.is_player_character
+    ? `Level ${Number(creature.char_level) || 1} · ${(Number(creature.char_xp) || 0).toLocaleString()} XP`
+    : '';
   const armorProfs = [];
   if (creature.prof_light_armor)  armorProfs.push('Light Armor');
   if (creature.prof_medium_armor) armorProfs.push('Medium Armor');
@@ -461,6 +464,7 @@ export default function StatBlock({ creature, onRoll = null }) {
         <h2 className="text-2xl font-bold text-dnd-red font-serif">{creature.name}</h2>
         <p className="italic text-gray-600">{sizeType}, {creature.alignment}</p>
         {classLine && <p className="italic text-gray-500 text-xs">{classLine}</p>}
+        {levelLine && <p className="italic text-gray-500 text-xs">{levelLine}</p>}
       </div>
 
       <hr className="section-divider" />

@@ -102,6 +102,8 @@ const defaultForm = {
   prof_heavy_armor: false,
   prof_shields: false,
   concentrating_on: '',
+  char_level: 1,
+  char_xp: 0,
   class_features: [],
   feats: [],
   skill_expertise: {},
@@ -825,16 +827,44 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             </div>
 
             {isPlayerCharacter && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelClass}>Class</label>
-                  <input className={inputClass} placeholder="Fighter" value={form.char_class || ''} onChange={(e) => setField('char_class', e.target.value)} />
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelClass}>Class</label>
+                    <input className={inputClass} placeholder="Fighter" value={form.char_class || ''} onChange={(e) => setField('char_class', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Subclass</label>
+                    <input className={inputClass} placeholder="Battle Master" value={form.char_subclass || ''} onChange={(e) => setField('char_subclass', e.target.value)} />
+                  </div>
                 </div>
-                <div>
-                  <label className={labelClass}>Subclass</label>
-                  <input className={inputClass} placeholder="Battle Master" value={form.char_subclass || ''} onChange={(e) => setField('char_subclass', e.target.value)} />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelClass}>Level</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      className={inputClass}
+                      value={form.char_level ?? 1}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value);
+                        setField('char_level', isNaN(v) ? 1 : Math.max(1, Math.min(20, v)));
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>XP</label>
+                    <input
+                      type="number"
+                      min={0}
+                      className={inputClass}
+                      value={form.char_xp ?? 0}
+                      onChange={(e) => setField('char_xp', Math.max(0, parseInt(e.target.value) || 0))}
+                    />
+                  </div>
                 </div>
-              </div>
+              </>
             )}
 
             {isPlayerCharacter && (

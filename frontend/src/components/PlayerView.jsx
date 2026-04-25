@@ -68,6 +68,33 @@ function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHp
         <button onClick={onClose} className="text-gray-400 hover:text-white text-xs">✕</button>
       </div>
       <div className="p-3 space-y-3 text-sm text-gray-200 overflow-y-auto">
+        {/* Level / XP */}
+        <div className="flex items-center gap-3 text-xs">
+          <label className="flex items-center gap-1">
+            <span className="text-gray-400">Lvl:</span>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              className="w-14 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-center text-white"
+              value={creature.char_level ?? 1}
+              onChange={(e) => {
+                const v = parseInt(e.target.value);
+                onSave({ char_level: isNaN(v) ? 1 : Math.max(1, Math.min(20, v)) });
+              }}
+            />
+          </label>
+          <label className="flex items-center gap-1">
+            <span className="text-gray-400">XP:</span>
+            <input
+              type="number"
+              min={0}
+              className="w-24 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-center text-white"
+              value={creature.char_xp ?? 0}
+              onChange={(e) => onSave({ char_xp: Math.max(0, parseInt(e.target.value) || 0) })}
+            />
+          </label>
+        </div>
         {/* HP */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-400 w-14">HP:</span>

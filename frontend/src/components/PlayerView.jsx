@@ -1,7 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SpellBox } from './StatBlock.jsx';
 
-function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHpChange }) {
+function NotesModal({ creature, onClose, onSave }) {
+  const [text, setText] = useState(creature.player_notes || '');
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-dnd-panel border border-dnd-gold/40 rounded-xl shadow-2xl w-full max-w-xl flex flex-col"
+        style={{ maxHeight: '80vh' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700">
+          <span className="text-sm font-semibold text-dnd-gold">Notes — {creature.name}</span>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-sm">✕</button>
+        </div>
+        <textarea
+          className="flex-1 m-3 bg-gray-800 border border-gray-700 rounded p-3 text-sm text-gray-100 resize-none focus:outline-none focus:border-dnd-gold"
+          placeholder="Session notes, NPCs you've met, plot threads, leftover puzzle clues…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => { if (text !== (creature.player_notes || '')) onSave(text); }}
+          style={{ minHeight: 320 }}
+        />
+        <div className="px-3 pb-3 text-xs text-gray-500 italic">Saves automatically when you click outside the box.</div>
+      </div>
+    </div>
+  );
+}
+
+function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHpChange, onTokenTempHpChange }) {
   const [viewSpell, setViewSpell] = useState(null);
   const concentrationOptions = (() => {
     let arr = [];
@@ -13,6 +40,7 @@ function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHp
   })();
   const [local, setLocal] = useState(() => ({
     current_hp: playerToken?.current_hp ?? creature.hit_points ?? 0,
+    temp_hp: Number(playerToken?.temp_hp) || 0,
     hit_dice_used: creature.hit_dice_used ?? 0,
     death_save_successes: creature.death_save_successes ?? 0,
     death_save_failures: creature.death_save_failures ?? 0,
@@ -24,6 +52,7 @@ function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHp
   useEffect(() => {
     setLocal({
       current_hp: playerToken?.current_hp ?? creature.hit_points ?? 0,
+      temp_hp: Number(playerToken?.temp_hp) || 0,
       hit_dice_used: creature.hit_dice_used ?? 0,
       death_save_successes: creature.death_save_successes ?? 0,
       death_save_failures: creature.death_save_failures ?? 0,
@@ -38,6 +67,8 @@ function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHp
     setLocal(prev => ({ ...prev, [field]: value }));
     if (field === 'current_hp') {
       onTokenHpChange?.(value);
+    } else if (field === 'temp_hp') {
+      onTokenTempHpChange?.(value);
     } else {
       onSave({ [field]: value });
     }
@@ -68,43 +99,28 @@ function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHp
         <button onClick={onClose} className="text-gray-400 hover:text-white text-xs">✕</button>
       </div>
       <div className="p-3 space-y-3 text-sm text-gray-200 overflow-y-auto">
-        {/* Level / XP */}
-        <div className="flex items-center gap-3 text-xs">
-          <label className="flex items-center gap-1">
-            <span className="text-gray-400">Lvl:</span>
+        {/* HP + Temp HP */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-gray-400 w-10">HP:</span>
             <input
               type="number"
-              min={1}
-              max={20}
-              className="w-14 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-center text-white"
-              value={creature.char_level ?? 1}
-              onChange={(e) => {
-                const v = parseInt(e.target.value);
-                onSave({ char_level: isNaN(v) ? 1 : Math.max(1, Math.min(20, v)) });
-              }}
+              className="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-center text-white"
+              value={local.current_hp}
+              onChange={(e) => patch('current_hp', Math.max(0, parseInt(e.target.value) || 0))}
             />
+            <span className="text-xs text-gray-500">/ {maxHP}</span>
           </label>
-          <label className="flex items-center gap-1">
-            <span className="text-gray-400">XP:</span>
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-cyan-300">Temp:</span>
             <input
               type="number"
               min={0}
-              className="w-24 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-center text-white"
-              value={creature.char_xp ?? 0}
-              onChange={(e) => onSave({ char_xp: Math.max(0, parseInt(e.target.value) || 0) })}
+              className="w-14 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-center text-white"
+              value={local.temp_hp}
+              onChange={(e) => patch('temp_hp', Math.max(0, parseInt(e.target.value) || 0))}
             />
           </label>
-        </div>
-        {/* HP */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400 w-14">HP:</span>
-          <input
-            type="number"
-            className="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-center text-white"
-            value={local.current_hp}
-            onChange={(e) => patch('current_hp', Math.max(0, parseInt(e.target.value) || 0))}
-          />
-          <span className="text-xs text-gray-500">/ {maxHP}</span>
         </div>
         {/* Currency */}
         <div className="space-y-1">
@@ -506,12 +522,17 @@ export default function PlayerView() {
   const [combatTurn, setCombatTurn] = useState(0);
   const [userColors, setUserColors] = useState({});
   const [playerTokenId, setPlayerTokenId] = useState(null);
+  const playerTokenIdRef = useRef(null);
+  useEffect(() => { playerTokenIdRef.current = playerTokenId; }, [playerTokenId]);
   const [fullscreen, setFullscreen] = useState(false);
   const [myCreature, setMyCreature] = useState(null);
   const [showCharacterEdit, setShowCharacterEdit] = useState(false);
   const [showActionsRef, setShowActionsRef] = useState(false);
   const [sheetTab, setSheetTab] = useState('edit');
   const [showQuickRef, setShowQuickRef] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [concentrationPrompt, setConcentrationPrompt] = useState(null); // { dc, damage, spellName, conSaveBonus }
+  const [handout, setHandout] = useState(null); // { title, body, imageUrl, sentAt }
   const [walls, setWalls] = useState([]);
   const [doors, setDoors] = useState([]);
   const [lights, setLights] = useState([]);
@@ -640,6 +661,16 @@ export default function PlayerView() {
       setTokens((prev) =>
         prev.map((t) => (t.id === tokenId ? { ...t, current_hp: currentHp } : t))
       );
+    });
+
+    socket.on('concentration_check', (payload) => {
+      // Only the player whose token took the damage gets the prompt.
+      if (payload.tokenId !== playerTokenIdRef.current) return;
+      setConcentrationPrompt(payload);
+    });
+
+    socket.on('handout_received', (payload) => {
+      setHandout(payload);
     });
 
     socket.on('token_max_hp_changed', ({ tokenId, maxHp }) => {
@@ -1205,6 +1236,20 @@ export default function PlayerView() {
           </button>
         )}
 
+        {/* Notes / journal button */}
+        {myCreature && (
+          <button
+            onClick={() => setShowNotes(true)}
+            className="absolute bottom-20 left-28 z-40 bg-gray-800/90 hover:bg-gray-700 text-amber-300 rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center"
+            title="Notes / journal"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+              <path d="M11 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+        )}
+
         {/* Light source flyout — only shown when the player has at least one
             light item in their inventory (or no character is linked yet) */}
         {playerTokenId && availablePresets.length > 1 && (
@@ -1270,6 +1315,10 @@ export default function PlayerView() {
               if (!playerTokenId) return;
               socket.emit('update_token_hp', { tokenId: playerTokenId, currentHp: hp });
             }}
+            onTokenTempHpChange={(hp) => {
+              if (!playerTokenId) return;
+              socket.emit('update_token_temp_hp', { tokenId: playerTokenId, tempHp: hp });
+            }}
             onSave={async (patch) => {
               try {
                 const fd = new FormData();
@@ -1330,6 +1379,111 @@ export default function PlayerView() {
 
       {/* Actions reference modal */}
       {showActionsRef && <ActionsReference onClose={() => setShowActionsRef(false)} />}
+
+      {/* Concentration prompt */}
+      {concentrationPrompt && myCreature && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setConcentrationPrompt(null)}>
+          <div
+            className="bg-dnd-panel border border-purple-500/60 rounded-xl shadow-2xl w-full max-w-md p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-2xl">🌀</span>
+              <h3 className="text-lg font-semibold text-purple-300">Concentration Check</h3>
+            </div>
+            <p className="text-sm text-gray-200 mb-2">
+              You took <strong>{concentrationPrompt.damage}</strong> damage while concentrating on{' '}
+              <em className="text-purple-200">{concentrationPrompt.spellName}</em>.
+            </p>
+            <p className="text-sm text-gray-300 mb-3">
+              Roll a Constitution save against <strong>DC {concentrationPrompt.dc}</strong>.
+              {concentrationPrompt.conSaveBonus != null && (
+                <span className="text-xs text-gray-400"> (Your CON save: <span className="font-mono">{concentrationPrompt.conSaveBonus >= 0 ? '+' : ''}{concentrationPrompt.conSaveBonus}</span>)</span>
+              )}
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  const bonus = Number(concentrationPrompt.conSaveBonus) || 0;
+                  socket.emit('roll_dice', {
+                    dice: 'd20',
+                    count: 1,
+                    modifier: bonus,
+                    label: `Concentration save (DC ${concentrationPrompt.dc})`,
+                  });
+                }}
+                className="bg-purple-700 hover:bg-purple-600 text-white py-2 rounded-lg text-sm font-semibold"
+              >
+                Roll d20{(concentrationPrompt.conSaveBonus != null ? ` ${concentrationPrompt.conSaveBonus >= 0 ? '+' : ''}${concentrationPrompt.conSaveBonus}` : '')}
+              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setConcentrationPrompt(null)}
+                  className="bg-green-800 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-semibold"
+                >
+                  Pass — keep
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const fd = new FormData();
+                      fd.append('concentrating_on', '');
+                      const res = await fetch(`/api/creatures/${myCreature.id}`, { method: 'PUT', body: fd });
+                      const updated = await res.json();
+                      if (updated && !updated.error) setMyCreature(updated);
+                    } catch (err) { console.error(err); }
+                    setConcentrationPrompt(null);
+                  }}
+                  className="bg-red-800 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-semibold"
+                >
+                  Fail — drop
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Handout */}
+      {handout && (
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4" onClick={() => setHandout(null)}>
+          <div
+            className="bg-amber-50 text-gray-900 border-2 border-amber-700 rounded-lg shadow-2xl w-full max-w-2xl flex flex-col"
+            style={{ maxHeight: '90vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-amber-700/40">
+              <span className="text-base font-serif font-semibold">{handout.title || 'Handout'}</span>
+              <button onClick={() => setHandout(null)} className="text-gray-700 hover:text-gray-900 text-sm">✕</button>
+            </div>
+            <div className="overflow-y-auto p-4 space-y-3 font-serif">
+              {handout.imageUrl && (
+                <img src={handout.imageUrl} alt={handout.title || 'handout'} className="max-w-full max-h-[60vh] mx-auto rounded shadow" />
+              )}
+              {handout.body && (
+                <p className="whitespace-pre-wrap text-base leading-relaxed">{handout.body}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notes modal */}
+      {showNotes && myCreature && (
+        <NotesModal
+          creature={myCreature}
+          onClose={() => setShowNotes(false)}
+          onSave={async (text) => {
+            try {
+              const fd = new FormData();
+              fd.append('player_notes', text);
+              const res = await fetch(`/api/creatures/${myCreature.id}`, { method: 'PUT', body: fd });
+              const updated = await res.json();
+              if (updated && !updated.error) setMyCreature(updated);
+            } catch (err) { console.error('Notes save failed', err); }
+          }}
+        />
+      )}
 
       {/* Character edit modal */}
       {showCharacterEdit && myCreature && (

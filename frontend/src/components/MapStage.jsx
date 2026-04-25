@@ -59,6 +59,7 @@ function clipToWedge(ctx, cx, cy, r, dirDeg, spreadDeg) {
   ctx.clip();
 }
 const WALL_DRAW_TOOLS = new Set(['wall-line', 'wall-rect', 'wall-polygon', 'wall-circle', 'wall-ledge', 'wall-erase']);
+const TEMPLATE_TOOLS = new Set(['tpl-cone', 'tpl-circle', 'tpl-line', 'tpl-square']);
 const DOOR_DRAW_TOOLS = new Set(['door-std', 'door-heavy', 'door-port']);
 const LIGHT_DRAW_TOOLS = new Set(['light']);
 const DOOR_ERASE_TOOLS = new Set(['door-erase']);
@@ -819,6 +820,101 @@ function LightPreview({ preview, gridSize }) {
   );
 }
 
+// ── Spell template shapes (DM-only) ─────────────────────────────────────────
+function colorToFillStroke(color) {
+  const c = typeof color === 'string' && color.startsWith('#') ? color : '#a855f7';
+  // Use the hex color directly for stroke; build a translucent fill from it.
+  // Simple approach: parse rgb and emit rgba.
+  const h = c.replace('#', '');
+  const norm = h.length === 3 ? h.split('').map(x => x + x).join('') : (h.length === 8 ? h.slice(0, 6) : h);
+  const n = parseInt(norm, 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return {
+    fill:   `rgba(${r},${g},${b},0.18)`,
+    stroke: `rgba(${r},${g},${b},0.95)`,
+    previewFill:   `rgba(${r},${g},${b},0.10)`,
+    previewStroke: `rgba(${r},${g},${b},0.75)`,
+  };
+}
+
+function templateShapeProps(t, fill, stroke, dash) {
+  if (!t || !t.points) return null;
+  const p = t.points;
+  if (t.type === 'circle' && p.length >= 3) {
+    return { kind: 'circle', x: p[0], y: p[1], radius: Math.max(2, p[2]), fill, stroke, dash };
+  }
+  if (t.type === 'square' && p.length >= 4) {
+    const x = Math.min(p[0], p[2]), y = Math.min(p[1], p[3]);
+    const w = Math.abs(p[2] - p[0]), h = Math.abs(p[3] - p[1]);
+    return { kind: 'rect', x, y, width: w, height: h, fill, stroke, dash };
+  }
+  if (t.type === 'line' && p.length >= 4) {
+    return { kind: 'line', points: [p[0], p[1], p[2], p[3]], stroke };
+  }
+  if (t.type === 'cone' && p.length >= 4) {
+    const dx = p[2] - p[0], dy = p[3] - p[1];
+    const len = Math.hypot(dx, dy) || 1;
+    const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    return { kind: 'wedge', x: p[0], y: p[1], radius: len, angle: 60, rotation: ang - 30, fill, stroke, dash };
+  }
+  return null;
+}
+
+function TemplateShape({ template, isSelected = false }) {
+  const { fill, stroke } = colorToFillStroke(template.color);
+  const dash = isSelected ? [3, 2] : [6, 3];
+  const sw = isSelected ? 2.5 : 1.5;
+  const props = templateShapeProps(template, fill, stroke, dash);
+  if (!props) return null;
+  return (
+    <>
+      {props.kind === 'circle' && <Circle x={props.x} y={props.y} radius={props.radius} fill={props.fill} stroke={props.stroke} strokeWidth={sw} dash={props.dash} listening={false} />}
+      {props.kind === 'rect'   && <Rect x={props.x} y={props.y} width={props.width} height={props.height} fill={props.fill} stroke={props.stroke} strokeWidth={sw} dash={props.dash} listening={false} />}
+      {props.kind === 'wedge'  && <Wedge x={props.x} y={props.y} radius={props.radius} angle={props.angle} rotation={props.rotation} fill={props.fill} stroke={props.stroke} strokeWidth={sw} dash={props.dash} listening={false} />}
+      {props.kind === 'line'   && <Line points={props.points} stroke={props.stroke} strokeWidth={4} listening={false} />}
+      {template.label && (
+        <Text x={(template.points[0] || 0) + 6} y={(template.points[1] || 0) + 6}
+          text={template.label} fill={props.stroke} fontSize={11} fontStyle="bold" listening={false} />
+      )}
+    </>
+  );
+}
+
+function TemplatePreview({ preview }) {
+  const { previewFill, previewStroke } = colorToFillStroke(preview?.color || '#a855f7');
+  if (!preview) return null;
+  const props = templateShapeProps(preview, previewFill, previewStroke, [4, 3]);
+  if (!props) return null;
+  if (props.kind === 'circle') return <Circle x={props.x} y={props.y} radius={props.radius} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />;
+  if (props.kind === 'rect')   return <Rect x={props.x} y={props.y} width={props.width} height={props.height} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />;
+  if (props.kind === 'wedge')  return <Wedge x={props.x} y={props.y} radius={props.radius} angle={props.angle} rotation={props.rotation} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />;
+  if (props.kind === 'line')   return <Line points={props.points} stroke={props.stroke} strokeWidth={3} dash={[6, 4]} listening={false} />;
+  return null;
+}
+
+function findNearestTemplate(mapX, mapY, templates, threshold) {
+  let nearest = null, minDist = threshold;
+  for (const t of templates) {
+    const p = t.points || [];
+    let d = Infinity;
+    if (t.type === 'circle' && p.length >= 3) {
+      const distFromCentre = Math.hypot(mapX - p[0], mapY - p[1]);
+      d = distFromCentre <= p[2] ? 0 : distFromCentre - p[2];
+    } else if (t.type === 'square' && p.length >= 4) {
+      const x1 = Math.min(p[0], p[2]), y1 = Math.min(p[1], p[3]);
+      const x2 = Math.max(p[0], p[2]), y2 = Math.max(p[1], p[3]);
+      if (mapX >= x1 && mapX <= x2 && mapY >= y1 && mapY <= y2) d = 0;
+      else d = Math.min(Math.abs(mapX - x1), Math.abs(mapX - x2), Math.abs(mapY - y1), Math.abs(mapY - y2));
+    } else if (t.type === 'line' && p.length >= 4) {
+      d = distToSeg(mapX, mapY, p[0], p[1], p[2], p[3]);
+    } else if (t.type === 'cone' && p.length >= 4) {
+      d = Math.hypot(mapX - p[0], mapY - p[1]);
+    }
+    if (d < minDist) { minDist = d; nearest = { template: t, dist: d }; }
+  }
+  return nearest;
+}
+
 function DarknessZone({ dz }) {
   const isPolygon = dz.shape === 'polygon' && Array.isArray(dz.poly_points) && dz.poly_points.length >= 6;
   const { x: cx, y: cy } = zoneCentroid(dz);
@@ -982,6 +1078,12 @@ export default function MapStage({
   currentCombatTokenId = null,
   onMeasureChange = null,
   remoteMeasurements = [],
+  spellTemplates = [],
+  onTemplatePlace = null,
+  onTemplateDelete = null,
+  onTemplateUpdate = null,
+  onTemplateSelect = null,
+  selectedTemplateId = null,
 }) {
   const stageRef = useRef(null);
   const containerRef = useRef(null);
@@ -1066,8 +1168,28 @@ export default function MapStage({
   useEffect(() => { onMeasureChangeRef.current?.(meas); }, [meas]);
 
   // Token drag
-  const tokenDragRef = useRef(null); // { tokenId, origCol, origRow, startMapX, startMapY }
-  const [dragVis, setDragVis] = useState(null); // { tokenId, x, y } in map px
+  const tokenDragRef = useRef(null); // { tokenIds[], origPositions Map<id,{col,row}>, startMapX, startMapY }
+  const [dragVis, setDragVis] = useState(null); // { positions: Map<tokenId, {x,y}> }
+  const [multiSelected, setMultiSelected] = useState(() => new Set());
+  // Mousedown is attached once with an empty-deps effect, so reading
+  // `multiSelected` directly there sees a stale empty Set. Mirror it into a
+  // ref that the handler can dereference for the current value.
+  const multiSelectedRef = useRef(multiSelected);
+  useEffect(() => { multiSelectedRef.current = multiSelected; }, [multiSelected]);
+  const marqueeRef = useRef(null); // { startX, startY, additive }
+  const [marqueeRect, setMarqueeRect] = useState(null); // { x, y, w, h }
+  const templateDrawRef = useRef(null);
+  const templateMoveRef = useRef(null); // { id, origPoints, startMapX, startMapY }
+  const [templatePreview, setTemplatePreview] = useState(null);
+  const [templateMovePreview, setTemplateMovePreview] = useState(null); // { id, points }
+  const onTemplatePlaceRef  = useRef(onTemplatePlace);
+  const onTemplateDeleteRef = useRef(onTemplateDelete);
+  const onTemplateUpdateRef = useRef(onTemplateUpdate);
+  const onTemplateSelectRef = useRef(onTemplateSelect);
+  useEffect(() => { onTemplatePlaceRef.current  = onTemplatePlace;  }, [onTemplatePlace]);
+  useEffect(() => { onTemplateDeleteRef.current = onTemplateDelete; }, [onTemplateDelete]);
+  useEffect(() => { onTemplateUpdateRef.current = onTemplateUpdate; }, [onTemplateUpdate]);
+  useEffect(() => { onTemplateSelectRef.current = onTemplateSelect; }, [onTemplateSelect]);
 
   // Wall drawing
   const wallDrawRef  = useRef(null);  // { type, startX, startY } for line/rect/circle
@@ -1148,6 +1270,22 @@ export default function MapStage({
       setDarknessPreview(null);
     }
   }, [activeTool]);
+
+  useEffect(() => {
+    if (!TEMPLATE_TOOLS.has(activeTool)) {
+      templateDrawRef.current = null;
+      setTemplatePreview(null);
+    }
+    if (activeTool !== 'tpl-edit') {
+      templateMoveRef.current = null;
+      setTemplateMovePreview(null);
+    }
+    if (activeTool !== 'move') {
+      marqueeRef.current = null;
+      setMarqueeRect(null);
+    }
+  }, [activeTool]);
+
 
   // Natural image dims
   const [imgDims, setImgDims] = useState(null);
@@ -2307,6 +2445,7 @@ export default function MapStage({
   const tokensRef        = useRef(tokens);
   const activeToolRef    = useRef(activeTool);
   const placingTokenRef  = useRef(placingToken);
+  const selectedTokenIdRef = useRef(selectedTokenId);
   useEffect(() => { onTokenMoveRef.current   = onTokenMove;   }, [onTokenMove]);
   useEffect(() => { onTokenSelectRef.current = onTokenSelect; }, [onTokenSelect]);
   useEffect(() => { onMapClickRef.current    = onMapClick;    }, [onMapClick]);
@@ -2316,6 +2455,7 @@ export default function MapStage({
   useEffect(() => { tokensRef.current        = tokens;        }, [tokens]);
   useEffect(() => { activeToolRef.current    = activeTool;    }, [activeTool]);
   useEffect(() => { placingTokenRef.current  = placingToken;  }, [placingToken]);
+  useEffect(() => { selectedTokenIdRef.current = selectedTokenId; }, [selectedTokenId]);
 
   // Container resize observer
   useEffect(() => {
@@ -2460,20 +2600,70 @@ export default function MapStage({
         return;
       }
 
+      // ── Spell template tools (DM only — players never have these tools) ─
+      if (TEMPLATE_TOOLS.has(tool)) {
+        const type = tool === 'tpl-cone' ? 'cone'
+                   : tool === 'tpl-circle' ? 'circle'
+                   : tool === 'tpl-line' ? 'line'
+                   : 'square';
+        templateDrawRef.current = { type, startX: mc.x, startY: mc.y };
+        setTemplatePreview({ type, points: [mc.x, mc.y, mc.x, mc.y] });
+        return;
+      }
+      if (tool === 'tpl-erase') {
+        const threshold = 30 / scaleRef.current;
+        const hit = findNearestTemplate(mc.x, mc.y, spellTemplates, threshold);
+        if (hit) onTemplateDeleteRef.current?.(hit.template.id);
+        return;
+      }
+      if (tool === 'tpl-edit') {
+        const threshold = 30 / scaleRef.current;
+        const hit = findNearestTemplate(mc.x, mc.y, spellTemplates, threshold);
+        if (hit) {
+          templateMoveRef.current = {
+            id: hit.template.id,
+            origPoints: hit.template.points.slice(),
+            startMapX: mc.x,
+            startMapY: mc.y,
+          };
+        }
+        return;
+      }
+
       // ── Standard tools ────────────────────────────────────────────────────
       if (tool === 'move') {
         const hit = hitToken(mc.x, mc.y);
         if (hit) {
+          // Token mousedown — drag the whole group if this token is already
+          // part of the selection, otherwise replace selection with just it.
+          const liveMulti = multiSelectedRef.current;
+          const inGroup = (selectedTokenIdRef.current === hit.id) || liveMulti.has(hit.id);
+          const groupIds = inGroup
+            ? Array.from(new Set([selectedTokenIdRef.current, hit.id, ...liveMulti].filter(Boolean)))
+            : [hit.id];
+          if (!inGroup) setMultiSelected(new Set());
+          const origPositions = new Map();
+          for (const id of groupIds) {
+            const tk = tokensRef.current.find(tt => tt.id === id);
+            if (tk) origPositions.set(id, { col: Number(tk.grid_col), row: Number(tk.grid_row) });
+          }
           tokenDragRef.current = {
-            tokenId:  hit.id,
-            origCol:  Number(hit.grid_col),
-            origRow:  Number(hit.grid_row),
+            tokenIds: groupIds,
+            primaryId: hit.id,
+            origPositions,
             startMapX: mc.x,
             startMapY: mc.y,
           };
         } else {
-          panning.current = true;
-          panStart.current = { cx: e.clientX, cy: e.clientY, sx: posRef.current.x, sy: posRef.current.y };
+          // Empty-space mousedown starts a marquee. Shift-drag adds to the
+          // existing selection instead of replacing it. Use the Pan tool when
+          // you actually want to pan with a left-drag.
+          marqueeRef.current = {
+            startX: mc.x,
+            startY: mc.y,
+            additive: !!e.shiftKey,
+          };
+          setMarqueeRect({ x: mc.x, y: mc.y, w: 0, h: 0 });
         }
       } else if (tool === 'pan') {
         panning.current = true;
@@ -2527,13 +2717,67 @@ export default function MapStage({
         return;
       }
 
+      // ── Template move preview ─────────────────────────────────────────────
+      if (templateMoveRef.current) {
+        const mc = toMap(e.clientX, e.clientY);
+        const dr = templateMoveRef.current;
+        const dxMap = mc.x - dr.startMapX;
+        const dyMap = mc.y - dr.startMapY;
+        const orig = dr.origPoints;
+        // For circle, only translate the centre (idx 0,1) and leave radius (idx 2).
+        // For line/cone/square, translate both endpoints.
+        let next;
+        if (orig.length === 3) {
+          next = [orig[0] + dxMap, orig[1] + dyMap, orig[2]];
+        } else {
+          next = [orig[0] + dxMap, orig[1] + dyMap, orig[2] + dxMap, orig[3] + dyMap];
+        }
+        setTemplateMovePreview({ id: dr.id, points: next });
+        return;
+      }
+
+      // ── Template preview update ───────────────────────────────────────────
+      if (templateDrawRef.current) {
+        const mc = toMap(e.clientX, e.clientY);
+        const dr = templateDrawRef.current;
+        if (dr.type === 'circle') {
+          const r = Math.hypot(mc.x - dr.startX, mc.y - dr.startY);
+          setTemplatePreview({ type: 'circle', points: [dr.startX, dr.startY, r] });
+        } else {
+          setTemplatePreview({ type: dr.type, points: [dr.startX, dr.startY, mc.x, mc.y] });
+        }
+        return;
+      }
+
+      // ── Marquee selection rectangle ───────────────────────────────────────
+      if (marqueeRef.current) {
+        const mc = toMap(e.clientX, e.clientY);
+        const m = marqueeRef.current;
+        setMarqueeRect({
+          x: Math.min(m.startX, mc.x),
+          y: Math.min(m.startY, mc.y),
+          w: Math.abs(mc.x - m.startX),
+          h: Math.abs(mc.y - m.startY),
+        });
+        return;
+      }
+
       // ── Token drag ────────────────────────────────────────────────────────
       if (tokenDragRef.current) {
         const mc = toMap(e.clientX, e.clientY);
         const dr = tokenDragRef.current;
-        const nextX = offsetXRef.current + dr.origCol * gridSizeRef.current + (mc.x - dr.startMapX);
-        const nextY = offsetYRef.current + dr.origRow * gridSizeRef.current + (mc.y - dr.startMapY);
-        setDragVis({ tokenId: dr.tokenId, x: nextX, y: nextY });
+        const dxMap = mc.x - dr.startMapX;
+        const dyMap = mc.y - dr.startMapY;
+        const positions = new Map();
+        for (const id of dr.tokenIds) {
+          const orig = dr.origPositions.get(id);
+          if (!orig) continue;
+          positions.set(id, {
+            x: offsetXRef.current + orig.col * gridSizeRef.current + dxMap,
+            y: offsetYRef.current + orig.row * gridSizeRef.current + dyMap,
+          });
+        }
+        setDragVis({ positions });
         return;
       }
       if (panning.current) {
@@ -2586,6 +2830,46 @@ export default function MapStage({
           setWallPreview(null);
         }
         return; // don't fall through to token/map logic
+      }
+
+      // ── Template move complete / select on tap (DM only) ────────────────
+      if (tool === 'tpl-edit' && templateMoveRef.current) {
+        const dr = templateMoveRef.current;
+        if (moved) {
+          const mc = toMap(e.clientX, e.clientY);
+          const dxMap = mc.x - dr.startMapX;
+          const dyMap = mc.y - dr.startMapY;
+          const orig = dr.origPoints;
+          const next = orig.length === 3
+            ? [orig[0] + dxMap, orig[1] + dyMap, orig[2]]
+            : [orig[0] + dxMap, orig[1] + dyMap, orig[2] + dxMap, orig[3] + dyMap];
+          onTemplateUpdateRef.current?.({ id: dr.id, points: next });
+        } else {
+          onTemplateSelectRef.current?.(dr.id);
+        }
+        templateMoveRef.current = null;
+        setTemplateMovePreview(null);
+        return;
+      }
+
+      // ── Spell template draw complete (DM only) ──────────────────────────
+      if (TEMPLATE_TOOLS.has(tool)) {
+        if (templateDrawRef.current) {
+          const dr = templateDrawRef.current;
+          const mc = toMap(e.clientX, e.clientY);
+          let points = null;
+          if (dr.type === 'circle') {
+            const r = Math.hypot(mc.x - dr.startX, mc.y - dr.startY);
+            if (r > 5) points = [dr.startX, dr.startY, r];
+          } else {
+            const d = Math.hypot(mc.x - dr.startX, mc.y - dr.startY);
+            if (d > 5) points = [dr.startX, dr.startY, mc.x, mc.y];
+          }
+          if (points) onTemplatePlaceRef.current?.({ type: dr.type, points });
+          templateDrawRef.current = null;
+          setTemplatePreview(null);
+        }
+        return;
       }
 
       // ── Light drawing complete ────────────────────────────────────────────
@@ -2676,21 +2960,62 @@ export default function MapStage({
         return;
       }
 
+      // ── Marquee complete — pick all tokens whose centre is inside the box.
+      if (marqueeRef.current) {
+        const m = marqueeRef.current;
+        const rect = {
+          x: Math.min(m.startX, toMap(e.clientX, e.clientY).x),
+          y: Math.min(m.startY, toMap(e.clientX, e.clientY).y),
+          w: 0, h: 0,
+        };
+        const mc = toMap(e.clientX, e.clientY);
+        const x1 = Math.min(m.startX, mc.x), y1 = Math.min(m.startY, mc.y);
+        const x2 = Math.max(m.startX, mc.x), y2 = Math.max(m.startY, mc.y);
+        if (moved) {
+          const gs = gridSizeRef.current;
+          const ox = offsetXRef.current, oy = offsetYRef.current;
+          const ids = [];
+          for (const t of tokensRef.current) {
+            const sz = TOKEN_SIZES[t.size] || TOKEN_SIZES.medium;
+            const cx = ox + Number(t.grid_col) * gs + (sz.gridW * gs) / 2;
+            const cy = oy + Number(t.grid_row) * gs + (sz.gridH * gs) / 2;
+            if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2) ids.push(t.id);
+          }
+          setMultiSelected(prev => {
+            if (m.additive) {
+              const next = new Set(prev);
+              for (const id of ids) next.add(id);
+              return next;
+            }
+            return new Set(ids);
+          });
+        } else {
+          // Treat a non-drag click on empty space as "clear selection".
+          setMultiSelected(new Set());
+          onTokenSelectRef.current?.(null);
+        }
+        marqueeRef.current = null;
+        setMarqueeRect(null);
+        return;
+      }
+
       // ── Token drag / select ───────────────────────────────────────────────
       if (tokenDragRef.current) {
         const dr = tokenDragRef.current;
         if (moved) {
           const mc = toMap(e.clientX, e.clientY);
           const ox = offsetXRef.current, oy = offsetYRef.current, gs = gridSizeRef.current;
-          const finalX = ox + dr.origCol * gs + (mc.x - dr.startMapX);
-          const finalY = oy + dr.origRow * gs + (mc.y - dr.startMapY);
-          onTokenMoveRef.current(
-            dr.tokenId,
-            (finalX - ox) / gs,
-            (finalY - oy) / gs,
-          );
+          const dxMap = mc.x - dr.startMapX;
+          const dyMap = mc.y - dr.startMapY;
+          for (const id of dr.tokenIds) {
+            const orig = dr.origPositions.get(id);
+            if (!orig) continue;
+            const finalX = ox + orig.col * gs + dxMap;
+            const finalY = oy + orig.row * gs + dyMap;
+            onTokenMoveRef.current(id, (finalX - ox) / gs, (finalY - oy) / gs);
+          }
         } else {
-          onTokenSelectRef.current?.(dr.tokenId);
+          onTokenSelectRef.current?.(dr.primaryId);
         }
         tokenDragRef.current = null;
         setDragVis(null);
@@ -2715,6 +3040,8 @@ export default function MapStage({
           );
         } else {
           onTokenSelectRef.current?.(null);
+          // Clicking empty space also clears any active multi-selection.
+          setMultiSelected(prev => (prev.size === 0 ? prev : new Set()));
         }
       }
 
@@ -2794,7 +3121,14 @@ export default function MapStage({
           return mc.x >= tx && mc.x < tx + sz.gridW * gs && mc.y >= ty && mc.y < ty + sz.gridH * gs;
         });
         if (hit) {
-          tokenDragRef.current = { tokenId: hit.id, origCol: Number(hit.grid_col), origRow: Number(hit.grid_row), startMapX: mc.x, startMapY: mc.y };
+          // Touch drag: single-token only (no shift modifier on touch).
+          tokenDragRef.current = {
+            tokenIds: [hit.id],
+            primaryId: hit.id,
+            origPositions: new Map([[hit.id, { col: Number(hit.grid_col), row: Number(hit.grid_row) }]]),
+            startMapX: mc.x,
+            startMapY: mc.y,
+          };
           return;
         }
       }
@@ -2821,9 +3155,18 @@ export default function MapStage({
         const dr = tokenDragRef.current;
         const mapX = (t[0].clientX - rect.left  - posRef.current.x) / scaleRef.current;
         const mapY = (t[0].clientY - rect.top   - posRef.current.y) / scaleRef.current;
-        const nextX = offsetXRef.current + dr.origCol * gridSizeRef.current + (mapX - dr.startMapX);
-        const nextY = offsetYRef.current + dr.origRow * gridSizeRef.current + (mapY - dr.startMapY);
-        setDragVis({ tokenId: dr.tokenId, x: nextX, y: nextY });
+        const dxMap = mapX - dr.startMapX;
+        const dyMap = mapY - dr.startMapY;
+        const positions = new Map();
+        for (const id of dr.tokenIds) {
+          const orig = dr.origPositions.get(id);
+          if (!orig) continue;
+          positions.set(id, {
+            x: offsetXRef.current + orig.col * gridSizeRef.current + dxMap,
+            y: offsetYRef.current + orig.row * gridSizeRef.current + dyMap,
+          });
+        }
+        setDragVis({ positions });
       } else if (panning.current) {
         setPos({
           x: panStart.current.sx + (t[0].clientX - panStart.current.cx),
@@ -2860,9 +3203,14 @@ export default function MapStage({
         const mapX = (t[0].clientX - rect.left  - posRef.current.x) / scaleRef.current;
         const mapY = (t[0].clientY - rect.top   - posRef.current.y) / scaleRef.current;
         const ox = offsetXRef.current, oy = offsetYRef.current, gs = gridSizeRef.current;
-        const finalX = ox + dr.origCol * gs + (mapX - dr.startMapX);
-        const finalY = oy + dr.origRow * gs + (mapY - dr.startMapY);
-        onTokenMoveRef.current(dr.tokenId, (finalX - ox) / gs, (finalY - oy) / gs);
+        const dxMap = mapX - dr.startMapX, dyMap = mapY - dr.startMapY;
+        for (const id of dr.tokenIds) {
+          const orig = dr.origPositions.get(id);
+          if (!orig) continue;
+          const finalX = ox + orig.col * gs + dxMap;
+          const finalY = oy + orig.row * gs + dyMap;
+          onTokenMoveRef.current(id, (finalX - ox) / gs, (finalY - oy) / gs);
+        }
       }
       tokenDragRef.current = null;
       setDragVis(null);
@@ -2935,6 +3283,46 @@ export default function MapStage({
           {doors.map(d => <DoorShape key={d.id} door={d} />)}
           {DOOR_DRAW_TOOLS.has(activeTool) && <WallPreview preview={wallPreview} />}
         </Layer>
+
+        {/* Marquee selection rectangle — drawn while drag-selecting. */}
+        {marqueeRect && (marqueeRect.w > 0 || marqueeRect.h > 0) && (
+          <Layer listening={false}>
+            <Rect
+              x={marqueeRect.x}
+              y={marqueeRect.y}
+              width={marqueeRect.w}
+              height={marqueeRect.h}
+              fill="rgba(96,165,250,0.10)"
+              stroke="rgba(96,165,250,0.85)"
+              strokeWidth={1.5}
+              dash={[6, 4]}
+              listening={false}
+            />
+          </Layer>
+        )}
+
+        {/* Spell templates — DM-only persistent AOE shapes. */}
+        {!isPlayer && (
+          <Layer listening={false}>
+            {(spellTemplates || []).map(t => {
+              // Live-translate the dragged template so the DM sees it follow
+              // the cursor before the update round-trips through the server.
+              const live = templateMovePreview && templateMovePreview.id === t.id
+                ? { ...t, points: templateMovePreview.points }
+                : t;
+              return (
+                <TemplateShape
+                  key={t.id}
+                  template={live}
+                  isSelected={selectedTemplateId === t.id}
+                />
+              );
+            })}
+            {(TEMPLATE_TOOLS.has(activeTool) || activeTool === 'tpl-erase') && templatePreview && (
+              <TemplatePreview preview={templatePreview} />
+            )}
+          </Layer>
+        )}
 
         {/* Lights — DM-only visual indicators; players see the lighting effect via FOW, not these circles */}
         {!isPlayer && (
@@ -3010,9 +3398,9 @@ export default function MapStage({
                 gridSize={gridSize}
                 offset={tokenOffset}
                 isPlayer={isPlayer}
-                isSelected={selectedTokenId === t.id}
+                isSelected={selectedTokenId === t.id || multiSelected.has(t.id)}
                 isCurrentTurn={currentCombatTokenId === t.id}
-                dragVisPos={dragVis?.tokenId === t.id ? dragVis : null}
+                dragVisPos={dragVis?.positions?.get(t.id) || null}
                 playerTokenId={playerTokenId}
                 showLabel={showLabel}
                 overrideOpacity={overrideOpacity}
@@ -3049,9 +3437,9 @@ export default function MapStage({
                 gridSize={gridSize}
                 offset={tokenOffset}
                 isPlayer={isPlayer}
-                isSelected={selectedTokenId === t.id}
+                isSelected={selectedTokenId === t.id || multiSelected.has(t.id)}
                 isCurrentTurn={currentCombatTokenId === t.id}
-                dragVisPos={dragVis?.tokenId === t.id ? dragVis : null}
+                dragVisPos={dragVis?.positions?.get(t.id) || null}
                 playerTokenId={playerTokenId}
                 showLabel={showLabel}
                 overrideOpacity={overrideOpacity}

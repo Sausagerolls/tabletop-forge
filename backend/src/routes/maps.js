@@ -56,7 +56,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', upload.single('image'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
-    const { name, grid_size, session_id } = req.body;
+    const { name, grid_size, session_id, floor_label } = req.body;
     const imagePath = `maps/${req.file.filename}`;
     const filePath = req.file.path;
 
@@ -73,8 +73,8 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 
     const result = await db.query(
-      'INSERT INTO maps (session_id, name, image_path, width, height, grid_size) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
-      [session_id || null, name || req.file.originalname, imagePath, imgWidth, imgHeight, parseInt(grid_size) || 50]
+      'INSERT INTO maps (session_id, name, image_path, width, height, grid_size, floor_label) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+      [session_id || null, name || req.file.originalname, imagePath, imgWidth, imgHeight, parseInt(grid_size) || 50, floor_label || '']
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -85,10 +85,10 @@ router.post('/', upload.single('image'), async (req, res) => {
 // PATCH /api/maps/:id
 router.patch('/:id', async (req, res) => {
   try {
-    const { name, grid_size } = req.body;
+    const { name, grid_size, floor_label } = req.body;
     const result = await db.query(
-      'UPDATE maps SET name=COALESCE($1,name), grid_size=COALESCE($2,grid_size) WHERE id=$3 RETURNING *',
-      [name, grid_size, req.params.id]
+      'UPDATE maps SET name=COALESCE($1,name), grid_size=COALESCE($2,grid_size), floor_label=COALESCE($3,floor_label) WHERE id=$4 RETURNING *',
+      [name, grid_size, floor_label, req.params.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);

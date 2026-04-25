@@ -262,7 +262,22 @@ const SPAWN_GROUP = {
   ],
 };
 
-const DM_GROUPS = [MEASURE_GROUP, WALL_GROUP, DOOR_GROUP, LIGHT_DARK_GROUP, EFFECTS_GROUP, SPAWN_GROUP];
+const TEMPLATE_GROUP = {
+  id: 'template',
+  label: 'Templates',
+  color: 'purple-500',
+  icon: <ConeIcon />,
+  tools: [
+    { id: 'tpl-cone',   label: 'Cone',   key: 'U', icon: <ConeIcon /> },
+    { id: 'tpl-circle', label: 'Sphere', key: 'I', icon: <CircleIcon /> },
+    { id: 'tpl-line',   label: 'Line',   key: 'K', icon: <RulerIcon /> },
+    { id: 'tpl-square', label: 'Cube',   key: 'B', icon: <WallRectIcon /> },
+    { id: 'tpl-edit',   label: 'Move/Edit', key: 'Y', icon: <FeatherIcon /> },
+    { id: 'tpl-erase',  label: 'Erase',  key: 'V', icon: <EraseIcon />, danger: true },
+  ],
+};
+
+const DM_GROUPS = [MEASURE_GROUP, WALL_GROUP, DOOR_GROUP, LIGHT_DARK_GROUP, EFFECTS_GROUP, TEMPLATE_GROUP, SPAWN_GROUP];
 
 // ── Flyout group button ───────────────────────────────────────────────────────
 

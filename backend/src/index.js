@@ -153,6 +153,7 @@ db.query(`
 
 // Track connected users per session
 const sessionUsers = {}; // sessionCode -> Map<socketId, {name, role}>
+const sessionTemplates = {}; // sessionCode -> Array<{ id, type, points, color, label }> — DM-only
 const sessionUserColors = {}; // sessionCode -> { name: color }
 
 async function getSessionState(sessionCode) {
@@ -272,8 +273,10 @@ io.on('connection', (socket) => {
       sessionUsers[sessionCode].set(socket.id, { name, role });
 
       const state = await getSessionState(sessionCode);
-      // Strip DM-only data from player state so markers never reach player clients
-      const sendState = role === 'dm' ? state : { ...state, dmMarkers: [] };
+      // Strip DM-only data from player state so markers/templates never reach player clients
+      const sendState = role === 'dm'
+        ? { ...state, spellTemplates: sessionTemplates[sessionCode] || [] }
+        : { ...state, dmMarkers: [] };
       const colors = sessionUserColors[sessionCode] || {};
       const currentUsers = Array.from(sessionUsers[sessionCode].values());
       socket.emit('session_joined', { state: sendState, role, userColors: colors, users: currentUsers });
@@ -304,35 +307,71 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── HP update (DM only) ───────────────────────────────────────────────────
+  // ── HP update — DM, or the player who owns the token ────────────────────
   socket.on('update_token_hp', async ({ tokenId, currentHp }) => {
-    if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
 
     try {
-      await db.query(
-        'UPDATE session_tokens SET current_hp=$1 WHERE id=$2',
-        [currentHp, tokenId]
+      // Permission: DM can update any token; a player can only update their own.
+      const prev = await db.query(
+        'SELECT current_hp, creature_id, player_name FROM session_tokens WHERE id=$1',
+        [tokenId]
       );
+      if (!prev.rows.length) return;
+      const row = prev.rows[0];
+      const isDM = socket.data.role === 'dm';
+      const isOwner = !!row.player_name && row.player_name === socket.data.name;
+      if (!isDM && !isOwner) return;
+
+      const oldHp = Number(row.current_hp) || 0;
+      await db.query('UPDATE session_tokens SET current_hp=$1 WHERE id=$2', [currentHp, tokenId]);
       io.to(sessionCode).emit('token_hp_changed', { tokenId, currentHp });
+
+      // Concentration auto-prompt: if HP went down and the creature is
+      // concentrating on a spell, broadcast a check with DC = max(10, dmg/2).
+      const damage = oldHp - Number(currentHp);
+      if (damage > 0 && row.creature_id) {
+        const cre = await db.query(
+          'SELECT concentrating_on, save_con FROM creatures WHERE id=$1',
+          [row.creature_id]
+        );
+        const c = cre.rows[0];
+        if (c && c.concentrating_on) {
+          const dc = Math.max(10, Math.floor(damage / 2));
+          io.to(sessionCode).emit('concentration_check', {
+            tokenId,
+            creatureId: row.creature_id,
+            dc,
+            damage,
+            spellName: c.concentrating_on,
+            conSaveBonus: c.save_con,
+          });
+        }
+      }
     } catch (err) {
       console.error(err);
     }
   });
 
-  // ── Temp HP update (DM only) ──────────────────────────────────────────────
+  // ── Temp HP update — DM, or the player who owns the token ───────────────
   socket.on('update_token_temp_hp', async ({ tokenId, tempHp }) => {
-    if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
 
     try {
-      await db.query(
-        'UPDATE session_tokens SET temp_hp=$1 WHERE id=$2',
-        [tempHp, tokenId]
+      const prev = await db.query(
+        'SELECT player_name FROM session_tokens WHERE id=$1',
+        [tokenId]
       );
-      io.to(sessionCode).emit('token_temp_hp_changed', { tokenId, tempHp });
+      if (!prev.rows.length) return;
+      const isDM = socket.data.role === 'dm';
+      const isOwner = !!prev.rows[0].player_name && prev.rows[0].player_name === socket.data.name;
+      if (!isDM && !isOwner) return;
+
+      const safeTempHp = Math.max(0, Number(tempHp) || 0);
+      await db.query('UPDATE session_tokens SET temp_hp=$1 WHERE id=$2', [safeTempHp, tokenId]);
+      io.to(sessionCode).emit('token_temp_hp_changed', { tokenId, tempHp: safeTempHp });
     } catch (err) {
       console.error(err);
     }
@@ -705,6 +744,102 @@ io.on('connection', (socket) => {
         });
       }
     } catch (err) { console.error('send_currency error:', err); }
+  });
+
+  // ── Spell templates — DM-only persistent on-map AOE shapes ─────────────
+  // Helper: emit only to DM sockets in the room. Players never see templates.
+  function emitToDms(sessionCode, event, payload) {
+    const room = io.sockets.adapter.rooms.get(sessionCode);
+    if (!room) return;
+    for (const sid of room) {
+      const s = io.sockets.sockets.get(sid);
+      if (s && s.data && s.data.role === 'dm') s.emit(event, payload);
+    }
+  }
+
+  socket.on('place_template', ({ type, points, color, label }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    if (!Array.isArray(points) || points.length < 3) return;
+    const allowed = new Set(['cone', 'circle', 'line', 'square']);
+    if (!allowed.has(type)) return;
+    const tpl = {
+      id: require('crypto').randomUUID(),
+      type,
+      points: points.slice(0, 8).map(Number),
+      color: typeof color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : '#a855f7',
+      label: typeof label === 'string' ? label.slice(0, 60) : '',
+    };
+    if (!sessionTemplates[sessionCode]) sessionTemplates[sessionCode] = [];
+    sessionTemplates[sessionCode].push(tpl);
+    emitToDms(sessionCode, 'template_placed', tpl);
+  });
+
+  socket.on('update_template', ({ id, points, color, label }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    const list = sessionTemplates[sessionCode];
+    if (!list) return;
+    const t = list.find(x => x.id === id);
+    if (!t) return;
+    if (Array.isArray(points) && points.length >= 3) {
+      t.points = points.slice(0, 8).map(Number);
+    }
+    if (typeof color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(color)) {
+      t.color = color;
+    }
+    if (typeof label === 'string') {
+      t.label = label.slice(0, 60);
+    }
+    emitToDms(sessionCode, 'template_updated', t);
+  });
+
+  socket.on('delete_template', ({ id }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    const list = sessionTemplates[sessionCode];
+    if (!list) return;
+    const idx = list.findIndex(t => t.id === id);
+    if (idx === -1) return;
+    list.splice(idx, 1);
+    emitToDms(sessionCode, 'template_deleted', { id });
+  });
+
+  socket.on('clear_templates', () => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    sessionTemplates[sessionCode] = [];
+    emitToDms(sessionCode, 'templates_cleared');
+  });
+
+  // ── Send a handout (DM only) — broadcast to room or whisper to player ───
+  socket.on('send_handout', ({ target, title, body, imageUrl }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    const payload = {
+      title: String(title || '').slice(0, 200),
+      body: String(body || '').slice(0, 8000),
+      imageUrl: typeof imageUrl === 'string' ? imageUrl.slice(0, 1000) : '',
+      sentAt: Date.now(),
+    };
+    if (!target || target === 'all') {
+      io.to(sessionCode).emit('handout_received', payload);
+      return;
+    }
+    // Find sockets in the room with the matching player name and emit only to them.
+    const room = io.sockets.adapter.rooms.get(sessionCode);
+    if (!room) return;
+    for (const sid of room) {
+      const s = io.sockets.sockets.get(sid);
+      if (s && s.data && s.data.name === target) {
+        s.emit('handout_received', payload);
+      }
+    }
   });
 
   // ── Set token light source (player: their own token; DM: any) ────────────
@@ -1373,6 +1508,8 @@ server.listen(PORT, async () => {
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS concentrating_on VARCHAR(120) DEFAULT ''`);
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS char_level INTEGER DEFAULT 1`);
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS char_xp INTEGER DEFAULT 0`);
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS player_notes TEXT DEFAULT ''`);
+    await db.query(`ALTER TABLE maps ADD COLUMN IF NOT EXISTS floor_label VARCHAR(60) DEFAULT ''`);
   } catch (err) {
     console.warn('Migration warning:', err.message);
   }

@@ -87,7 +87,7 @@ export default function DiceRoller({ rolls, isPlayer }) {
 // Overlay component for floating dice results
 export function DiceRollOverlay({ rolls }) {
   return (
-    <div className="fixed bottom-4 right-4 space-y-2 z-50 pointer-events-none max-w-xs">
+    <div className="fixed bottom-4 right-4 space-y-2 z-[80] pointer-events-none max-w-xs">
       {rolls.map((roll) => (
         <div
           key={roll.id}

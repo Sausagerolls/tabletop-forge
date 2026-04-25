@@ -110,8 +110,8 @@ function hexOpacityToRgba(hex, opacity) {
   return `rgba(${r},${g},${b},${Number(opacity).toFixed(2)})`;
 }
 
-const PANEL_TABS = ['map', 'library', 'tokens', 'markers', 'treasure', 'session'];
-const PANEL_LABELS = { map: 'Map', library: 'Library', tokens: 'Tokens', markers: 'Markers', treasure: 'Treasure', session: 'Session' };
+const PANEL_TABS = ['map', 'library', 'tokens', 'markers', 'treasure', 'handouts', 'session'];
+const PANEL_LABELS = { map: 'Map', library: 'Library', tokens: 'Tokens', markers: 'Markers', treasure: 'Treasure', handouts: 'Handouts', session: 'Session' };
 
 const DM_MARKER_TYPES = [
   { type: 'text_label',  Icon: MarkerIcons.text_label, label: 'Text Label'    },
@@ -655,6 +655,9 @@ export default function DMView() {
   const [selectedToken, setSelectedToken] = useState(null);
   const [tokenListCollapsed, setTokenListCollapsed] = useState(false);
   const [tokenOrder, setTokenOrder] = useState([]); // array of token ids — manual order for non-player tokens
+  const [handoutTitle, setHandoutTitle] = useState('');
+  const [handoutBody, setHandoutBody] = useState('');
+  const [handoutImageUrl, setHandoutImageUrl] = useState('');
   const sortedTokens = useMemo(() => {
     // Player tokens always first (by name), then non-player in manual order
     // (tokens not yet in tokenOrder are appended to the end by id).
@@ -747,6 +750,8 @@ export default function DMView() {
   const [lights, setLights] = useState([]);
   const [magicalDarkness, setMagicalDarkness] = useState([]);
   const [spawnPoint, setSpawnPoint] = useState({ col: 0, row: 0 });
+  const [spellTemplates, setSpellTemplates] = useState([]);
+  const [editingTemplateId, setEditingTemplateId] = useState(null);
   const [fowEnabled, setFowEnabled] = useState(false);
   const [fowBlur, setFowBlur] = useState(16);
   const [ambientLight, setAmbientLight] = useState('bright');
@@ -843,6 +848,7 @@ export default function DMView() {
       setDoors(state.doors || []);
       setLights(state.lights || []);
       setMagicalDarkness(state.magicalDarkness || []);
+      setSpellTemplates(state.spellTemplates || []);
       setDmMarkers(state.dmMarkers || []);
       setSpawnPoint(state.spawnPoint || { col: 0, row: 0 });
       setFowEnabled(state.session.fow_enabled || false);
@@ -970,6 +976,13 @@ export default function DMView() {
 
     socket.on('magical_darkness_added',   ({ darkness }) => setMagicalDarkness(prev => [...prev, darkness]));
     socket.on('magical_darkness_deleted', ({ darknessId }) => setMagicalDarkness(prev => prev.filter(d => d.id !== darknessId)));
+    socket.on('template_placed',   (tpl) => setSpellTemplates(prev => [...prev, tpl]));
+    socket.on('template_updated',  (tpl) => setSpellTemplates(prev => prev.map(t => t.id === tpl.id ? tpl : t)));
+    socket.on('template_deleted',  ({ id }) => {
+      setSpellTemplates(prev => prev.filter(t => t.id !== id));
+      setEditingTemplateId(prev => prev === id ? null : prev);
+    });
+    socket.on('templates_cleared', () => { setSpellTemplates([]); setEditingTemplateId(null); });
     socket.on('magical_darkness_cleared', () => setMagicalDarkness([]));
     socket.on('zone_feather_updated', ({ darknessId, featherAmount }) =>
       setMagicalDarkness(prev => prev.map(d => d.id === darknessId ? { ...d, feather_amount: featherAmount } : d)));
@@ -1593,6 +1606,12 @@ export default function DMView() {
             onDmMarkerClick={handleDmMarkerClick}
             currentCombatTokenId={currentCombatTokenId}
             onMeasureChange={handleMeasureChange}
+            spellTemplates={spellTemplates}
+            selectedTemplateId={editingTemplateId}
+            onTemplatePlace={(tpl) => socket.emit('place_template', tpl)}
+            onTemplateUpdate={(payload) => socket.emit('update_template', payload)}
+            onTemplateDelete={(id) => { socket.emit('delete_template', { id }); setEditingTemplateId(prev => prev === id ? null : prev); }}
+            onTemplateSelect={(id) => setEditingTemplateId(id)}
             remoteMeasurements={remoteMeasurements}
           />
 
@@ -2116,38 +2135,76 @@ export default function DMView() {
                   </div>
                 </div>
 
-                {maps.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-dnd-gold mb-2">Map Library</h3>
-                    <div className="space-y-2">
-                      {maps.map((m) => (
-                        <div
-                          key={m.id}
-                          onClick={() => handleChangeMap(m.id)}
-                          className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
-                            session.map_id === m.id ? 'bg-dnd-gold/10 border border-dnd-gold/30' : 'bg-gray-800 hover:bg-gray-750'
-                          }`}
-                        >
-                          <div className="w-12 h-9 bg-gray-700 rounded overflow-hidden shrink-0">
-                            <img src={`/uploads/${m.image_path}`} alt={m.name} className="w-full h-full object-cover" />
+                {maps.length > 0 && (() => {
+                  // Group by floor_label so multi-floor dungeons read clearly.
+                  const groups = new Map();
+                  for (const m of maps) {
+                    const k = m.floor_label || '';
+                    if (!groups.has(k)) groups.set(k, []);
+                    groups.get(k).push(m);
+                  }
+                  const groupKeys = Array.from(groups.keys()).sort();
+                  return (
+                    <div>
+                      <h3 className="text-sm font-semibold text-dnd-gold mb-2">Map Library</h3>
+                      <div className="space-y-3">
+                        {groupKeys.map(gk => (
+                          <div key={gk}>
+                            {gk && <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">{gk}</div>}
+                            <div className="space-y-2">
+                              {groups.get(gk).map((m) => (
+                                <div
+                                  key={m.id}
+                                  onClick={() => handleChangeMap(m.id)}
+                                  className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                                    session.map_id === m.id ? 'bg-dnd-gold/10 border border-dnd-gold/30' : 'bg-gray-800 hover:bg-gray-750'
+                                  }`}
+                                >
+                                  <div className="w-12 h-9 bg-gray-700 rounded overflow-hidden shrink-0">
+                                    <img src={`/uploads/${m.image_path}`} alt={m.name} className="w-full h-full object-cover" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm text-white truncate">{m.name}</div>
+                                    <div className="text-xs text-gray-400">
+                                      Grid: {m.grid_size}px
+                                      {m.floor_label ? ` · ${m.floor_label}` : ''}
+                                    </div>
+                                    <input
+                                      onClick={(e) => e.stopPropagation()}
+                                      onBlur={async (e) => {
+                                        const v = e.target.value;
+                                        if ((m.floor_label || '') === v) return;
+                                        try {
+                                          const res = await fetch(`/api/maps/${m.id}`, {
+                                            method: 'PATCH',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ floor_label: v }),
+                                          });
+                                          if (res.ok) await loadMaps(session.id);
+                                        } catch {}
+                                      }}
+                                      defaultValue={m.floor_label || ''}
+                                      placeholder="Floor label (e.g. Ground)"
+                                      className="mt-1 w-full bg-gray-900/40 border border-gray-700 rounded px-1.5 py-0.5 text-[11px] text-gray-300"
+                                    />
+                                  </div>
+                                  {session.map_id === m.id && <span className="text-dnd-gold text-xs shrink-0">Active</span>}
+                                  <button
+                                    onClick={(e) => handleDeleteMap(e, m.id)}
+                                    title="Delete map"
+                                    className="shrink-0 text-gray-600 hover:text-red-400 transition-colors text-sm px-1"
+                                  >
+                                    🗑️
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm text-white truncate">{m.name}</div>
-                            <div className="text-xs text-gray-400">Grid: {m.grid_size}px</div>
-                          </div>
-                          {session.map_id === m.id && <span className="text-dnd-gold text-xs shrink-0">Active</span>}
-                          <button
-                            onClick={(e) => handleDeleteMap(e, m.id)}
-                            title="Delete map"
-                            className="shrink-0 text-gray-600 hover:text-red-400 transition-colors text-sm px-1"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
 
@@ -2600,6 +2657,83 @@ export default function DMView() {
               );
             })()}
 
+            {/* ── HANDOUTS TAB ── */}
+            {panelTab === 'handouts' && (() => {
+              const pcTokens = tokens.filter(t => t.is_player && t.player_name);
+              return (
+                <div className="h-full overflow-y-auto p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-dnd-gold">Compose Handout</h3>
+                  </div>
+                  <input
+                    className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white"
+                    placeholder="Title (e.g. Letter from the Baron)"
+                    value={handoutTitle}
+                    onChange={(e) => setHandoutTitle(e.target.value)}
+                  />
+                  <input
+                    className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white"
+                    placeholder="Image URL (optional)"
+                    value={handoutImageUrl}
+                    onChange={(e) => setHandoutImageUrl(e.target.value)}
+                  />
+                  <textarea
+                    className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white resize-none"
+                    placeholder="Body — text the players will read"
+                    rows={6}
+                    value={handoutBody}
+                    onChange={(e) => setHandoutBody(e.target.value)}
+                  />
+                  <div className="space-y-2">
+                    <h4 className="text-xs text-gray-400 uppercase tracking-wide">Send To</h4>
+                    <button
+                      onClick={() => {
+                        if (!handoutTitle && !handoutBody && !handoutImageUrl) return;
+                        socket.emit('send_handout', {
+                          target: 'all',
+                          title: handoutTitle,
+                          body: handoutBody,
+                          imageUrl: handoutImageUrl,
+                        });
+                      }}
+                      disabled={!handoutTitle && !handoutBody && !handoutImageUrl}
+                      className="w-full bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-semibold"
+                    >
+                      Send to all players
+                    </button>
+                    {pcTokens.length > 0 && (
+                      <div className="space-y-1">
+                        {pcTokens.map(t => (
+                          <button
+                            key={t.id}
+                            onClick={() => {
+                              if (!handoutTitle && !handoutBody && !handoutImageUrl) return;
+                              socket.emit('send_handout', {
+                                target: t.player_name,
+                                title: handoutTitle,
+                                body: handoutBody,
+                                imageUrl: handoutImageUrl,
+                              });
+                            }}
+                            disabled={!handoutTitle && !handoutBody && !handoutImageUrl}
+                            className="w-full text-left bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 px-3 py-1.5 rounded text-sm"
+                          >
+                            Send only to <span className="text-purple-300">{t.player_name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setHandoutTitle(''); setHandoutBody(''); setHandoutImageUrl(''); }}
+                    className="w-full text-xs text-gray-500 hover:text-gray-300 py-1"
+                  >
+                    Clear
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* ── SESSION TAB ── */}
             {panelTab === 'session' && (
               <div className="h-full overflow-y-auto p-4 space-y-4">
@@ -2794,6 +2928,71 @@ export default function DMView() {
 
       {/* Actions reference modal */}
       {showActionsRef && <ActionsReference onClose={() => setShowActionsRef(false)} />}
+
+      {/* Spell template edit popup */}
+      {editingTemplateId && (() => {
+        const tpl = spellTemplates.find(t => t.id === editingTemplateId);
+        if (!tpl) return null;
+        return (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setEditingTemplateId(null)}>
+            <div
+              className="bg-dnd-panel border border-gray-700 rounded-xl w-80 shadow-2xl p-4 space-y-3"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-dnd-gold font-semibold">Edit Template</h3>
+                <button onClick={() => setEditingTemplateId(null)} className="text-gray-400 hover:text-white flex items-center"><XIcon /></button>
+              </div>
+              <div className="text-xs text-gray-400 capitalize">{tpl.type}</div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-300">Color:</label>
+                <input
+                  type="color"
+                  className="w-10 h-8 rounded border border-gray-600 cursor-pointer"
+                  value={tpl.color || '#a855f7'}
+                  onChange={(e) => socket.emit('update_template', { id: tpl.id, color: e.target.value })}
+                />
+                <span className="text-xs text-gray-500 font-mono">{tpl.color || '#a855f7'}</span>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Label</label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white"
+                  placeholder="(optional)"
+                  defaultValue={tpl.label || ''}
+                  onBlur={(e) => {
+                    const v = e.target.value;
+                    if (v !== (tpl.label || '')) socket.emit('update_template', { id: tpl.id, label: v });
+                  }}
+                />
+              </div>
+              {tpl.type === 'circle' && (
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Radius (ft)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white"
+                    defaultValue={Math.round((tpl.points[2] || 0) / (gridSize / 5))}
+                    onBlur={(e) => {
+                      const ft = Math.max(1, parseInt(e.target.value) || 1);
+                      const px = ft * (gridSize / 5);
+                      const next = [tpl.points[0], tpl.points[1], px];
+                      socket.emit('update_template', { id: tpl.id, points: next });
+                    }}
+                  />
+                </div>
+              )}
+              <button
+                onClick={() => { socket.emit('delete_template', { id: tpl.id }); setEditingTemplateId(null); }}
+                className="w-full bg-red-900/50 hover:bg-red-800/60 border border-red-700 text-red-300 py-1.5 rounded-lg text-sm font-semibold"
+              >
+                Delete template
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Light edit popup */}
       {editingLight && (() => {

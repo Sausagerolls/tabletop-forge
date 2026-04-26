@@ -17,6 +17,7 @@ const wallsRouter = require('./routes/walls');
 const doorsRouter = require('./routes/doors');
 const lightsRouter = require('./routes/lights');
 const dd2vttRouter = require('./routes/dd2vtt');
+const spellLibraryRouter = require('./routes/spell_library');
 
 const app = express();
 const server = http.createServer(app);
@@ -125,6 +126,7 @@ app.use('/api/walls', wallsRouter);
 app.use('/api/doors', doorsRouter);
 app.use('/api/lights', lightsRouter);
 app.use('/api/dd2vtt', dd2vttRouter);
+app.use('/api/spell-library', spellLibraryRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
@@ -1510,6 +1512,31 @@ server.listen(PORT, async () => {
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS char_xp INTEGER DEFAULT 0`);
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS player_notes TEXT DEFAULT ''`);
     await db.query(`ALTER TABLE maps ADD COLUMN IF NOT EXISTS floor_label VARCHAR(60) DEFAULT ''`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS spell_library (
+        id UUID PRIMARY KEY,
+        name VARCHAR(120) NOT NULL UNIQUE,
+        level INTEGER NOT NULL DEFAULT 0,
+        type VARCHAR(20) NOT NULL DEFAULT 'utility',
+        school VARCHAR(40) DEFAULT '',
+        casting_time VARCHAR(80) DEFAULT '',
+        range_area VARCHAR(120) DEFAULT '',
+        duration VARCHAR(80) DEFAULT '',
+        comp_v BOOLEAN DEFAULT false,
+        comp_s BOOLEAN DEFAULT false,
+        comp_m BOOLEAN DEFAULT false,
+        comp_m_text VARCHAR(200) DEFAULT '',
+        attack_save VARCHAR(20) DEFAULT '',
+        save_ability VARCHAR(8) DEFAULT '',
+        damage_entries JSONB DEFAULT '[]',
+        extra_effects TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        source VARCHAR(200) DEFAULT '',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_spell_library_level ON spell_library(level)`);
+    await db.query(`ALTER TABLE spell_library ADD COLUMN IF NOT EXISTS allowed_classes JSONB DEFAULT '[]'`);
   } catch (err) {
     console.warn('Migration warning:', err.message);
   }

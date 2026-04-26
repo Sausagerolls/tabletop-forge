@@ -229,6 +229,34 @@ ALTER TABLE creatures ADD COLUMN IF NOT EXISTS char_xp INTEGER DEFAULT 0;
 ALTER TABLE creatures ADD COLUMN IF NOT EXISTS player_notes TEXT DEFAULT '';
 ALTER TABLE maps ADD COLUMN IF NOT EXISTS floor_label VARCHAR(60) DEFAULT '';
 
+-- Shared spell library — populated by scanning PDFs (or manually). Players
+-- "learn" by copying a row into their creature.spells JSONB. The structured
+-- shape mirrors the existing per-character spell schema so the copy is direct.
+CREATE TABLE IF NOT EXISTS spell_library (
+  id UUID PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  level INTEGER NOT NULL DEFAULT 0,
+  type VARCHAR(20) NOT NULL DEFAULT 'utility',
+  school VARCHAR(40) DEFAULT '',
+  casting_time VARCHAR(80) DEFAULT '',
+  range_area VARCHAR(120) DEFAULT '',
+  duration VARCHAR(80) DEFAULT '',
+  comp_v BOOLEAN DEFAULT false,
+  comp_s BOOLEAN DEFAULT false,
+  comp_m BOOLEAN DEFAULT false,
+  comp_m_text VARCHAR(200) DEFAULT '',
+  attack_save VARCHAR(20) DEFAULT '',
+  save_ability VARCHAR(8) DEFAULT '',
+  damage_entries JSONB DEFAULT '[]',
+  extra_effects TEXT DEFAULT '',
+  description TEXT DEFAULT '',
+  source VARCHAR(200) DEFAULT '',
+  allowed_classes JSONB DEFAULT '[]',
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (name)
+);
+CREATE INDEX IF NOT EXISTS idx_spell_library_level ON spell_library(level);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_dm_markers_session ON dm_markers(session_id);
 CREATE INDEX IF NOT EXISTS idx_dm_markers_map ON dm_markers(map_id);

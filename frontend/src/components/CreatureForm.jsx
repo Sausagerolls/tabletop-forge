@@ -313,6 +313,117 @@ function SpellEditor({
   );
 }
 
+const CLASSES = ['Artificer','Barbarian','Bard','Cleric','Druid','Fighter','Monk','Paladin','Ranger','Rogue','Sorcerer','Warlock','Wizard'];
+
+function SpellLibraryPicker({ onLearn, charClass }) {
+  const [open, setOpen] = useState(false);
+  const [spells, setSpells] = useState([]);
+  const [search, setSearch] = useState('');
+  const [levelFilter, setLevelFilter] = useState('');
+  // Default class filter to the character's class. Empty string = "All classes".
+  const initialClass = (() => {
+    const k = String(charClass || '').trim().toLowerCase();
+    return CLASSES.find(c => c.toLowerCase() === k) || '';
+  })();
+  const [classFilter, setClassFilter] = useState(initialClass);
+  const [loaded, setLoaded] = useState(false);
+  const labels = ['Cantrip','1st','2nd','3rd','4th','5th','6th','7th','8th','9th'];
+
+  async function load() {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (levelFilter !== '') params.set('level', levelFilter);
+    if (classFilter) params.set('klass', classFilter);
+    try {
+      const res = await fetch(`/api/spell-library?${params}`);
+      const data = await res.json();
+      setSpells(Array.isArray(data) ? data : []);
+      setLoaded(true);
+    } catch (err) {
+      console.error(err);
+      setLoaded(true);
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(load, 250);
+    return () => clearTimeout(t);
+  }, [open, search, levelFilter, classFilter]);
+
+  return (
+    <div className="bg-gray-800/50 rounded-xl border border-gray-700 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-gray-800 hover:bg-gray-750 text-sm font-semibold text-dnd-gold border-b border-gray-700"
+      >
+        <span>📚 Learn from Spell Library</span>
+        <span className="text-xs text-gray-400">{open ? 'Close' : 'Open'}</span>
+      </button>
+      {open && (
+        <div className="p-3 space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <input
+              placeholder="Search by name…"
+              className="flex-1 min-w-[120px] bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <select
+              className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+              value={levelFilter}
+              onChange={(e) => setLevelFilter(e.target.value)}
+            >
+              <option value="">All levels</option>
+              {labels.map((l, i) => <option key={i} value={i}>{l}</option>)}
+            </select>
+            <select
+              className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+              value={classFilter}
+              onChange={(e) => setClassFilter(e.target.value)}
+              title="Override to view spells from other classes"
+            >
+              <option value="">All classes</option>
+              {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          {initialClass && classFilter === initialClass && (
+            <p className="text-[10px] text-gray-500 italic">
+              Defaulted to <span className="text-purple-300">{initialClass}</span> spells. Switch the filter to override.
+            </p>
+          )}
+          {loaded && spells.length === 0 && (
+            <p className="text-xs text-gray-500 italic">No spells match. Switch class filter to "All classes" or ask your DM to scan a PDF.</p>
+          )}
+          <div className="space-y-1 max-h-64 overflow-y-auto">
+            {spells.map(s => (
+              <div key={s.id} className="flex items-center gap-2 bg-gray-700/40 rounded px-2 py-1">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-white truncate">{s.name}</div>
+                  <div className="text-[10px] text-gray-400">
+                    {labels[s.level] || `lvl ${s.level}`}{s.school ? ` · ${s.school}` : ''}
+                    {Array.isArray(s.allowed_classes) && s.allowed_classes.length > 0 && (
+                      <span className="text-purple-300"> · {s.allowed_classes.join(', ')}</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onLearn(s)}
+                  className="text-xs bg-dnd-gold hover:bg-yellow-500 text-gray-900 px-2 py-1 rounded font-semibold"
+                >
+                  Learn
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AbilityList({ label, items, onAdd, onRemove, onChange }) {
   return (
     <div className="space-y-2">
@@ -1369,6 +1480,41 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         {/* ── Spells tab ── */}
         {activeTab === 'spells' && (
           <div className="space-y-5">
+            <SpellLibraryPicker
+              charClass={form.char_class}
+              onLearn={(libSpell) => {
+                // Avoid name collision in this character's spell list.
+                const existing = (form.spells || []).find(s => (s.name || '').toLowerCase() === (libSpell.name || '').toLowerCase());
+                if (existing) {
+                  alert(`"${libSpell.name}" is already in this character's spells.`);
+                  return;
+                }
+                const learned = {
+                  id: Date.now() + Math.random(),
+                  name: libSpell.name || '',
+                  level: Number(libSpell.level) || 0,
+                  type: libSpell.type === 'combat' ? 'combat' : 'utility',
+                  school: libSpell.school || '',
+                  casting_time: libSpell.casting_time || '',
+                  range_area: libSpell.range_area || '',
+                  duration: libSpell.duration || '',
+                  comp_v: !!libSpell.comp_v,
+                  comp_s: !!libSpell.comp_s,
+                  comp_m: !!libSpell.comp_m,
+                  comp_m_text: libSpell.comp_m_text || '',
+                  attack_save: libSpell.attack_save || '',
+                  save_ability: libSpell.save_ability || '',
+                  damage_entries: Array.isArray(libSpell.damage_entries) && libSpell.damage_entries.length
+                    ? libSpell.damage_entries.map(d => ({ damage: d.damage || '', damage_type: d.damage_type || '' }))
+                    : [{ damage: '', damage_type: '' }],
+                  extra_effects: libSpell.extra_effects || '',
+                  description: libSpell.description || '',
+                  prepared: false,
+                  casting_ability: '',
+                };
+                setForm(f => ({ ...f, spells: [...(f.spells || []), learned] }));
+              }}
+            />
             {[0,1,2,3,4,5,6,7,8,9].map((level) => {
               const levelSpells = (form.spells || []).filter((s) => s.level === level);
               const slots = form.spell_slots?.[level] || { total: 0, used: 0 };

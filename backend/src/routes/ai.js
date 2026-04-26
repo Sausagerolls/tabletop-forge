@@ -90,12 +90,36 @@ function buildUserPrompt(promptData) {
   return `Generate a complete D&D 5e stat block for the following creature. Return only JSON.\n\n${lines.join('\n')}`;
 }
 
+// Normalise a baseUrl that the user typed (e.g. add scheme if missing) and
+// surface the underlying network cause when fetch throws.
+function normaliseBaseUrl(raw) {
+  let u = String(raw || '').trim();
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = `http://${u}`;
+  return u.replace(/\/+$/, '');
+}
+
+async function fetchWithDetail(url, opts) {
+  try {
+    return await fetch(url, opts);
+  } catch (err) {
+    const cause = err?.cause;
+    let detail = err?.message || 'fetch failed';
+    if (cause) {
+      if (cause.code) detail += ` (${cause.code})`;
+      if (cause.message && cause.message !== err.message) detail += `: ${cause.message}`;
+    }
+    detail += ` — url=${url}`;
+    throw new Error(detail);
+  }
+}
+
 async function callOpenAICompat(baseUrl, apiKey, model, messages) {
-  const url = `${baseUrl.replace(/\/+$/, '')}/v1/chat/completions`;
+  const url = `${normaliseBaseUrl(baseUrl)}/v1/chat/completions`;
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
-  const res = await fetch(url, {
+  const res = await fetchWithDetail(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({ model: model || 'local-model', messages, temperature: 0.7, stream: false }),
@@ -103,7 +127,7 @@ async function callOpenAICompat(baseUrl, apiKey, model, messages) {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`API error ${res.status}: ${text.slice(0, 300)}`);
+    throw new Error(`API error ${res.status}: ${text.slice(0, 400)}`);
   }
 
   const data = await res.json();
@@ -113,8 +137,8 @@ async function callOpenAICompat(baseUrl, apiKey, model, messages) {
 }
 
 async function callOllama(baseUrl, model, messages) {
-  const url = `${baseUrl.replace(/\/+$/, '')}/api/chat`;
-  const res = await fetch(url, {
+  const url = `${normaliseBaseUrl(baseUrl)}/api/chat`;
+  const res = await fetchWithDetail(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: model || 'llama3', messages, stream: false }),
@@ -122,7 +146,7 @@ async function callOllama(baseUrl, model, messages) {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Ollama error ${res.status}: ${text.slice(0, 300)}`);
+    throw new Error(`Ollama error ${res.status}: ${text.slice(0, 400)}`);
   }
 
   const data = await res.json();

@@ -4,6 +4,7 @@ import socket from '../socket.js';
 import MapStage, { TOKEN_SIZES, DM_MARKER_ICONS, DM_MARKER_COLORS } from './MapStage.jsx';
 import DiceRoller, { DiceRollOverlay } from './DiceRoller.jsx';
 import CreatureLibrary from './CreatureLibrary.jsx';
+import SpellLibrary from './SpellLibrary.jsx';
 import ToolPanel from './ToolPanel.jsx';
 import StatBlock from './StatBlock.jsx';
 import ActionsReference from './ActionsReference.jsx';
@@ -110,8 +111,8 @@ function hexOpacityToRgba(hex, opacity) {
   return `rgba(${r},${g},${b},${Number(opacity).toFixed(2)})`;
 }
 
-const PANEL_TABS = ['map', 'library', 'tokens', 'markers', 'treasure', 'handouts', 'session'];
-const PANEL_LABELS = { map: 'Map', library: 'Library', tokens: 'Tokens', markers: 'Markers', treasure: 'Treasure', handouts: 'Handouts', session: 'Session' };
+const PANEL_TABS = ['map', 'library', 'spells', 'tokens', 'markers', 'treasure', 'handouts', 'session'];
+const PANEL_LABELS = { map: 'Map', library: 'Library', spells: 'Spells', tokens: 'Tokens', markers: 'Markers', treasure: 'Treasure', handouts: 'Handouts', session: 'Session' };
 
 const DM_MARKER_TYPES = [
   { type: 'text_label',  Icon: MarkerIcons.text_label, label: 'Text Label'    },
@@ -2213,6 +2214,11 @@ export default function DMView() {
               <CreatureLibrary sessionId={session.id} onAddToMap={handleAddToMap} aiSettings={aiSettings} />
             )}
 
+            {/* ── SPELLS TAB (DM library) ── */}
+            {panelTab === 'spells' && (
+              <SpellLibrary aiSettings={aiSettings} />
+            )}
+
             {/* ── TOKENS TAB ── */}
             {panelTab === 'tokens' && (
               <div className="h-full overflow-y-auto p-4 space-y-3">
@@ -2825,8 +2831,15 @@ export default function DMView() {
                   <h3 className="text-sm font-semibold text-dnd-gold mb-2">AI Integration</h3>
                   <div className="bg-gray-800 rounded-xl p-4 space-y-3">
                     <p className="text-xs text-gray-400">
-                      Configure a local or cloud LLM to generate stat blocks on the fly. Used only in the Library tab.
+                      Configure a local or cloud LLM to generate stat blocks on the fly and to scan spell PDFs.
                     </p>
+                    <div className="text-[11px] text-amber-300 bg-amber-900/20 border border-amber-700/50 rounded-lg px-2.5 py-2 leading-snug">
+                      <strong>For the PDF spell scanner:</strong> use a <strong>vision-capable</strong> model
+                      (Gemma 3/4 Vision, Llama 3.2 Vision, GPT-4o, etc.) and bump the model's
+                      <strong> context window to at least 16k tokens</strong> (32k+ for full books).
+                      A small context silently truncates pages and drops spells. Stat-block generation
+                      doesn't need vision and works with any chat model.
+                    </div>
 
                     <div>
                       <label className="block text-xs text-gray-400 mb-1">Provider</label>

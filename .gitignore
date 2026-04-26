@@ -32,3 +32,6 @@ releases/
 # RTF working notes (kept locally, not in repo)
 FeaturesReadme.rtf
 FixesReadme.rtf
+
+# Test PDFs used for the spell scanner — typically copyrighted sourcebooks.
+*.pdf

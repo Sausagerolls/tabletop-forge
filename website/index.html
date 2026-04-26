@@ -662,6 +662,13 @@ footer {
         <div class="feat-desc">Store a full library of monsters and player characters. View D&amp;D-style stat blocks, drag creatures onto the map as tokens, and edit stats at any time during the session.</div>
       </div>
 
+      <div class="feat-card highlight">
+        <div class="feat-icon">📜</div>
+        <div class="feat-title">PDF Spell Importer</div>
+        <div class="feat-desc">Upload a sourcebook PDF and the app scrapes spell entries directly into a shared library players can learn from. Names are validated against a canonical 5e list; missing details fall back to the open5e SRD (2014 or 2024, your choice).</div>
+        <span class="feat-badge">New</span>
+      </div>
+
       <div class="feat-card">
         <div class="feat-icon">🔒</div>
         <div class="feat-title">Fully Self-Hosted</div>
@@ -909,6 +916,12 @@ cd TabletopForge</div>
           Once your local AI is running, open the DM view and go to the <strong>Session</strong> tab in the right panel. Enter your AI server's base URL and model name. The <strong>✨ AI</strong> button in the Creature Library will then be active — click it to generate a complete stat block from a text description.
           <div class="ai-rec">
             <strong>Recommended model:</strong> Gemma 4 (Google) performs excellently at structured D&amp;D stat block generation. A 4B parameter variant runs well on most modern laptops with 8GB+ VRAM, and the 12B variant produces more creative and detailed results on higher-end hardware. You can also use any OpenAI-compatible endpoint — including the OpenAI API itself — by entering your API base URL and key.
+          </div>
+          <div class="ai-rec" style="margin-top:10px;">
+            <strong>For the PDF spell importer:</strong> use a <strong>vision-capable</strong> model — Gemma 3/4 Vision, Llama 3.2 Vision, GPT-4o, or Claude with vision all work. Image-only or scanned PDFs depend entirely on the vision model's ability to read the page. Set your model's <strong>context window to at least 16k tokens</strong> (32k+ recommended for whole-book scans); a small context truncates pages and silently drops spells.
+          </div>
+          <div class="ai-rec" style="margin-top:10px; background: rgba(184,50,50,0.10); border-color: rgba(184,50,50,0.35);">
+            <strong style="color: var(--accent-l);">⚠️ AI accuracy disclaimer:</strong> The PDF spell scanner uses an AI model to read your sourcebook, so <strong>mistakes are expected</strong> — misspelled names, wrong damage dice, missing components, or hallucinated entries can all happen. The app mitigates this with multi-pass consensus voting, a canonical 5e name list, and an open5e SRD fallback, plus a post-scan <em>Review names</em> panel that suggests fixes. Always proofread imported spells before relying on them at the table.
           </div>
         </div>
       </div>

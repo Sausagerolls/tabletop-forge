@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMe
 import { Stage, Layer, Line, Image as KonvaImage, Group, Circle, Rect, Text, Wedge } from 'react-konva';
 import useImage from 'use-image';
 import { wallToSegments, wallsToSegments, doorsToSegments, computeVisibilityPolygon, ledgeData, ledgeFarSidePolygon } from '../utils/los.js';
+import { registries as pluginRegistries, useRegistryVersion } from '../plugins/pluginRegistry.js';
 
 export const TOKEN_SIZES = {
   tiny:       { gridW: 1, gridH: 1, scale: 0.45, label: 'Tiny' },
@@ -908,6 +909,37 @@ function TemplateShape({ template, isSelected = false }) {
         <Text x={(template.points[0] || 0) + 6} y={(template.points[1] || 0) + 6}
           text={template.label} fill={props.stroke} fontSize={11} fontStyle="bold" listening={false} />
       )}
+    </>
+  );
+}
+
+// Wraps a TemplateShape with any plugin-supplied decorators. Plugins
+// register a function (template, baseProps) => ReactNode in the
+// spellTemplateDecorators registry; we render its output above the base
+// shape inside the same Group, so plugin overlays move with the template
+// and respect the same Layer ordering. Decorators that throw are swallowed
+// so a single bad plugin can't crash the whole map.
+function TemplateShapeWithDecorators({ template, isSelected = false }) {
+  // Subscribe so live-disabled plugins drop out of the render immediately.
+  useRegistryVersion();
+  const decorators = pluginRegistries.spellTemplateDecorators;
+  // Compute the same shape props the base TemplateShape would, so plugin
+  // decorators can position relative to the underlying geometry without
+  // re-deriving it.
+  const { fill, stroke } = colorToFillStroke(template.color);
+  const baseProps = templateShapeProps(template, fill, stroke, isSelected ? [3, 2] : [6, 3]);
+  return (
+    <>
+      <TemplateShape template={template} isSelected={isSelected} />
+      {decorators.size > 0 && Array.from(decorators.entries()).map(([pid, fn]) => {
+        try {
+          const node = fn(template, baseProps);
+          return node ? <React.Fragment key={pid}>{node}</React.Fragment> : null;
+        } catch (err) {
+          console.warn(`spellTemplateDecorator "${pid}" threw:`, err);
+          return null;
+        }
+      })}
     </>
   );
 }
@@ -2135,8 +2167,59 @@ export default function MapStage({
   // horizontal-slice distortion to create a rippling water/illusion effect.
   const waterCanvasRef = useRef(null);
 
+  // Plugin-supplied template overlays. Plugins can tag a template id with
+  // { kind: 'water' } to opt it into the host's native water canvas pass.
+  // Subscribing to the registry version ensures changes from the plugin
+  // re-trigger the water-canvas effect's deps via the derived list below.
+  const pluginRegVersion = useRegistryVersion();
+  // Convert each tagged template into the dz-shape the water canvas effect
+  // already understands. Circles map naturally; rect / wedge / line are
+  // approximated as polygons. The synthetic id is prefixed so it can't
+  // collide with a real magical-darkness zone id.
+  const pluginWaterZones = useMemo(() => {
+    const tagged = pluginRegistries.templateOverlays;
+    if (!tagged || tagged.size === 0 || !spellTemplates?.length) return [];
+    const out = [];
+    for (const t of spellTemplates) {
+      const tag = tagged.get(t.id);
+      if (!tag || tag.kind !== 'water') continue;
+      const ts = templateShapeProps(t);
+      if (!ts) continue;
+      const idStr = `tpl-water-${t.id}`;
+      if (ts.kind === 'circle') {
+        out.push({ id: idStr, zone_type: 'water', shape: 'circle', x: ts.x, y: ts.y, radius: ts.radius, feather_amount: 0 });
+      } else if (ts.kind === 'rect') {
+        const x0 = ts.x, y0 = ts.y, x1 = ts.x + ts.width, y1 = ts.y + ts.height;
+        out.push({ id: idStr, zone_type: 'water', shape: 'polygon', poly_points: [x0, y0, x1, y0, x1, y1, x0, y1], feather_amount: 0 });
+      } else if (ts.kind === 'wedge') {
+        // Approximate the cone as a polygon: apex + arc points.
+        const seg = 14;
+        const halfAng = (ts.angle / 2) * Math.PI / 180;
+        const baseAng = ts.rotation * Math.PI / 180;
+        const pts = [ts.x, ts.y];
+        for (let i = 0; i <= seg; i++) {
+          const a = baseAng + (i / seg) * (halfAng * 2);
+          pts.push(ts.x + Math.cos(a) * ts.radius, ts.y + Math.sin(a) * ts.radius);
+        }
+        out.push({ id: idStr, zone_type: 'water', shape: 'polygon', poly_points: pts, feather_amount: 0 });
+      } else if (ts.kind === 'line' && ts.points?.length >= 4) {
+        // Thicken the line into a thin polygon perpendicular to its axis.
+        const [ax, ay, bx, by] = ts.points;
+        const dx = bx - ax, dy = by - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const half = 8; // half-width in map pixels
+        const nx = -dy / len * half, ny = dx / len * half;
+        out.push({ id: idStr, zone_type: 'water', shape: 'polygon', poly_points: [ax + nx, ay + ny, bx + nx, by + ny, bx - nx, by - ny, ax - nx, ay - ny], feather_amount: 0 });
+      }
+    }
+    return out;
+  }, [spellTemplates, pluginRegVersion]);
+
   useEffect(() => {
-    const waterZones = (magicalDarkness || []).filter(dz => dz.zone_type === 'water');
+    const baseWaterZones = (magicalDarkness || []).filter(dz => dz.zone_type === 'water');
+    // Merge in plugin-tagged template water zones so they get the same
+    // slice-distortion ripple + tint as DM-drawn water zones.
+    const waterZones = [...baseWaterZones, ...pluginWaterZones];
     const fogZones   = (magicalDarkness || []).filter(dz => dz.zone_type === 'heavy-fog');
     const canvas = waterCanvasRef.current;
     if (!canvas) return;
@@ -2386,7 +2469,7 @@ export default function MapStage({
 
     raf = requestAnimationFrame(draw);
     return () => { running = false; cancelAnimationFrame(raf); offscreen = null; };
-  }, [magicalDarkness, pos, scale, mW, mH, stageSize, gridSize]);
+  }, [magicalDarkness, pluginWaterZones, pos, scale, mW, mH, stageSize, gridSize]);
 
   // Tremorsense blip canvas — sits above the fog canvas, no blur.
   // Draws sonar-ring indicators for grounded tokens detected by tremorsense
@@ -2478,6 +2561,10 @@ export default function MapStage({
   const activeToolRef    = useRef(activeTool);
   const placingTokenRef  = useRef(placingToken);
   const selectedTokenIdRef = useRef(selectedTokenId);
+  // Without this ref, the stable mousedown handler captures the empty
+  // initial array and never sees templates placed after the first mount —
+  // so tpl-edit / tpl-erase silently do nothing on freshly-drawn shapes.
+  const spellTemplatesRef = useRef(spellTemplates);
   useEffect(() => { onTokenMoveRef.current   = onTokenMove;   }, [onTokenMove]);
   useEffect(() => { onTokenSelectRef.current = onTokenSelect; }, [onTokenSelect]);
   useEffect(() => { onMapClickRef.current    = onMapClick;    }, [onMapClick]);
@@ -2488,6 +2575,7 @@ export default function MapStage({
   useEffect(() => { activeToolRef.current    = activeTool;    }, [activeTool]);
   useEffect(() => { placingTokenRef.current  = placingToken;  }, [placingToken]);
   useEffect(() => { selectedTokenIdRef.current = selectedTokenId; }, [selectedTokenId]);
+  useEffect(() => { spellTemplatesRef.current = spellTemplates; }, [spellTemplates]);
 
   // Container resize observer
   useEffect(() => {
@@ -2538,6 +2626,20 @@ export default function MapStage({
       downY = e.clientY;
       const tool = activeToolRef.current;
       const mc   = toMap(e.clientX, e.clientY);
+
+      // ── Plugin click handlers ────────────────────────────────────────────
+      // Plugins can intercept map clicks by registering in
+      // pluginRegistries.mapClickHandlers. Returning true consumes the
+      // click and skips the host's built-in tool handling. Role gating
+      // lets a plugin restrict its handler to DM or player only.
+      for (const [, entry] of pluginRegistries.mapClickHandlers.entries()) {
+        if (!entry || typeof entry.handler !== 'function') continue;
+        if (entry.role === 'dm' && isPlayer) continue;
+        if (entry.role === 'player' && !isPlayer) continue;
+        try {
+          if (entry.handler({ x: mc.x, y: mc.y, tool, isPlayer })) return;
+        } catch (err) { /* misbehaving plugin — fall through to next */ }
+      }
 
       // ── Wall tools ────────────────────────────────────────────────────────
       if (WALL_DRAW_TOOLS.has(tool)) {
@@ -2644,13 +2746,13 @@ export default function MapStage({
       }
       if (tool === 'tpl-erase') {
         const threshold = 30 / scaleRef.current;
-        const hit = findNearestTemplate(mc.x, mc.y, spellTemplates, threshold);
+        const hit = findNearestTemplate(mc.x, mc.y, spellTemplatesRef.current, threshold);
         if (hit) onTemplateDeleteRef.current?.(hit.template.id);
         return;
       }
       if (tool === 'tpl-edit') {
         const threshold = 30 / scaleRef.current;
-        const hit = findNearestTemplate(mc.x, mc.y, spellTemplates, threshold);
+        const hit = findNearestTemplate(mc.x, mc.y, spellTemplatesRef.current, threshold);
         if (hit) {
           templateMoveRef.current = {
             id: hit.template.id,
@@ -3333,28 +3435,30 @@ export default function MapStage({
           </Layer>
         )}
 
-        {/* Spell templates — DM-only persistent AOE shapes. */}
-        {!isPlayer && (
-          <Layer listening={false}>
-            {(spellTemplates || []).map(t => {
-              // Live-translate the dragged template so the DM sees it follow
-              // the cursor before the update round-trips through the server.
-              const live = templateMovePreview && templateMovePreview.id === t.id
-                ? { ...t, points: templateMovePreview.points }
-                : t;
-              return (
-                <TemplateShape
-                  key={t.id}
-                  template={live}
-                  isSelected={selectedTemplateId === t.id}
-                />
-              );
-            })}
-            {(TEMPLATE_TOOLS.has(activeTool) || activeTool === 'tpl-erase') && templatePreview && (
-              <TemplatePreview preview={templatePreview} />
-            )}
-          </Layer>
-        )}
+        {/* Spell templates — DM places and edits them, but the resulting
+            shapes (and any plugin-driven elemental overlays) render for
+            both DM and players so AOE effects are visible at the table. */}
+        <Layer listening={false}>
+          {(spellTemplates || []).map(t => {
+            // DM-side live-translate during drag — players never see the
+            // half-finished position because the move preview is DM state.
+            const live = !isPlayer && templateMovePreview && templateMovePreview.id === t.id
+              ? { ...t, points: templateMovePreview.points }
+              : t;
+            return (
+              <TemplateShapeWithDecorators
+                key={t.id}
+                template={live}
+                // Selection highlight is a DM affordance for editing — players
+                // get the unselected look regardless.
+                isSelected={!isPlayer && selectedTemplateId === t.id}
+              />
+            );
+          })}
+          {!isPlayer && (TEMPLATE_TOOLS.has(activeTool) || activeTool === 'tpl-erase') && templatePreview && (
+            <TemplatePreview preview={templatePreview} />
+          )}
+        </Layer>
 
         {/* Lights — DM-only visual indicators; players see the lighting effect via FOW, not these circles */}
         {!isPlayer && (
@@ -3477,6 +3581,27 @@ export default function MapStage({
                 overrideOpacity={overrideOpacity}
               />
             );
+          })}
+        </Layer>
+
+        {/* Plugin map decorations. Rendered ABOVE tokens so plugins can
+            draw things like tree canopies, clouds, etc. that occlude
+            tokens. Layer is non-interactive — plugin nodes never
+            intercept clicks. Plugins handle clicks via mapClickHandlers
+            in pluginRegistry.js if they need them. */}
+        <Layer listening={false}>
+          {Array.from(pluginRegistries.mapDecorations.entries()).map(([pid, fn]) => {
+            try {
+              const node = fn({
+                tokens, gridSize, offsetX, offsetY,
+                mapWidth: mW, mapHeight: mH,
+                isPlayer, playerTokenId,
+              });
+              return node ? <React.Fragment key={pid}>{node}</React.Fragment> : null;
+            } catch (err) {
+              console.warn(`mapDecoration "${pid}" threw:`, err);
+              return null;
+            }
           })}
         </Layer>
 

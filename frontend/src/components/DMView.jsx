@@ -9,6 +9,7 @@ import ToolPanel from './ToolPanel.jsx';
 import StatBlock from './StatBlock.jsx';
 import ActionsReference from './ActionsReference.jsx';
 import { wallsToSegments, doorsToSegments, lineBlocked } from '../utils/los.js';
+import { registries as pluginRegistries, useRegistryVersion, loadPlugins, unloadPlugin, reloadPlugin } from '../plugins/pluginRegistry.js';
 
 // ── SVG icon components ───────────────────────────────────────────────────────
 
@@ -589,6 +590,231 @@ function CombatTracker({ tokens, combatTurn, onNext, onEnd }) {
   );
 }
 
+// PluginManager — Session-tab UI for installing, enabling, disabling, and
+// removing plugins. Designed to keep working even if a plugin is broken:
+//   - Listing comes from the plugins table, not the live JS modules, so a
+//     plugin that throws on import still appears here and can be disabled.
+//   - The "stuck plugin" hint reminds the DM about the documented escape
+//     hatch: deleting backend/plugins/<id> on disk forces a clean reset.
+function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
+  const [list, setList] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [busy, setBusy] = React.useState(null);   // id currently being acted on
+  const [uploadErr, setUploadErr] = React.useState('');
+  const [actionErr, setActionErr] = React.useState('');
+
+  async function refresh() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/plugins');
+      const data = await res.json();
+      setList(Array.isArray(data) ? data : []);
+    } catch (err) { /* leave the existing list visible */ }
+    finally { setLoading(false); }
+  }
+  React.useEffect(() => { refresh(); }, [pluginsTick]);
+
+  async function setEnabled(id, enabled) {
+    setBusy(id); setActionErr('');
+    try {
+      const res = await fetch(`/api/plugins/${id}/${enabled ? 'enable' : 'disable'}`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      // Live (un)load the JS so the change takes effect without a refresh.
+      if (enabled) await reloadPlugin(id, context);
+      else unloadPlugin(id);
+      await refresh();
+      onPluginsChanged && onPluginsChanged();
+    } catch (err) { setActionErr(err.message); }
+    finally { setBusy(null); }
+  }
+
+  async function deletePlugin(id) {
+    if (!confirm(`Delete plugin "${id}"? Its files are removed but plugin_data rows are KEPT — re-installing later restores everything.`)) return;
+    setBusy(id); setActionErr('');
+    try {
+      const res = await fetch(`/api/plugins/${id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      unloadPlugin(id);
+      await refresh();
+      onPluginsChanged && onPluginsChanged();
+    } catch (err) { setActionErr(err.message); }
+    finally { setBusy(null); }
+  }
+
+  async function uploadFile(file) {
+    if (!file) return;
+    setUploadErr('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/plugins/upload', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      // The new plugin lands enabled by default — load its JS now.
+      if (data.installed?.enabled) await reloadPlugin(data.installed.id, context);
+      await refresh();
+      onPluginsChanged && onPluginsChanged();
+    } catch (err) { setUploadErr(err.message); }
+  }
+
+  // Build a quick map of dependency status per plugin so we can flag rows
+  // that won't enable cleanly without action.
+  const byId = new Map(list.map(p => [p.id, p]));
+  function depStatus(p) {
+    const requires = (p.manifest && p.manifest.requires) || [];
+    if (!requires.length) return null;
+    const missing = requires.filter(d => !byId.has(d));
+    const disabled = requires.filter(d => byId.has(d) && !byId.get(d).enabled);
+    if (missing.length || disabled.length) {
+      return { ok: false, missing, disabled };
+    }
+    return { ok: true, requires };
+  }
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-dnd-gold mb-2">Plugins</h3>
+      <div className="bg-gray-800 rounded-xl p-3 space-y-3">
+        <p className="text-[11px] text-gray-400 leading-snug">
+          Plugins extend the app with new tools, tabs and overlays. Disabling a plugin
+          hides its features but <strong>keeps its data</strong>; deleting removes the
+          plugin's files but still keeps its data so re-installing restores everything.
+          If a plugin breaks the app, exit the app and delete <code className="text-amber-300">backend/plugins/&lt;id&gt;</code> on
+          disk — the manager picks up the change on next start.
+        </p>
+
+        <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg py-3 cursor-pointer transition-colors border-gray-600 hover:border-dnd-gold/60">
+          <span className="text-xs text-gray-300">Upload plugin .zip</span>
+          <span className="text-[10px] text-gray-500 mt-0.5">Must contain a plugin.json at the root or top dir</span>
+          <input
+            type="file"
+            accept=".zip,application/zip"
+            className="hidden"
+            onChange={(e) => { uploadFile(e.target.files?.[0]); e.target.value = ''; }}
+          />
+        </label>
+        {uploadErr && <div className="text-[11px] text-red-300 bg-red-900/30 border border-red-800 rounded px-2 py-1">{uploadErr}</div>}
+        {actionErr && <div className="text-[11px] text-red-300 bg-red-900/30 border border-red-800 rounded px-2 py-1">{actionErr}</div>}
+
+        {loading && <p className="text-[11px] text-gray-500 italic">Loading…</p>}
+        {!loading && list.length === 0 && (
+          <p className="text-[11px] text-gray-500 italic">No plugins installed yet.</p>
+        )}
+        {list.map(p => {
+          const m = p.manifest || {};
+          const dep = depStatus(p);
+          const loadErr = (loadErrors || []).find(e => e.id === p.id);
+          return (
+            <div key={p.id} className={`rounded-lg p-2 border ${p.enabled ? 'bg-gray-900/40 border-gray-700' : 'bg-gray-900/20 border-gray-800'}`}>
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-white truncate">
+                    {m.name || p.id}
+                    <span className="ml-2 text-[10px] text-gray-500">v{m.version || '?'}</span>
+                    {p.source === 'builtin' && (
+                      <span className="ml-2 text-[10px] text-emerald-300 bg-emerald-900/40 border border-emerald-700/40 px-1 rounded">built-in</span>
+                    )}
+                  </div>
+                  {m.description && <div className="text-[11px] text-gray-400 leading-snug">{m.description}</div>}
+                  {m.author && <div className="text-[10px] text-gray-500">by {m.author}</div>}
+                  {dep && !dep.ok && (
+                    <div className="text-[11px] text-amber-300 mt-1">
+                      Dependency issue —
+                      {dep.missing.length > 0 && <> missing: {dep.missing.join(', ')}</>}
+                      {dep.disabled.length > 0 && <> {dep.missing.length ? ' · ' : ''}disabled: {dep.disabled.join(', ')}</>}
+                    </div>
+                  )}
+                  {loadErr && (
+                    <div className="text-[11px] text-red-300 mt-1">Load error: {loadErr.error}</div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1 shrink-0">
+                  <button
+                    onClick={() => setEnabled(p.id, !p.enabled)}
+                    disabled={busy === p.id || (!p.enabled && dep && !dep.ok)}
+                    className={`text-xs px-2 py-1 rounded border transition-colors disabled:opacity-50 ${
+                      p.enabled
+                        ? 'bg-emerald-900/40 hover:bg-emerald-800/60 border-emerald-700 text-emerald-200'
+                        : 'bg-gray-800 hover:bg-gray-700 border-gray-600 text-gray-300'
+                    }`}
+                    title={p.enabled ? 'Disable this plugin' : 'Enable this plugin'}
+                  >
+                    {busy === p.id ? '…' : p.enabled ? 'Enabled' : 'Disabled'}
+                  </button>
+                  <button
+                    onClick={() => deletePlugin(p.id)}
+                    disabled={busy === p.id}
+                    className="text-xs px-2 py-1 rounded bg-red-900/40 hover:bg-red-800/60 border border-red-700 text-red-300 disabled:opacity-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Renders any plugin-registered extensions inside the template-edit popup.
+// Each extension is a pure (template) => ReactNode and receives the live
+// template; updates flow through the host's socket emit, same as the
+// built-in fields. Extensions that throw are isolated so a single broken
+// plugin can't blank out the whole popup.
+function PluginTemplateEditorExtensions({ template }) {
+  useRegistryVersion();
+  const ext = pluginRegistries.templateEditorExtensions;
+  if (ext.size === 0) return null;
+  return (
+    <div className="space-y-2 pt-1 border-t border-gray-800">
+      {Array.from(ext.entries()).map(([pid, fn]) => {
+        try {
+          const node = fn(template);
+          return node ? <div key={pid}>{node}</div> : null;
+        } catch (err) {
+          console.warn(`templateEditorExtension "${pid}" threw:`, err);
+          return null;
+        }
+      })}
+    </div>
+  );
+}
+
+// Renders any plugin-registered DM tabs as additional buttons in the panel
+// tab bar. Tabs are identified by their plugin id; the registry value is a
+// { label, icon, render } object. The render function is called with a
+// `ctx` of session/socket helpers when the tab is the active one.
+function PluginDmTabs({ activeTab, onSelect }) {
+  useRegistryVersion();
+  const tabs = pluginRegistries.dmTabs;
+  if (tabs.size === 0) return null;
+  return (
+    <>
+      {Array.from(tabs.entries()).map(([pid, def]) => {
+        const isActive = activeTab === `plugin:${pid}`;
+        return (
+          <button
+            key={pid}
+            onClick={() => onSelect(`plugin:${pid}`)}
+            className={`flex-1 min-w-0 py-2 text-xs font-medium border-b-2 transition-colors flex items-center justify-center gap-1 ${
+              isActive
+                ? 'text-dnd-gold border-dnd-gold'
+                : 'text-gray-400 border-transparent hover:text-gray-200'
+            }`}
+            title={def.label || pid}
+          >
+            <span className="truncate">{def.label || pid}</span>
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
 function CombatPicker({ tokens, selection, onToggle, onConfirm, onCancel, mode = 'start', autoSelectedIds, viewerId, onViewerChange, hasWalls }) {
   // In add-mode, hide tokens already in combat (they're not candidates).
   const visible = tokens.filter((t) => {
@@ -776,6 +1002,24 @@ export default function DMView() {
       el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
   }, [selectedToken, panelTab, panelOpen]);
+
+  // Plugin runtime — load enabled plugins once we have a session connection.
+  // Errors per plugin are isolated by the loader; we just stash a summary
+  // for the manager UI. Re-runs only when the session id changes (typically
+  // means the DM logged into a different session).
+  const [pluginLoadErrors, setPluginLoadErrors] = useState([]);
+  const [pluginsTick, setPluginsTick] = useState(0); // increment to force re-list in manager
+  useEffect(() => {
+    if (!session?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { errors } = await loadPlugins({
+        context: { sessionId: session.id, role: 'dm', socket },
+      });
+      if (!cancelled) setPluginLoadErrors(errors || []);
+    })();
+    return () => { cancelled = true; };
+  }, [session?.id]);
   const [showDice, setShowDice] = useState(false);
   const [showSounds, setShowSounds] = useState(false);
   const [soundTab, setSoundTab] = useState('oneshots');
@@ -2098,7 +2342,7 @@ export default function DMView() {
           }}
         />
         <div className="bg-dnd-panel border-l border-gray-700 flex flex-col shrink-0 h-full" style={{ width: panelWidth }}>
-          <div className="flex border-b border-gray-700 shrink-0">
+          <div className="flex border-b border-gray-700 shrink-0 overflow-x-auto">
             {PANEL_TABS.map((t) => (
               <button
                 key={t}
@@ -2110,6 +2354,7 @@ export default function DMView() {
                 {PANEL_LABELS[t]}
               </button>
             ))}
+            <PluginDmTabs activeTab={panelTab} onSelect={setPanelTab} />
           </div>
 
           <div className="flex-1 overflow-hidden relative">
@@ -3111,6 +3356,14 @@ export default function DMView() {
                   </div>
                 </div>
 
+                {/* Plugin manager — install / enable / disable / delete. */}
+                <PluginManager
+                  loadErrors={pluginLoadErrors}
+                  pluginsTick={pluginsTick}
+                  onPluginsChanged={() => setPluginsTick(t => t + 1)}
+                  context={{ sessionId: session.id, role: 'dm', socket }}
+                />
+
                 <button
                   onClick={() => navigate('/')}
                   className="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg text-sm"
@@ -3119,6 +3372,27 @@ export default function DMView() {
                 </button>
               </div>
             )}
+
+            {/* Plugin-supplied panel tabs. The render function returns the
+                full tab content; we wrap it in the same scroll container
+                style as built-in tabs for visual consistency. Only the
+                currently-active plugin tab is rendered. */}
+            {typeof panelTab === 'string' && panelTab.startsWith('plugin:') && (() => {
+              const pid = panelTab.slice('plugin:'.length);
+              const def = pluginRegistries.dmTabs.get(pid);
+              if (!def || typeof def.render !== 'function') {
+                return <div className="p-4 text-xs text-gray-400">Plugin tab unavailable.</div>;
+              }
+              try {
+                return (
+                  <div className="h-full overflow-y-auto">
+                    {def.render({ sessionId: session.id, role: 'dm', socket })}
+                  </div>
+                );
+              } catch (err) {
+                return <div className="p-4 text-xs text-red-300">Plugin tab "{pid}" threw: {String(err.message || err)}</div>;
+              }
+            })()}
           </div>
         </div>
         </>
@@ -3183,6 +3457,10 @@ export default function DMView() {
                   />
                 </div>
               )}
+              {/* Plugin-supplied editor extensions render here, after built-in
+                  fields. The registry is keyed by pluginId so disabling a
+                  plugin instantly removes its extension from the popup. */}
+              <PluginTemplateEditorExtensions template={tpl} />
               <button
                 onClick={() => { socket.emit('delete_template', { id: tpl.id }); setEditingTemplateId(null); }}
                 className="w-full bg-red-900/50 hover:bg-red-800/60 border border-red-700 text-red-300 py-1.5 rounded-lg text-sm font-semibold"

@@ -18,6 +18,7 @@ const doorsRouter = require('./routes/doors');
 const lightsRouter = require('./routes/lights');
 const dd2vttRouter = require('./routes/dd2vtt');
 const spellLibraryRouter = require('./routes/spell_library');
+const { router: pluginsRouter, reconcilePluginsTable } = require('./routes/plugins');
 
 const app = express();
 const server = http.createServer(app);
@@ -127,6 +128,7 @@ app.use('/api/doors', doorsRouter);
 app.use('/api/lights', lightsRouter);
 app.use('/api/dd2vtt', dd2vttRouter);
 app.use('/api/spell-library', spellLibraryRouter);
+app.use('/api/plugins', pluginsRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
@@ -275,10 +277,13 @@ io.on('connection', (socket) => {
       sessionUsers[sessionCode].set(socket.id, { name, role });
 
       const state = await getSessionState(sessionCode);
-      // Strip DM-only data from player state so markers/templates never reach player clients
+      // Strip DM markers from player state but include spell templates so
+      // players see plugin-driven AOE effects (fire/water/etc.) on the map.
+      // Templates are non-interactive for players — write-side socket
+      // handlers all gate on socket.data.role === 'dm'.
       const sendState = role === 'dm'
         ? { ...state, spellTemplates: sessionTemplates[sessionCode] || [] }
-        : { ...state, dmMarkers: [] };
+        : { ...state, spellTemplates: sessionTemplates[sessionCode] || [], dmMarkers: [] };
       const colors = sessionUserColors[sessionCode] || {};
       const currentUsers = Array.from(sessionUsers[sessionCode].values());
       socket.emit('session_joined', { state: sendState, role, userColors: colors, users: currentUsers });
@@ -748,16 +753,11 @@ io.on('connection', (socket) => {
     } catch (err) { console.error('send_currency error:', err); }
   });
 
-  // ── Spell templates — DM-only persistent on-map AOE shapes ─────────────
-  // Helper: emit only to DM sockets in the room. Players never see templates.
-  function emitToDms(sessionCode, event, payload) {
-    const room = io.sockets.adapter.rooms.get(sessionCode);
-    if (!room) return;
-    for (const sid of room) {
-      const s = io.sockets.sockets.get(sid);
-      if (s && s.data && s.data.role === 'dm') s.emit(event, payload);
-    }
-  }
+  // ── Spell templates — persistent on-map AOE shapes ────────────────────
+  // Templates are placed/edited only by the DM (every handler below
+  // gates on role === 'dm'), but the resulting shapes broadcast to every
+  // socket in the room so players see plugin-driven elemental effects
+  // (fire/water/etc.) on the map.
 
   socket.on('place_template', ({ type, points, color, label }) => {
     if (socket.data.role !== 'dm') return;
@@ -775,7 +775,7 @@ io.on('connection', (socket) => {
     };
     if (!sessionTemplates[sessionCode]) sessionTemplates[sessionCode] = [];
     sessionTemplates[sessionCode].push(tpl);
-    emitToDms(sessionCode, 'template_placed', tpl);
+    io.to(sessionCode).emit('template_placed', tpl);
   });
 
   socket.on('update_template', ({ id, points, color, label }) => {
@@ -795,7 +795,7 @@ io.on('connection', (socket) => {
     if (typeof label === 'string') {
       t.label = label.slice(0, 60);
     }
-    emitToDms(sessionCode, 'template_updated', t);
+    io.to(sessionCode).emit('template_updated', t);
   });
 
   socket.on('delete_template', ({ id }) => {
@@ -807,7 +807,7 @@ io.on('connection', (socket) => {
     const idx = list.findIndex(t => t.id === id);
     if (idx === -1) return;
     list.splice(idx, 1);
-    emitToDms(sessionCode, 'template_deleted', { id });
+    io.to(sessionCode).emit('template_deleted', { id });
   });
 
   socket.on('clear_templates', () => {
@@ -815,7 +815,7 @@ io.on('connection', (socket) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
     sessionTemplates[sessionCode] = [];
-    emitToDms(sessionCode, 'templates_cleared');
+    io.to(sessionCode).emit('templates_cleared');
   });
 
   // ── Send a handout (DM only) — broadcast to room or whisper to player ───
@@ -1410,6 +1410,26 @@ io.on('connection', (socket) => {
   });
 
   // ── Disconnect ────────────────────────────────────────────────────────────
+  // ── Plugin event bus ───────────────────────────────────────────────────
+  // Generic relay for plugin-to-plugin coordination between clients in the
+  // same session. The backend never inspects the payload — plugins ship
+  // arbitrary JSON. Used by the host's data-write wrapper to broadcast
+  // KV changes so DM + player views stay in sync without each plugin
+  // having to wire up its own socket protocol.
+  socket.on('plugin_event', ({ pluginId, type, payload }) => {
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode || !pluginId) return;
+    // Echo to everyone in the room INCLUDING the sender — keeps the API
+    // simple (a plugin can rely on its own write to round-trip and apply
+    // optimistic updates uniformly).
+    io.to(sessionCode).emit('plugin_event', {
+      pluginId: String(pluginId),
+      type: typeof type === 'string' ? type : 'data',
+      payload: payload ?? null,
+      from: socket.id,
+    });
+  });
+
   socket.on('disconnect', () => {
     const sessionCode = socket.data.sessionCode;
     if (sessionCode && sessionUsers[sessionCode]) {
@@ -1556,6 +1576,37 @@ server.listen(PORT, async () => {
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_spell_library_level ON spell_library(level)`);
     await db.query(`ALTER TABLE spell_library ADD COLUMN IF NOT EXISTS allowed_classes JSONB DEFAULT '[]'`);
+
+    // Plugin system. `plugins` tracks installed plugins and their enabled
+    // state; `plugin_data` is a generic JSONB KV store keyed by plugin id
+    // so plugins can persist their own data without touching core tables.
+    // plugin_data rows are intentionally NEVER deleted automatically — even
+    // when a plugin is removed, its data stays so re-installing it later
+    // restores everything (the user explicitly asked for this).
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS plugins (
+        id           TEXT PRIMARY KEY,
+        manifest     JSONB NOT NULL,
+        enabled      BOOLEAN NOT NULL DEFAULT true,
+        source       TEXT DEFAULT 'upload',
+        installed_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS plugin_data (
+        plugin_id TEXT NOT NULL,
+        key       TEXT NOT NULL,
+        value     JSONB NOT NULL,
+        PRIMARY KEY (plugin_id, key)
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_plugin_data_prefix ON plugin_data(plugin_id, key)`);
+    // Sync the plugins table with whatever's currently on disk in PLUGINS_DIR.
+    // Newly-discovered dirs land enabled by default; manually-removed dirs
+    // (the documented `rm -rf` escape hatch) get their plugins-table row
+    // dropped here too. plugin_data is left alone in either case.
+    try { await reconcilePluginsTable(); }
+    catch (e) { console.warn('Plugin reconcile warning:', e.message); }
   } catch (err) {
     console.warn('Migration warning:', err.message);
   }

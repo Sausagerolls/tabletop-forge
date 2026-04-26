@@ -434,6 +434,7 @@ const WarningIcon = () => (
 );
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import socket from '../socket.js';
+import { loadPlugins } from '../plugins/pluginRegistry.js';
 import MapStage, { TOKEN_SIZES } from './MapStage.jsx';
 import DiceRoller, { DiceRollOverlay } from './DiceRoller.jsx';
 import ToolPanel from './ToolPanel.jsx';
@@ -510,6 +511,10 @@ export default function PlayerView() {
 
   const [session, setSession] = useState(null);
   const [tokens, setTokens] = useState([]);
+  // Spell templates are read-only from the player's perspective — broadcast
+  // by the server but never mutable from this client. Tracked here so plugin
+  // overlays (animated elemental effects) render on the player's map too.
+  const [spellTemplates, setSpellTemplates] = useState([]);
   const [diceRolls, setDiceRolls] = useState([]);
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
@@ -619,6 +624,11 @@ export default function PlayerView() {
 
     socket.on('session_joined', ({ state, userColors: uc }) => {
       setSession(state.session);
+      setSpellTemplates(Array.isArray(state.spellTemplates) ? state.spellTemplates : []);
+      // Load enabled plugins as soon as we know the session id. Errors are
+      // isolated per plugin and ignored on the player side — players see no
+      // plugin manager UI; the DM resolves any issues from their side.
+      loadPlugins({ context: { sessionId: state.session.id, role: 'player', socket } });
       setTokens(state.tokens.filter((t) => !t.is_hidden));
       setWalls(state.walls || []);
       setDoors(state.doors || []);
@@ -914,6 +924,14 @@ export default function PlayerView() {
       setTokens((prev) => prev.map((t) => idSet.has(t.id) ? { ...t, in_combat: true } : t));
     });
 
+    // Live spell-template sync. Players never mutate templates; these
+    // listeners just keep the read-only list current so plugin overlays
+    // (animated fire/water/etc.) reflect the DM's edits in real time.
+    socket.on('template_placed',  (tpl) => setSpellTemplates(prev => [...prev, tpl]));
+    socket.on('template_updated', (tpl) => setSpellTemplates(prev => prev.map(t => t.id === tpl.id ? tpl : t)));
+    socket.on('template_deleted', ({ id }) => setSpellTemplates(prev => prev.filter(t => t.id !== id)));
+    socket.on('templates_cleared', () => setSpellTemplates([]));
+
     socket.on('treasure_received', ({ creatureId, items, newInventory }) => {
       if (creatureId === creatureIdParam) {
         setMyCreature(prev => prev ? { ...prev, inventory: newInventory } : prev);
@@ -1172,6 +1190,7 @@ export default function PlayerView() {
           doors={doors}
           lights={lights}
           magicalDarkness={magicalDarkness}
+          spellTemplates={spellTemplates}
           fogOfWar={fowEnabled}
           fowBlur={fowBlur}
           ambientLight={ambientLight}

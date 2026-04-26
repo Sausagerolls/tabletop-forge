@@ -16,7 +16,8 @@
     "socket.io": "^4.7.4",
     "uuid": "^9.0.1",
     "bcryptjs": "^2.4.3",
-    "image-size": "^1.1.0"
+    "image-size": "^1.1.0",
+    "adm-zip": "^0.5.10"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

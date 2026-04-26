@@ -27,6 +27,11 @@ services:
     volumes:
       - uploads:/app/uploads
       - ./sounds:/app/sounds
+      # Plugins live on the host filesystem so they survive rebuilds and
+      # — critically — so a misbehaving plugin can be deleted with
+      # `rm -rf backend/plugins/<id>` from outside the container if
+      # something goes wrong inside the app's plugin manager UI.
+      - ./backend/plugins:/app/plugins
     depends_on:
       db:
         condition: service_healthy

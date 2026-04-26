@@ -277,6 +277,7 @@ function TokenRow({
   token, onHPChange, onTempHpChange, onToggleVisibility, onToggleFlying, onRemove,
   onSizeChange, onConditionsChange, onInitiativeChange, onNicknameChange,
   isSelected, onSelect, onViewStatBlock, collapsed = false,
+  combatActive = false, onAddToCombat,
 }) {
   function toggleSubmerged() {
     const conditions = Array.isArray(token.conditions) ? token.conditions : [];
@@ -348,6 +349,24 @@ function TokenRow({
               </button>
             );
           })()}
+          {combatActive && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (token.in_combat) return;        // already in — no-op
+                onAddToCombat?.(token.id);
+              }}
+              disabled={!!token.in_combat}
+              title={token.in_combat ? 'Already in combat' : 'Add to current combat'}
+              className={`text-sm w-7 h-7 rounded flex items-center justify-center transition-colors ${
+                token.in_combat
+                  ? 'bg-yellow-900/40 text-yellow-500/60 cursor-default'
+                  : 'bg-yellow-800 text-yellow-200 hover:bg-yellow-700'
+              }`}
+            >
+              <SwordIcon />
+            </button>
+          )}
           <button
             onClick={(e) => { e.stopPropagation(); onToggleVisibility(token.id); }}
             title={token.is_hidden ? 'Show to players' : 'Hide from players'}
@@ -570,7 +589,7 @@ function CombatTracker({ tokens, combatTurn, onNext, onEnd }) {
   );
 }
 
-function CombatPicker({ tokens, selection, onToggle, onConfirm, onCancel, mode = 'start', autoSelectedIds }) {
+function CombatPicker({ tokens, selection, onToggle, onConfirm, onCancel, mode = 'start', autoSelectedIds, viewerId, onViewerChange, hasWalls }) {
   // In add-mode, hide tokens already in combat (they're not candidates).
   const visible = tokens.filter((t) => {
     if (t.is_hidden) return false;
@@ -582,6 +601,16 @@ function CombatPicker({ tokens, selection, onToggle, onConfirm, onCancel, mode =
   const confirmLabel = isAdd
     ? `Add (${selection.size})`
     : `Start (${selection.size})`;
+  // Eligible viewers — non-hidden tokens, sorted by name. The dropdown lets
+  // the DM pick a viewer right here instead of cancelling out to select one
+  // on the map first.
+  const viewerCandidates = tokens
+    .filter((t) => !t.is_hidden)
+    .slice()
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  const viewerToken = viewerId ? tokens.find((t) => t.id === viewerId) : null;
+  const totalVisible = visible.length;
+  const autoCount = autoSelectedIds ? autoSelectedIds.size : 0;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
       <div className="bg-dnd-panel border border-gray-700 rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
@@ -589,9 +618,36 @@ function CombatPicker({ tokens, selection, onToggle, onConfirm, onCancel, mode =
           <h2 className="text-dnd-gold font-semibold text-base flex items-center gap-1.5"><SwordIcon />{title}</h2>
           <span className="text-xs text-gray-400">{selection.size} selected</span>
         </div>
-        {!isAdd && autoSelectedIds && autoSelectedIds.size > 0 && (
-          <div className="px-5 py-2 text-[11px] text-yellow-200 bg-yellow-900/20 border-b border-yellow-800/50">
-            Auto-selected {autoSelectedIds.size} token{autoSelectedIds.size === 1 ? '' : 's'} visible from your selected token. Tick others to add them in.
+        {!isAdd && (
+          <div className="px-5 py-3 border-b border-gray-700 bg-gray-900/40">
+            <label className="block text-[11px] text-gray-400 uppercase tracking-wider mb-1">
+              Auto-select by line of sight from
+            </label>
+            <select
+              value={viewerId || ''}
+              onChange={(e) => onViewerChange(e.target.value ? parseInt(e.target.value, 10) : null)}
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-dnd-gold"
+            >
+              <option value="">— None (pre-tick everything) —</option>
+              {viewerCandidates.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            {viewerToken ? (
+              hasWalls ? (
+                <p className="mt-1.5 text-[11px] text-yellow-200">
+                  {autoCount} of {totalVisible} token{totalVisible === 1 ? '' : 's'} visible from <strong>{viewerToken.name}</strong> — the rest are blocked by walls.
+                </p>
+              ) : (
+                <p className="mt-1.5 text-[11px] text-amber-300">
+                  This map has no walls or doors yet, so every token is in line of sight from <strong>{viewerToken.name}</strong>. Draw walls to make this filter meaningful.
+                </p>
+              )
+            ) : (
+              <p className="mt-1.5 text-[11px] text-gray-400">
+                Pick a viewer to pre-tick only the tokens it can see.
+              </p>
+            )}
           </div>
         )}
         <div className="p-4 space-y-2 max-h-80 overflow-y-auto">
@@ -751,6 +807,9 @@ export default function DMView() {
   // Track which tokens were auto-selected via line-of-sight so the modal can
   // surface a "we picked these for you" banner without re-running the LOS test.
   const [combatPickerAutoIds, setCombatPickerAutoIds] = useState(new Set());
+  // Which token's POV we're using for the auto-select. Mutable from inside the
+  // modal so the DM can switch viewers without cancelling out.
+  const [combatPickerViewerId, setCombatPickerViewerId] = useState(null);
   const [userColors, setUserColors] = useState({});
   const [users, setUsers] = useState([]);
   const rollIdRef = useRef(0);
@@ -1459,10 +1518,18 @@ export default function DMView() {
     socket.emit('change_grid_style', { sessionId: session.id, gridColor: color, gridThickness: t });
   }
 
-  // Compute the centre of a token in map-pixel coordinates. Tokens are stored
-  // by grid column/row; centre = (col+0.5, row+0.5) * gridSize.
+  // Compute the centre of a token in map-pixel coordinates. Token grid
+  // position lives in `grid_col` / `grid_row` (NOT `col` / `row` — that
+  // bit me once already), and large/huge/gargantuan tokens occupy
+  // multiple cells so the centre offset has to use the size's gridW/H.
   function tokenCenter(t) {
-    return { x: (t.col + 0.5) * gridSize, y: (t.row + 0.5) * gridSize };
+    const sz = TOKEN_SIZES[t.size] || TOKEN_SIZES.medium;
+    const col = Number(t.grid_col) || 0;
+    const row = Number(t.grid_row) || 0;
+    return {
+      x: col * gridSize + (sz.gridW * gridSize) / 2,
+      y: row * gridSize + (sz.gridH * gridSize) / 2,
+    };
   }
 
   // Build the wall+door segment list once and ask "is the line from
@@ -1483,23 +1550,39 @@ export default function DMView() {
     return out;
   }
 
+  // Picks the viewer used for the LOS auto-select and sets the picker state
+  // accordingly. Pulled out so it's reusable from the in-modal dropdown.
+  function applyViewerToPicker(viewerId) {
+    setCombatPickerViewerId(viewerId);
+    if (viewerId) {
+      const autoIds = computeVisibleTokenIds(viewerId);
+      setCombatPickerAutoIds(autoIds);
+      setCombatPickerSelection(new Set(autoIds));
+    } else {
+      setCombatPickerAutoIds(new Set());
+      setCombatPickerSelection(new Set(tokens.filter((t) => !t.is_hidden).map((t) => t.id)));
+    }
+  }
+
   function handleStartCombat() {
     if (!session) return;
-    // If the DM has a token selected, pre-tick only the tokens that token
-    // can see (plus itself). Otherwise fall back to "every visible token".
-    // The DM can still tick or untick anything before confirming.
-    let preselected;
-    let autoIds = new Set();
-    if (selectedToken) {
-      autoIds = computeVisibleTokenIds(selectedToken);
-      preselected = new Set(autoIds);
-    } else {
-      preselected = new Set(tokens.filter((t) => !t.is_hidden).map((t) => t.id));
-    }
-    setCombatPickerSelection(preselected);
-    setCombatPickerAutoIds(autoIds);
+    // Default the viewer to whatever's currently selected on the map. The
+    // dropdown inside the picker lets the DM swap viewers or clear it.
     setCombatPickerMode('start');
+    applyViewerToPicker(selectedToken || null);
     setShowCombatPicker(true);
+  }
+
+  // One-click "add this token to combat" used by the per-token panel button.
+  // Skips the picker entirely — useful when reinforcements walk in one at
+  // a time and the DM just wants them on the initiative track.
+  function handleAddSingleTokenToCombat(tokenId) {
+    if (!session || !combatActive) return;
+    const t = tokens.find((x) => x.id === tokenId);
+    if (!t || t.in_combat) return;
+    socket.emit('add_tokens_to_combat', { sessionId: session.id, tokenIds: [tokenId] });
+    // Optimistic local update — the server broadcast will re-confirm.
+    setTokens((prev) => prev.map((x) => x.id === tokenId ? { ...x, in_combat: true } : x));
   }
 
   // Mid-combat reinforcement: opens the picker with no auto-selection so the
@@ -1509,6 +1592,7 @@ export default function DMView() {
     if (!session) return;
     setCombatPickerSelection(new Set());
     setCombatPickerAutoIds(new Set());
+    setCombatPickerViewerId(null);
     setCombatPickerMode('add');
     setShowCombatPicker(true);
   }
@@ -2375,6 +2459,8 @@ export default function DMView() {
                       onInitiativeChange={handleInitiativeChange}
                       onNicknameChange={handleNicknameChange}
                       collapsed={tokenListCollapsed}
+                      combatActive={combatActive}
+                      onAddToCombat={handleAddSingleTokenToCombat}
                     />
                   </div>
                 ))}
@@ -3581,6 +3667,9 @@ export default function DMView() {
           selection={combatPickerSelection}
           mode={combatPickerMode}
           autoSelectedIds={combatPickerAutoIds}
+          viewerId={combatPickerViewerId}
+          onViewerChange={applyViewerToPicker}
+          hasWalls={walls.length > 0 || doors.some((d) => !d.is_open)}
           onToggle={(id) =>
             setCombatPickerSelection((prev) => {
               const next = new Set(prev);

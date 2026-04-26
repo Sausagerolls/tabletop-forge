@@ -909,6 +909,11 @@ export default function PlayerView() {
       setCombatTurn(currentTurn);
     });
 
+    socket.on('tokens_added_to_combat', ({ tokenIds }) => {
+      const idSet = new Set(tokenIds);
+      setTokens((prev) => prev.map((t) => idSet.has(t.id) ? { ...t, in_combat: true } : t));
+    });
+
     socket.on('treasure_received', ({ creatureId, items, newInventory }) => {
       if (creatureId === creatureIdParam) {
         setMyCreature(prev => prev ? { ...prev, inventory: newInventory } : prev);

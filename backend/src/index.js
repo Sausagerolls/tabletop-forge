@@ -1336,6 +1336,25 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Add additional tokens to an active combat without resetting the turn
+  // counter or kicking anyone out — used when reinforcements walk into a
+  // fight or the DM forgot a token at start.
+  socket.on('add_tokens_to_combat', async ({ sessionId, tokenIds }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    if (!Array.isArray(tokenIds) || tokenIds.length === 0) return;
+    try {
+      await db.query(
+        'UPDATE session_tokens SET in_combat=true WHERE id = ANY($1::int[]) AND session_id=$2',
+        [tokenIds, sessionId]
+      );
+      io.to(sessionCode).emit('tokens_added_to_combat', { tokenIds });
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
   socket.on('next_combat_turn', async ({ sessionId, currentTurn }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;

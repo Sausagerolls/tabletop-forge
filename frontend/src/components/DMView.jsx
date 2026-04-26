@@ -8,6 +8,7 @@ import SpellLibrary from './SpellLibrary.jsx';
 import ToolPanel from './ToolPanel.jsx';
 import StatBlock from './StatBlock.jsx';
 import ActionsReference from './ActionsReference.jsx';
+import { wallsToSegments, doorsToSegments, lineBlocked } from '../utils/los.js';
 
 // ── SVG icon components ───────────────────────────────────────────────────────
 
@@ -569,18 +570,35 @@ function CombatTracker({ tokens, combatTurn, onNext, onEnd }) {
   );
 }
 
-function CombatPicker({ tokens, selection, onToggle, onConfirm, onCancel }) {
-  const visible = tokens.filter((t) => !t.is_hidden);
+function CombatPicker({ tokens, selection, onToggle, onConfirm, onCancel, mode = 'start', autoSelectedIds }) {
+  // In add-mode, hide tokens already in combat (they're not candidates).
+  const visible = tokens.filter((t) => {
+    if (t.is_hidden) return false;
+    if (mode === 'add' && t.in_combat) return false;
+    return true;
+  });
+  const isAdd = mode === 'add';
+  const title = isAdd ? 'Add to Combat' : 'Start Combat';
+  const confirmLabel = isAdd
+    ? `Add (${selection.size})`
+    : `Start (${selection.size})`;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
       <div className="bg-dnd-panel border border-gray-700 rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-700 flex items-center justify-between">
-          <h2 className="text-dnd-gold font-semibold text-base flex items-center gap-1.5"><SwordIcon />Start Combat</h2>
+          <h2 className="text-dnd-gold font-semibold text-base flex items-center gap-1.5"><SwordIcon />{title}</h2>
           <span className="text-xs text-gray-400">{selection.size} selected</span>
         </div>
+        {!isAdd && autoSelectedIds && autoSelectedIds.size > 0 && (
+          <div className="px-5 py-2 text-[11px] text-yellow-200 bg-yellow-900/20 border-b border-yellow-800/50">
+            Auto-selected {autoSelectedIds.size} token{autoSelectedIds.size === 1 ? '' : 's'} visible from your selected token. Tick others to add them in.
+          </div>
+        )}
         <div className="p-4 space-y-2 max-h-80 overflow-y-auto">
           {visible.length === 0 && (
-            <div className="text-center text-gray-500 py-6 text-sm">No visible tokens on map.</div>
+            <div className="text-center text-gray-500 py-6 text-sm">
+              {isAdd ? 'No tokens left to add.' : 'No visible tokens on map.'}
+            </div>
           )}
           {visible.map((t) => {
             const checked = selection.has(t.id);
@@ -631,7 +649,7 @@ function CombatPicker({ tokens, selection, onToggle, onConfirm, onCancel }) {
             disabled={selection.size === 0}
             className="flex-1 py-2 text-sm bg-yellow-700 hover:bg-yellow-600 disabled:opacity-40 text-white font-semibold rounded-lg transition-colors"
           >
-            Start ({selection.size})
+            {confirmLabel}
           </button>
         </div>
       </div>
@@ -729,6 +747,10 @@ export default function DMView() {
   const [combatTurn, setCombatTurn] = useState(0);
   const [showCombatPicker, setShowCombatPicker] = useState(false);
   const [combatPickerSelection, setCombatPickerSelection] = useState(new Set());
+  const [combatPickerMode, setCombatPickerMode] = useState('start'); // 'start' | 'add'
+  // Track which tokens were auto-selected via line-of-sight so the modal can
+  // surface a "we picked these for you" banner without re-running the LOS test.
+  const [combatPickerAutoIds, setCombatPickerAutoIds] = useState(new Set());
   const [userColors, setUserColors] = useState({});
   const [users, setUsers] = useState([]);
   const rollIdRef = useRef(0);
@@ -1078,6 +1100,11 @@ export default function DMView() {
 
     socket.on('combat_turn_changed', ({ currentTurn }) => {
       setCombatTurn(currentTurn);
+    });
+
+    socket.on('tokens_added_to_combat', ({ tokenIds }) => {
+      const idSet = new Set(tokenIds);
+      setTokens((prev) => prev.map((t) => idSet.has(t.id) ? { ...t, in_combat: true } : t));
     });
 
     socket.on('user_color_changed', ({ name, color }) => {
@@ -1432,18 +1459,70 @@ export default function DMView() {
     socket.emit('change_grid_style', { sessionId: session.id, gridColor: color, gridThickness: t });
   }
 
+  // Compute the centre of a token in map-pixel coordinates. Tokens are stored
+  // by grid column/row; centre = (col+0.5, row+0.5) * gridSize.
+  function tokenCenter(t) {
+    return { x: (t.col + 0.5) * gridSize, y: (t.row + 0.5) * gridSize };
+  }
+
+  // Build the wall+door segment list once and ask "is the line from
+  // viewer to candidate blocked?". Used as the auto-select rule for
+  // Start Combat — only tokens the viewer can actually see are pre-ticked.
+  // The viewer token is always considered visible to itself.
+  function computeVisibleTokenIds(viewerId) {
+    const viewer = tokens.find((t) => t.id === viewerId);
+    if (!viewer) return new Set();
+    const segs = [...wallsToSegments(walls), ...doorsToSegments(doors.filter((d) => !d.is_open))];
+    const v = tokenCenter(viewer);
+    const out = new Set([viewer.id]);
+    for (const t of tokens) {
+      if (t.id === viewer.id || t.is_hidden) continue;
+      const c = tokenCenter(t);
+      if (!lineBlocked(v.x, v.y, c.x, c.y, segs)) out.add(t.id);
+    }
+    return out;
+  }
+
   function handleStartCombat() {
     if (!session) return;
-    // Pre-select all non-hidden tokens
-    const allIds = new Set(tokens.filter((t) => !t.is_hidden).map((t) => t.id));
-    setCombatPickerSelection(allIds);
+    // If the DM has a token selected, pre-tick only the tokens that token
+    // can see (plus itself). Otherwise fall back to "every visible token".
+    // The DM can still tick or untick anything before confirming.
+    let preselected;
+    let autoIds = new Set();
+    if (selectedToken) {
+      autoIds = computeVisibleTokenIds(selectedToken);
+      preselected = new Set(autoIds);
+    } else {
+      preselected = new Set(tokens.filter((t) => !t.is_hidden).map((t) => t.id));
+    }
+    setCombatPickerSelection(preselected);
+    setCombatPickerAutoIds(autoIds);
+    setCombatPickerMode('start');
+    setShowCombatPicker(true);
+  }
+
+  // Mid-combat reinforcement: opens the picker with no auto-selection so the
+  // DM can hand-pick which (already-on-map) tokens to add. Anything currently
+  // in_combat is filtered out by CombatPicker.
+  function handleAddToCombat() {
+    if (!session) return;
+    setCombatPickerSelection(new Set());
+    setCombatPickerAutoIds(new Set());
+    setCombatPickerMode('add');
     setShowCombatPicker(true);
   }
 
   function handleConfirmCombat() {
     if (!session) return;
     const tokenIds = [...combatPickerSelection];
-    socket.emit('set_combat', { sessionId: session.id, active: true, tokenIds });
+    if (combatPickerMode === 'add') {
+      if (tokenIds.length > 0) {
+        socket.emit('add_tokens_to_combat', { sessionId: session.id, tokenIds });
+      }
+    } else {
+      socket.emit('set_combat', { sessionId: session.id, active: true, tokenIds });
+    }
     setShowCombatPicker(false);
   }
 
@@ -1560,6 +1639,13 @@ export default function DMView() {
               onNext={handleNextTurn}
               onEnd={handleEndCombat}
             />
+            <button
+              onClick={handleAddToCombat}
+              className="shrink-0 mb-1.5 text-xs px-2.5 py-1 rounded-md bg-yellow-700 hover:bg-yellow-600 text-white border border-yellow-600/60 transition-colors"
+              title="Add reinforcements or forgotten tokens to the active combat without resetting the turn order"
+            >
+              + Add tokens
+            </button>
           </div>
         )}
 
@@ -3493,6 +3579,8 @@ export default function DMView() {
         <CombatPicker
           tokens={tokens}
           selection={combatPickerSelection}
+          mode={combatPickerMode}
+          autoSelectedIds={combatPickerAutoIds}
           onToggle={(id) =>
             setCombatPickerSelection((prev) => {
               const next = new Set(prev);

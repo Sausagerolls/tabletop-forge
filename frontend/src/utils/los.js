@@ -88,6 +88,25 @@ function boundarySegs(mapW, mapH) {
   ];
 }
 
+// Cheap point-to-point line-of-sight test. Returns true if the line from
+// (ax,ay) to (bx,by) is blocked by any segment in `wallSegs`. Used by the
+// combat picker's "auto-select tokens visible from the selected token"
+// feature — much cheaper than building a full visibility polygon when all
+// you need is a yes/no per candidate.
+export function lineBlocked(ax, ay, bx, by, wallSegs) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  if (dx === 0 && dy === 0) return false;
+  for (const seg of wallSegs) {
+    const t = raySegIntersect(ax, ay, dx, dy, seg.ax, seg.ay, seg.bx, seg.by);
+    // raySegIntersect returns t along the ray direction; we travel exactly
+    // length 1 in that direction (since dx,dy = full delta). t < 1 means
+    // the wall is between the two points.
+    if (t !== null && t < 1 - 1e-6) return true;
+  }
+  return false;
+}
+
 // Compute the visibility polygon from (ox, oy) given wall segments.
 // Returns a flat [x1,y1,x2,y2,...] array for Konva Line.
 export function computeVisibilityPolygon(ox, oy, wallSegs, mapW, mapH) {

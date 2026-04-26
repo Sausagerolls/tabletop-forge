@@ -1,7 +1,7 @@
 # TableTop Forge
 
 **A self-hosted virtual tabletop for D&D 5e.**  
-Per-player instanced fog of war, AI-powered token generation, full combat tracking, and complete DM control — running entirely on your own machine.
+Per-player instanced fog of war, AI-powered token generation, PDF spell library import, full combat tracking, an extensible plugin system, and complete DM control — running entirely on your own machine.
 
 ---
 
@@ -18,6 +18,8 @@ Per-player instanced fog of war, AI-powered token generation, full combat tracki
   - [LM Studio](#lm-studio)
   - [Ollama](#ollama)
   - [OpenAI / Compatible API](#openai--compatible-api)
+- [Spell Library — PDF Scanner](#spell-library--pdf-scanner)
+- [Plugin System](#plugin-system)
 - [Changelog](#changelog)
 
 ---
@@ -231,7 +233,97 @@ Any OpenAI-compatible API (OpenAI, Groq, Together, etc.) works.
 
 ---
 
+## Spell Library — PDF Scanner
+
+The DM panel's **Spells** tab can ingest a sourcebook PDF and turn it into a shared spell library that players can learn from.
+
+How it works:
+
+1. Configure a vision-capable AI (LM Studio / Ollama / GPT-4o) — see [AI Setup](#ai-setup). The PDF scanner needs a **vision model** and a **context window of at least 16k tokens** (32k+ recommended for whole-book scans).
+2. Open **DM view → Spells tab → Scan PDF** and pick a `.pdf`.
+3. The backend rasterises every page, runs deterministic regex header detection on the text layer, then asks the AI to fill body fields. Multi-pass consensus voting filters out hallucinated spells.
+4. After a scan completes, a **Review names** panel surfaces any imported spells whose names don't match a canonical 5e list, with one-click replacements.
+5. Missing or short descriptions are backfilled from the **open5e SRD** — toggle between the **2014** (5.1) and **2024** (5.2) rulesets in the panel header. Aliases for SRD-renamed spells (Bigby's Hand → Arcane Hand etc.) are applied automatically.
+6. **Export / Import** buttons in the library let you ship a curated subset of spells between sessions as JSON.
+
+⚠ AI scans aren't perfect. Review the imported spells before relying on them at the table.
+
+---
+
+## Plugin System
+
+TableTop Forge has a filesystem-based plugin system. Plugins extend the app with new map effects, custom DM tabs, click-to-place tools, and shared state that auto-syncs between the DM and players.
+
+**Quick facts:**
+
+- Plugins live in `backend/plugins/<plugin-id>/` — each is a folder with a `plugin.json` manifest and a `client.js` ES module.
+- The backend never executes plugin code; it only stores metadata, serves plugin assets, and provides a generic JSONB key/value store keyed by plugin id.
+- Plugin code runs in the browser using the host's React + Konva instances passed in via `register({ React, ReactKonva, registries, context })`.
+- Disabling a plugin keeps its data; deleting a plugin keeps its data; only an explicit table wipe removes it. Re-installing later restores everything.
+- Plugins **cannot** modify core React components, the login screen, or anyone else's data. The login screen never loads plugins, so a misbehaving plugin can never break DM auth.
+
+**Managing plugins:** open **DM view → Session tab → Plugins**. From there you can upload a plugin `.zip`, toggle enabled/disabled, see dependency status, and delete plugins.
+
+**If a plugin breaks the app so badly that the in-app manager can't help**, stop the backend and delete `backend/plugins/<id>/` on the host filesystem. On next start the host reconciles its records with what's on disk. Stored data is not touched.
+
+**Bundled plugin — Elemental Templates:** ships enabled by default. Adds an "Elemental Effect" select to the spell-template-edit popup with six options (fire / water / ice / lightning / void / acid-poison / none), each rendered as a custom animated overlay. Disablable from the Plugins UI.
+
+**Writing your own plugins:** see the **[Plugin Authoring Guide](PLUGINS.md)** — covers the manifest, lifecycle, every extension point, the data API + event bus, common pitfalls, and a complete worked example.
+
+---
+
 ## Changelog
+
+### Post v1.0 — what's been added since release
+
+**Plugin system**
+- New extension points: spell-template decorators, template-editor extensions, DM tabs, template overlays (host-rendered effects via canvas), map decorations, and map click handlers
+- Per-plugin JSONB key/value store (`/api/plugins/:id/data`), auto-broadcasting writes via socket so DM ↔ player views stay in sync
+- Generic `plugin_event` socket relay so plugins can ship arbitrary cross-client events
+- Plugin manager UI in the DM Session tab — install zips, enable/disable, dependency status, delete
+- Bundled **Elemental Templates** plugin (fire / water / ice / lightning / void / acid-poison effects on spell templates, cone-aware)
+- See [`PLUGINS.md`](PLUGINS.md) for the authoring guide
+
+**Spell library + PDF scanner**
+- Upload a sourcebook PDF — deterministic regex header detection + LLM body fill + multi-pass consensus voting against hallucinations
+- Cross-page body merging so spells whose description spans a page break aren't truncated
+- Open5e SRD fallback for missing/short descriptions, with a 2014 / 2024 ruleset toggle
+- 17-entry alias map for SRD-renamed spells (Bigby's Hand → Arcane Hand, Tasha's Hideous Laughter → Hideous Laughter, etc.)
+- Post-scan **Review names** panel with one-click rename + open5e refresh
+- Bulk **Refresh all from open5e** for backfilling existing rows
+- Spell library **Export / Import** with class + level filters
+
+**Combat improvements**
+- Pulse animation on the current-turn token
+- Add tokens to active combat mid-fight (per-token "+ Add to combat" button + bulk add modal)
+- Auto-select tokens visible to the currently selected token when starting combat (with a viewer-picker dropdown inside the modal so you can switch viewer without cancelling)
+
+**Character / inventory**
+- New **Magic Item** inventory type (separate from weapons), with attunement flag preserved through treasure transfers
+- Player journal, currency tracking, level / XP fields
+- Concentration tracking, heroic inspiration, death saves, hit dice, armor proficiencies
+- Group token select-and-move (drag-rectangle marquee)
+- Token export with selection modal; treasure list export-selected
+
+**Spell templates**
+- DM-only place / edit / move / colour controls for cones, circles, lines, squares
+- Spell templates broadcast to players (read-only) so plugin overlays are visible at the table
+
+**Map / world**
+- Multi-floor map labels
+- Per-token light source colour
+- Magical darkness / heavy fog / **water** zones (water uses a real slice-distortion canvas effect)
+- Light source visibility polygon clipping fixes
+
+**PDF export**
+- Print pagination respecting `:has()` so the character sheet flows over multiple pages cleanly
+- Two-column spell grid in the export
+
+**Stack**
+- nginx `^~ /api/` route prefix so plugin assets (`.js` paths under `/api/plugins/`) bypass the static-asset cache regex
+- Bind-mounted `./backend/plugins` so the host filesystem is the source of truth for installed plugins
+
+---
 
 ### v1.0.0 — Initial Release
 

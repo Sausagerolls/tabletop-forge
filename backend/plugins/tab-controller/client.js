@@ -35,9 +35,9 @@ const PLUGIN_ID = 'tab-controller';
 
 // Mirror of the host's PANEL_TABS. The plugin can't introspect the
 // host's array directly (nothing exposes it via the contract), so we
-// duplicate it here. If a future host release adds a tab, plugin
-// authors editing this list pick it up.
-const ALL_TABS = [
+// duplicate the BUILT-IN tabs here. Plugin-supplied tabs are
+// discovered dynamically from the dmTabs registry at render time.
+const BUILTIN_TABS = [
   { id: 'map',      label: 'Map',           protected: true  },
   { id: 'library',  label: 'Token Library', protected: true  },
   { id: 'spells',   label: 'Spells',        protected: false },
@@ -58,7 +58,7 @@ function pingSection() { for (const fn of sectionSubs) try { fn(); } catch {} }
 
 export default {
   register({ React, registries, context }) {
-    const { data, notifyChange, subscribe, sessionId, setPanelTab } = context;
+    const { data, notifyChange, subscribe, subscribeRegistry, sessionId, setPanelTab } = context;
     const STATE_KEY = sessionId != null ? `hidden_${sessionId}` : 'hidden';
 
     // Sync our hidden set into the registry the host actually reads.
@@ -100,6 +100,13 @@ export default {
         sectionSubs.add(fn);
         return () => sectionSubs.delete(fn);
       }, []);
+      // Re-render when ANY plugin's registry contributions change so
+      // newly-installed plugins' dmTabs show up live in our list and
+      // disabled plugins drop out cleanly.
+      React.useEffect(() => {
+        if (typeof subscribeRegistry !== 'function') return;
+        return subscribeRegistry(() => force((x) => (x + 1) | 0));
+      }, []);
 
       function setHidden(tabId, hide) {
         if (hide) hidden.add(tabId); else hidden.delete(tabId);
@@ -120,7 +127,22 @@ export default {
         if (typeof setPanelTab === 'function') setPanelTab(tabId);
       }
 
-      const hideable = ALL_TABS.filter((t) => !t.protected);
+      // Plugin-supplied tabs from the dmTabs registry. The host shows
+      // them with id `plugin:<pluginId>` so we use the same key for
+      // panelTabHidden — the host's PluginDmTabs filter looks under
+      // exactly that prefix.
+      const pluginTabs = Array.from(registries.dmTabs.entries()).map(
+        ([pid, def]) => ({
+          id: `plugin:${pid}`,
+          label: def.label || pid,
+          protected: false,
+          source: 'plugin',
+        })
+      );
+
+      const builtin = BUILTIN_TABS.map((t) => ({ ...t, source: 'builtin' }));
+      const allTabs = [...builtin, ...pluginTabs];
+      const hideable = allTabs.filter((t) => !t.protected);
       const hiddenCount = hideable.filter((t) => hidden.has(t.id)).length;
 
       return React.createElement(
@@ -153,6 +175,11 @@ export default {
                   'span',
                   { className: `text-xs truncate ${isHidden ? 'text-gray-500 line-through' : 'text-gray-200'}` },
                   t.label
+                ),
+                t.source === 'plugin' && React.createElement(
+                  'span',
+                  { className: 'text-[9px] uppercase tracking-wider bg-purple-900/50 border border-purple-700/40 text-purple-200 px-1 rounded shrink-0' },
+                  'plugin'
                 )
               ),
               isHidden && React.createElement(

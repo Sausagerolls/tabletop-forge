@@ -246,6 +246,10 @@ export async function loadPlugins({ context = {} } = {}) {
         // subscribe/emitEvent provide cross-client coordination so a
         // plugin can mirror state from DM to players (or vice-versa)
         // without each client polling the data API.
+        // subscribeRegistry lets a plugin's UI re-render when *any*
+        // plugin's registry contributions change — useful for plugins
+        // that introspect other plugins' contributions (e.g. a tab-
+        // management plugin listing dmTabs entries from every plugin).
         context: {
           ...context,
           manifest: row.manifest,
@@ -254,6 +258,7 @@ export async function loadPlugins({ context = {} } = {}) {
           notifyChange: bumpRegistry,
           subscribe,
           emitEvent,
+          subscribeRegistry,
         },
       });
       loaded.set(row.id, { mod: reg, manifest: row.manifest });
@@ -321,7 +326,7 @@ export async function reloadPlugin(pluginId, ctx = {}) {
       React,
       ReactKonva,
       registries,
-      context: { ...ctx, manifest: row.manifest, pluginId: row.id, data, notifyChange: bumpRegistry, subscribe, emitEvent },
+      context: { ...ctx, manifest: row.manifest, pluginId: row.id, data, notifyChange: bumpRegistry, subscribe, emitEvent, subscribeRegistry },
     });
     loaded.set(row.id, { mod: reg, manifest: row.manifest });
     bumpRegistry();

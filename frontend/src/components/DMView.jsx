@@ -853,25 +853,34 @@ function PluginDmTabs({ activeTab, onSelect }) {
   useRegistryVersion();
   const tabs = pluginRegistries.dmTabs;
   if (tabs.size === 0) return null;
+  // Same hidden-set logic as the built-in PanelTabBar — plugin tabs use
+  // ids of the form `plugin:<pluginId>` for the panelTabHidden registry,
+  // so a tab-management plugin can hide them with the same mechanism.
+  const hidden = new Set();
+  for (const set of pluginRegistries.panelTabHidden.values()) {
+    for (const id of set) hidden.add(id);
+  }
   return (
     <>
-      {Array.from(tabs.entries()).map(([pid, def]) => {
-        const isActive = activeTab === `plugin:${pid}`;
-        return (
-          <button
-            key={pid}
-            onClick={() => onSelect(`plugin:${pid}`)}
-            className={`flex-1 min-w-0 py-2 text-xs font-medium border-b-2 transition-colors flex items-center justify-center gap-1 ${
-              isActive
-                ? 'text-dnd-gold border-dnd-gold'
-                : 'text-gray-400 border-transparent hover:text-gray-200'
-            }`}
-            title={def.label || pid}
-          >
-            <span className="truncate">{def.label || pid}</span>
-          </button>
-        );
-      })}
+      {Array.from(tabs.entries())
+        .filter(([pid]) => !hidden.has(`plugin:${pid}`))
+        .map(([pid, def]) => {
+          const isActive = activeTab === `plugin:${pid}`;
+          return (
+            <button
+              key={pid}
+              onClick={() => onSelect(`plugin:${pid}`)}
+              className={`flex-1 min-w-0 py-2 text-xs font-medium border-b-2 transition-colors flex items-center justify-center gap-1 ${
+                isActive
+                  ? 'text-dnd-gold border-dnd-gold'
+                  : 'text-gray-400 border-transparent hover:text-gray-200'
+              }`}
+              title={def.label || pid}
+            >
+              <span className="truncate">{def.label || pid}</span>
+            </button>
+          );
+        })}
     </>
   );
 }

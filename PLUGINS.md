@@ -136,6 +136,7 @@ Runtime environment for your plugin. Fields:
 | `subscribe` | `(handler) => unsubscribe` | Subscribe to incoming `plugin_event` frames addressed to your plugin. See §6. |
 | `emitEvent` | `(type, payload) => void` | Broadcast a custom event to every other client in the session. See §6. |
 | `setPanelTab` | `(tabId: string) => void` | DM only. Programmatically switch the active panel tab. Works for built-in tab ids (`'map'`, `'session'`, etc.), plugin-supplied tab ids (`'plugin:<pluginId>'`), and tabs currently hidden via `panelTabHidden`. |
+| `subscribeRegistry` | `(handler) => unsubscribe` | Subscribe to *every* registry version bump in the host. Use this when your plugin's UI needs to react to OTHER plugins' contributions changing (e.g. a tab manager listing every plugin's `dmTabs` — when a new plugin loads its tab should show up live without a page refresh). Don't use this for re-rendering on your own state changes — call your local notify pump for that. |
 
 ### What `unregister` receives
 
@@ -299,7 +300,7 @@ Plugins can hide built-in DM panel tabs from the tab bar. The host filters the b
 
 Hiding only removes the BUTTON. The corresponding tab body is still rendered when active — i.e. you can call `context.setPanelTab('spells')` to land the user inside a hidden tab even though it's missing from the bar. This is the standard pattern for a tab-management plugin: "hide from clutter, but keep reachable via plugin UI".
 
-Registry value is a `Set<string>` of built-in tab ids. The currently shipped ids are `'map' | 'library' | 'spells' | 'tokens' | 'markers' | 'treasure' | 'handouts' | 'session'`.
+Registry value is a `Set<string>` of tab ids. Built-in tab ids are `'map' | 'library' | 'spells' | 'tokens' | 'markers' | 'treasure' | 'handouts' | 'session'`. **Plugin-supplied tabs (added via `dmTabs`) are also hideable** — use the id `'plugin:<pluginId>'` to refer to them. The host filters both the built-in tab bar and the plugin tab buttons by the same set, so a tab-management plugin can hide either kind uniformly.
 
 ### `panelTabExtensions`
 

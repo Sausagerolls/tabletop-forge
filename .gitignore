@@ -23,8 +23,10 @@ frontend/dist/
 backend/uploads/
 generated-images/
 
-# Release archives produced by make_release.sh
-releases/
+# Release archives produced by make_release.sh — top-level only.
+# website/releases/ holds zips that ship to the public download page
+# and IS tracked.
+/releases/
 
 # Claude / agent local state
 .claude/

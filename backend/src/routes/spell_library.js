@@ -682,6 +682,39 @@ function normaliseRuleset(r) {
   return s === '2024' ? '2024' : '2014';
 }
 
+// SRD-name aliases. WotC's published SRD strips named-wizard prefixes from
+// many spells (Bigby's Hand → Arcane Hand, Tasha's Hideous Laughter →
+// Hideous Laughter, etc.) so a direct `name__iexact` lookup misses them.
+// Both 5.1 (2014) and 5.2 (2024) SRDs use the unnamed forms. Keyed by
+// letters-only so curly-vs-straight apostrophes both match.
+const OPEN5E_ALIAS_PAIRS = [
+  ["Bigby's Hand", "Arcane Hand"],
+  ["Tasha's Hideous Laughter", "Hideous Laughter"],
+  ["Otiluke's Resilient Sphere", "Resilient Sphere"],
+  ["Otiluke's Freezing Sphere", "Freezing Sphere"],
+  ["Mordenkainen's Faithful Hound", "Faithful Hound"],
+  ["Mordenkainen's Sword", "Arcane Sword"],
+  ["Mordenkainen's Magnificent Mansion", "Magnificent Mansion"],
+  ["Mordenkainen's Private Sanctum", "Private Sanctum"],
+  ["Leomund's Tiny Hut", "Tiny Hut"],
+  ["Leomund's Secret Chest", "Secret Chest"],
+  ["Drawmij's Instant Summons", "Instant Summons"],
+  ["Evard's Black Tentacles", "Black Tentacles"],
+  ["Otto's Irresistible Dance", "Irresistible Dance"],
+  ["Melf's Acid Arrow", "Acid Arrow"],
+  ["Tenser's Floating Disk", "Floating Disk"],
+  ["Nystul's Magic Aura", "Arcanist's Magic Aura"],
+  ["Rary's Telepathic Bond", "Telepathic Bond"],
+];
+const OPEN5E_NAME_ALIASES = (() => {
+  const m = new Map();
+  for (const [from, to] of OPEN5E_ALIAS_PAIRS) m.set(letterKey(from), to);
+  return m;
+})();
+function resolveOpen5eAlias(name) {
+  return OPEN5E_NAME_ALIASES.get(letterKey(name)) || name;
+}
+
 function pickPreferredV1Result(results) {
   if (!Array.isArray(results) || !results.length) return null;
   const wotc = results.find(r => r.document__slug === 'wotc-srd');
@@ -694,9 +727,13 @@ async function fetchOpen5eSpell(name, ruleset = '2014') {
   if (!k) return null;
   const cacheKey = `${rs}:${k}`;
   if (open5eCache.has(cacheKey)) return open5eCache.get(cacheKey);
+  // Apply the SRD alias map first (Bigby's Hand → Arcane Hand, etc.) so
+  // named-wizard spells round-trip through open5e even though the SRD
+  // strips the prefix.
+  const lookupName = resolveOpen5eAlias(name);
   const url = rs === '2024'
-    ? `${OPEN5E_V2}?name__iexact=${encodeURIComponent(name)}&document__key=srd-2024`
-    : `${OPEN5E_V1}?name__iexact=${encodeURIComponent(name)}`;
+    ? `${OPEN5E_V2}?name__iexact=${encodeURIComponent(lookupName)}&document__key=srd-2024`
+    : `${OPEN5E_V1}?name__iexact=${encodeURIComponent(lookupName)}`;
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), OPEN5E_FETCH_TIMEOUT_MS);
@@ -1166,6 +1203,72 @@ router.patch('/:id/rename', async (req, res) => {
   }
 });
 
+// POST /refresh-all-from-open5e — iterate every row, look it up in open5e
+// (with alias resolution), and overwrite any field where open5e clearly
+// has better data. Description specifically is replaced when the existing
+// one is short (< 400 chars) and open5e has a longer one — fixes the very
+// common case of AI-truncated descriptions left behind by older scans.
+// Body: `{ ruleset: '2014' | '2024' }`. Streams nothing — synchronous,
+// returns a summary at the end.
+router.post('/refresh-all-from-open5e', async (req, res) => {
+  try {
+    const ruleset = normaliseRuleset(req.body?.ruleset || req.query?.ruleset);
+    const rows = (await db.query('SELECT * FROM spell_library')).rows;
+    let updated = 0, missing = 0, unchanged = 0, failed = 0;
+    const examples = [];
+    for (const row of rows) {
+      let canonical = null;
+      try { canonical = await fetchOpen5eSpell(row.name, ruleset); }
+      catch (e) { failed += 1; continue; }
+      if (!canonical) { missing += 1; continue; }
+      // Decide what to overwrite — same rules as the per-row refresh, but
+      // we only touch fields that would actually change (so the row's
+      // updated_at stays sane and we can report meaningful counts).
+      const existingDesc = String(row.description || '').trim();
+      const canonicalDesc = String(canonical.description || '').trim();
+      const replaceDesc = canonicalDesc && (
+        !existingDesc ||
+        (existingDesc.length < 400 && canonicalDesc.length > existingDesc.length * 1.5)
+      );
+      const newDesc = replaceDesc ? canonicalDesc : row.description;
+      const newCastingTime = row.casting_time || canonical.casting_time;
+      const newRange = row.range_area || canonical.range_area;
+      const newDuration = row.duration || canonical.duration;
+      const newCompMText = row.comp_m_text || canonical.comp_m_text;
+      const newSchool = row.school || canonical.school;
+      const existingClasses = Array.isArray(row.allowed_classes) ? row.allowed_classes : [];
+      const newClasses = existingClasses.length > 0 ? existingClasses : canonical.allowed_classes;
+      // Only persist if at least one column actually changes.
+      const changed =
+        newDesc !== row.description ||
+        newCastingTime !== row.casting_time ||
+        newRange !== row.range_area ||
+        newDuration !== row.duration ||
+        newCompMText !== row.comp_m_text ||
+        newSchool !== row.school ||
+        JSON.stringify(newClasses) !== JSON.stringify(existingClasses);
+      if (!changed) { unchanged += 1; continue; }
+      try {
+        await db.query(
+          `UPDATE spell_library SET
+             casting_time=$1, range_area=$2, duration=$3, comp_m_text=$4,
+             description=$5, school=$6, allowed_classes=$7
+           WHERE id=$8`,
+          [newCastingTime, newRange, newDuration, newCompMText, newDesc, newSchool,
+           JSON.stringify(newClasses), row.id]
+        );
+        updated += 1;
+        if (examples.length < 12 && replaceDesc) {
+          examples.push({ name: row.name, oldLen: existingDesc.length, newLen: canonicalDesc.length });
+        }
+      } catch (e) { failed += 1; }
+    }
+    res.json({ ruleset, total: rows.length, updated, unchanged, missing, failed, examples });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete('/:id', async (req, res) => {
   try {
     await db.query('DELETE FROM spell_library WHERE id=$1', [req.params.id]);
@@ -1377,6 +1480,18 @@ router.post('/scan-pdf', upload.single('file'), async (req, res) => {
                 if (Array.isArray(v) && v.length === 0) return canonical?.[k];
                 return v;
               };
+              // Description gets a smarter rule: a non-empty but short LLM
+              // description usually means the model gave up partway through
+              // (saw the start of the spell, lost the rest at a page break).
+              // Prefer open5e when its version is meaningfully longer.
+              const pickDescription = () => {
+                const llmDesc = String(llm.description || '').trim();
+                const canDesc = String(canonical?.description || '').trim();
+                if (!llmDesc) return canDesc;
+                if (!canDesc) return llmDesc;
+                if (llmDesc.length < 400 && canDesc.length > llmDesc.length * 1.5) return canDesc;
+                return llmDesc;
+              };
               const merged = {
                 name: hdr.name,
                 level: hdr.level,
@@ -1396,7 +1511,7 @@ router.post('/scan-pdf', upload.single('file'), async (req, res) => {
                 save_ability: pick('save_ability') || '',
                 damage_entries: pick('damage_entries') || [],
                 extra_effects: pick('extra_effects') || '',
-                description: pick('description') || '',
+                description: pickDescription(),
               };
               const s = normaliseSpell(merged);
               if (!s) continue;
@@ -1531,7 +1646,9 @@ router.post('/scan-pdf', upload.single('file'), async (req, res) => {
             }
           }
           // Open5e fallback: backfill any body field the consensus winner
-          // left empty. Only fills gaps — anything the LLM gave us wins.
+          // left empty. For description specifically, also override when the
+          // LLM gave a suspiciously short string — a short description
+          // usually means the AI lost track partway through the spell.
           try {
             const canonical = await fetchOpen5eSpell(s.name, ruleset);
             if (canonical) {
@@ -1539,10 +1656,15 @@ router.post('/scan-pdf', upload.single('file'), async (req, res) => {
               if (!s.range_area) s.range_area = canonical.range_area;
               if (!s.duration) s.duration = canonical.duration;
               if (!s.comp_m_text) s.comp_m_text = canonical.comp_m_text;
-              if (!s.description) s.description = canonical.description;
               if (!s.school) s.school = canonical.school;
               if (!Array.isArray(s.allowed_classes) || s.allowed_classes.length === 0) {
                 s.allowed_classes = canonical.allowed_classes;
+              }
+              const llmDesc = String(s.description || '').trim();
+              const canDesc = String(canonical.description || '').trim();
+              if (!llmDesc) s.description = canDesc;
+              else if (canDesc && llmDesc.length < 400 && canDesc.length > llmDesc.length * 1.5) {
+                s.description = canDesc;
               }
             }
           } catch (e) { /* network failure — keep LLM-only data */ }

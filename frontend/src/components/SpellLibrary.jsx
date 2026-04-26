@@ -20,6 +20,8 @@ export default function SpellLibrary({ aiSettings }) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewItems, setReviewItems] = useState([]);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [bulkRefreshState, setBulkRefreshState] = useState(null); // null | 'loading' | summary
+  const [bulkRefreshErr, setBulkRefreshErr] = useState('');
   // Open5e SRD ruleset — '2014' (5.1) or '2024' (5.2). Affects both the scan
   // fallback and the per-spell "Refresh from open5e" action. Persisted across
   // reloads so the DM doesn't have to re-pick after every refresh.
@@ -203,6 +205,26 @@ export default function SpellLibrary({ aiSettings }) {
         // eslint-disable-next-line no-await-in-loop
         await applyReviewItem(i);
       }
+    }
+  }
+
+  async function handleBulkRefresh() {
+    if (!confirm(`Re-fetch every spell's body fields from open5e (${ruleset} SRD)? Empty/short descriptions get replaced with the full canonical text. AI-extracted damage/components are preserved.`)) return;
+    setBulkRefreshState('loading');
+    setBulkRefreshErr('');
+    try {
+      const res = await fetch('/api/spell-library/refresh-all-from-open5e', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ruleset }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setBulkRefreshState(data);
+      await load();
+    } catch (err) {
+      setBulkRefreshState(null);
+      setBulkRefreshErr(err.message);
     }
   }
 
@@ -427,7 +449,17 @@ export default function SpellLibrary({ aiSettings }) {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h4 className="text-sm font-semibold text-dnd-gold">Library {spells.length > 0 && <span className="text-xs text-gray-500 font-normal">({spells.length})</span>}</h4>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {spells.length > 0 && (
+              <button
+                onClick={handleBulkRefresh}
+                disabled={bulkRefreshState === 'loading'}
+                className="text-xs bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-700 text-indigo-200 px-2 py-1 rounded disabled:opacity-50"
+                title="Backfill missing or truncated spell descriptions from open5e for every row in the library"
+              >
+                {bulkRefreshState === 'loading' ? 'Refreshing…' : 'Refresh all from open5e'}
+              </button>
+            )}
             {spells.length > 0 && (
               <button
                 onClick={() => openReview(false)}
@@ -473,6 +505,32 @@ export default function SpellLibrary({ aiSettings }) {
             {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
+        {bulkRefreshErr && (
+          <div className="text-xs text-red-300 bg-red-900/30 border border-red-800 rounded-lg px-3 py-2">
+            Refresh failed: {bulkRefreshErr}
+          </div>
+        )}
+        {bulkRefreshState && bulkRefreshState !== 'loading' && (
+          <div className="text-xs text-indigo-200 bg-indigo-900/30 border border-indigo-800 rounded-lg px-3 py-2 space-y-1">
+            <div>
+              <strong>Refresh complete</strong> — {bulkRefreshState.updated} updated · {bulkRefreshState.unchanged} already complete · {bulkRefreshState.missing} not in open5e ({bulkRefreshState.ruleset} SRD)
+              {bulkRefreshState.failed > 0 && <> · <span className="text-red-300">{bulkRefreshState.failed} failed</span></>}
+            </div>
+            {Array.isArray(bulkRefreshState.examples) && bulkRefreshState.examples.length > 0 && (
+              <details>
+                <summary className="cursor-pointer text-indigo-300">Sample fixes ({bulkRefreshState.examples.length})</summary>
+                <ul className="mt-1 pl-4 space-y-0.5 text-[11px] text-gray-300">
+                  {bulkRefreshState.examples.map((ex, i) => (
+                    <li key={i}>{ex.name}: {ex.oldLen} → {ex.newLen} chars</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            <button onClick={() => setBulkRefreshState(null)} className="text-[11px] text-gray-400 hover:text-white underline">
+              dismiss
+            </button>
+          </div>
+        )}
         {loading && <p className="text-xs text-gray-500 italic">Loading…</p>}
         {!loading && spells.length === 0 && (
           <p className="text-xs text-gray-500 italic">No spells in the library yet.</p>

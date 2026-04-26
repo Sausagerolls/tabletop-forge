@@ -274,6 +274,21 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 
 ## Changelog
 
+### v1.2.0 — Plugin store + three new plugins, panel-tab extension API
+
+**New plugins (downloadable from the Plugin Store on the website):**
+- **Weather Effects** — DM-controlled animated rain / snow / fog across the whole map, with intensity and wind-angle controls. Per-session, particles scale with map size.
+- **Damage Pop-Ups** — DM picks a token and announces a damage / healing / temp HP value. Floating colour-coded chip animates above the token while HP is updated using 5e rules (temp HP absorbs first, healing caps at max, temp HP doesn't stack).
+- **Tab Controller** — adds a Tab Visibility section to the Session tab so you can hide rarely-used built-in tabs from the bar (Spells / Markers / Treasure / Handouts). Hidden tabs stay reachable via an "Open" button. Map / Token Library / Token List / Session are protected.
+
+**Plugin API additions:**
+- `panelTabHidden` registry — `Map<pluginId, Set<tabId>>`. Plugins can hide built-in DM panel tabs from the bar. The host filters the bar by the union of every plugin's set; hidden tabs still render their body when active so plugins can navigate to them via `setPanelTab`.
+- `panelTabExtensions` registry — `Map<pluginId, { tabId, render }>`. Plugins can append content inside the body of a specific built-in tab (currently the Session tab; other tabs need a one-line host insertion to enable).
+- `context.setPanelTab(tabId)` — DM-only callback so plugins can switch the active panel tab programmatically.
+
+**Bug fix:**
+- Spell templates' tpl-edit / tpl-erase tools were silently no-oping on freshly-drawn templates because the mousedown handler captured a stale closure of the templates array. Fixed via a ref, matching the existing pattern for tokens / walls / doors.
+
 ### v1.1.0 — Plugin system, PDF spell scanner, big combat + spell-template improvements
 
 **Plugin system**

@@ -37,3 +37,7 @@ FixesReadme.rtf
 
 # Test PDFs used for the spell scanner — typically copyrighted sourcebooks.
 *.pdf
+
+# Deploy credentials — never commit. See .deploy-env.example for the
+# expected format.
+.deploy-env

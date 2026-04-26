@@ -419,6 +419,91 @@ code {
 .ai-rec strong { color: var(--gold); font-weight: 500; }
 
 /* ════════════════════════════════════════════════
+   PLUGIN STORE
+════════════════════════════════════════════════ */
+.plugins-section { padding: 80px 52px; }
+.plugins-inner { max-width: 1100px; margin: 0 auto; }
+.plugins-header { text-align: center; margin-bottom: 56px; }
+.plugins-header .sec-body { margin: 0 auto; }
+.plugins-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
+.plugin-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 24px;
+  display: flex; flex-direction: column; gap: 14px;
+  transition: border-color 0.22s, box-shadow 0.22s, transform 0.22s;
+}
+.plugin-card:hover {
+  border-color: var(--gold-d);
+  box-shadow: 0 6px 28px rgba(0,0,0,0.4), 0 0 16px rgba(200,152,64,0.10);
+  transform: translateY(-2px);
+}
+.plugin-card-head { display: flex; align-items: center; gap: 14px; }
+.plugin-card-icon {
+  font-size: 30px; flex-shrink: 0;
+  width: 52px; height: 52px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface2); border-radius: 11px;
+  border: 1px solid var(--border-mid);
+}
+.plugin-card-title { flex: 1; min-width: 0; }
+.plugin-card-name {
+  font-family: 'Cinzel', serif; font-size: 17px; font-weight: 600;
+  letter-spacing: 0.05em; color: var(--text);
+}
+.plugin-card-meta { font-size: 12px; color: var(--text-d); margin-top: 3px; letter-spacing: 0.02em; }
+.plugin-card-body {
+  font-size: 15px; color: var(--text-m); line-height: 1.7; flex: 1;
+}
+.plugin-card-foot {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding-top: 14px; border-top: 1px solid var(--border);
+}
+.plugin-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 20px;
+  font-family: 'Cinzel', serif; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.10em;
+}
+.plugin-badge-builtin {
+  background: rgba(200,152,64,0.15); color: var(--gold);
+  border: 1px solid rgba(200,152,64,0.30);
+}
+.plugin-badge-new {
+  background: rgba(184,50,50,0.18); color: var(--accent-l);
+  border: 1px solid rgba(184,50,50,0.35);
+}
+.plugin-download-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 14px; border-radius: 7px;
+  background: linear-gradient(145deg, var(--accent-d), var(--accent));
+  font-family: 'Cinzel', serif; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; color: #fff;
+  transition: transform 0.22s, box-shadow 0.22s;
+}
+.plugin-download-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(184,50,50,0.40); }
+.plugin-meta-text { font-size: 13px; color: var(--text-d); flex: 1; min-width: 0; }
+.plugins-cta {
+  margin-top: 56px; padding: 32px;
+  background: linear-gradient(135deg, rgba(200,152,64,0.06) 0%, rgba(122,90,24,0.03) 100%);
+  border: 1px solid var(--gold-d); border-radius: 12px;
+  text-align: center;
+}
+.plugins-cta-title {
+  font-family: 'Cinzel', serif; font-size: 18px; letter-spacing: 0.05em;
+  color: var(--gold); margin-bottom: 10px;
+}
+.plugins-cta-body { font-size: 15px; color: var(--text-m); line-height: 1.7; margin-bottom: 22px; max-width: 580px; margin-left: auto; margin-right: auto; }
+.plugins-cta-link {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 28px; border: 1px solid var(--gold-d);
+  border-radius: 8px; background: rgba(200,152,64,0.08);
+  font-family: 'Cinzel', serif; font-size: 12px; font-weight: 600;
+  letter-spacing: 0.09em; color: var(--gold-l);
+  transition: all 0.22s;
+}
+.plugins-cta-link:hover { background: rgba(200,152,64,0.18); border-color: var(--gold); color: #fff; }
+
+/* ════════════════════════════════════════════════
    DOWNLOAD
 ════════════════════════════════════════════════ */
 .dl-section { padding: 80px 52px; }
@@ -500,6 +585,8 @@ footer {
   .features-grid { grid-template-columns: 1fr 1fr; }
   .ai-cards { grid-template-columns: 1fr; }
   .also-cards { grid-template-columns: 1fr; }
+  .plugins-grid { grid-template-columns: 1fr; }
+  .plugins-section { padding: 60px 24px; }
   footer { padding: 24px; }
 }
 @media (max-width: 560px) {
@@ -524,6 +611,7 @@ footer {
     <li><a href="#features">Features</a></li>
     <li><a href="#setup">Setup</a></li>
     <li><a href="#ai">AI Integration</a></li>
+    <li><a href="#plugins">Plugins</a></li>
     <li><a href="https://github.com/Sausagerolls/tabletop-forge" target="_blank" rel="noopener">GitHub</a></li>
     <li><a href="#download">Download</a></li>
   </ul>
@@ -538,6 +626,7 @@ footer {
     <li><a href="#features" onclick="closeMobile()">Features</a></li>
     <li><a href="#setup" onclick="closeMobile()">Setup</a></li>
     <li><a href="#ai" onclick="closeMobile()">AI Integration</a></li>
+    <li><a href="#plugins" onclick="closeMobile()">Plugins</a></li>
     <li><a href="https://github.com/Sausagerolls/tabletop-forge" target="_blank" rel="noopener" onclick="closeMobile()">GitHub</a></li>
     <li><a href="#download" onclick="closeMobile()">Download</a></li>
   </ul>
@@ -936,6 +1025,82 @@ cd TabletopForge</div>
         </div>
       </div>
 
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ═══════════ PLUGIN STORE ═══════════ -->
+<!--
+  HOW TO ADD A NEW PLUGIN LISTING:
+  Copy one of the plugin-card blocks below and paste it into
+  the .plugins-grid container. Replace the icon, name, version, author,
+  description, and footer (download URL or Built-in badge) for the new
+  plugin. The grid is two columns on desktop and stacks on mobile, no
+  layout work needed when adding more cards.
+-->
+<section id="plugins">
+  <div class="plugins-section reveal">
+    <div class="plugins-inner">
+      <div class="plugins-header">
+        <div class="eyebrow">Plugin Store</div>
+        <h2 class="sec-title">Plugins for Your Forge</h2>
+        <p class="sec-body">Plugins extend the app with new map effects, custom DM tabs, click-to-place tools, and shared state that auto-syncs between the DM and players. Install via the <strong>Plugins</strong> section of the <strong>Session</strong> tab in the DM view.</p>
+      </div>
+
+      <div class="plugins-grid">
+
+        <!-- ═════ Elemental Templates ═════ -->
+        <div class="plugin-card">
+          <div class="plugin-card-head">
+            <div class="plugin-card-icon">🔥</div>
+            <div class="plugin-card-title">
+              <div class="plugin-card-name">Elemental Templates</div>
+              <div class="plugin-card-meta">v1.0.0 · TableTop Forge</div>
+            </div>
+          </div>
+          <div class="plugin-card-body">
+            Animated elemental overlays on spell templates — fire, water, ice, lightning, void, and acid/poison. Tag a template in the edit popup; the effect renders for both DM and players. Cone-aware: every effect originates at the cone's apex and stays constrained inside the wedge shape.
+          </div>
+          <div class="plugin-card-foot">
+            <span class="plugin-badge plugin-badge-builtin">Built-in</span>
+            <span class="plugin-meta-text">Ships enabled by default. Disable from Plugins → Session tab.</span>
+          </div>
+        </div>
+
+        <!-- ═════ Plugin card template — copy this block to add a new plugin
+        <div class="plugin-card">
+          <div class="plugin-card-head">
+            <div class="plugin-card-icon">🎲</div>
+            <div class="plugin-card-title">
+              <div class="plugin-card-name">Plugin Name</div>
+              <div class="plugin-card-meta">v0.0.0 · Author Name</div>
+            </div>
+          </div>
+          <div class="plugin-card-body">
+            One-paragraph description of what the plugin does and who it's for.
+          </div>
+          <div class="plugin-card-foot">
+            <a href="/plugins/plugin-id.zip" class="plugin-download-btn" download>
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download .zip
+            </a>
+            <span class="plugin-meta-text">Upload via DM view → Session tab → Plugins.</span>
+          </div>
+        </div>
+        ═════ -->
+
+      </div>
+
+      <div class="plugins-cta">
+        <div class="plugins-cta-title">Want to write your own?</div>
+        <div class="plugins-cta-body">The plugin authoring guide covers the manifest format, lifecycle, every extension point, the data API + event bus, and a complete worked example. Plugins are folders of static files — no build step, no host-side code execution.</div>
+        <a href="https://github.com/Sausagerolls/tabletop-forge/blob/main/PLUGINS.md" target="_blank" rel="noopener" class="plugins-cta-link">
+          Read the Plugin Authoring Guide
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M2 5.5h7M5.5 2l3.5 3.5L5.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </div>
     </div>
   </div>
 </section>

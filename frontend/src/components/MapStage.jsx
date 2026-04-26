@@ -339,8 +339,39 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
   const y = dragVisPos ? dragVisPos.y : offset.y + Number(token.grid_row) * gridSize;
 
   const groupOpacity = overrideOpacity !== null ? overrideOpacity : (isDead ? 0.5 : 1);
+
+  // Subtle breathing pulse when this token's turn is up — scales the whole
+  // token (image + outline + conditions) around its centre by ±4% at a slow
+  // sine. Only one token typically pulses at once so the per-frame React
+  // updates are negligible.
+  const [pulseScale, setPulseScale] = useState(1);
+  useEffect(() => {
+    if (!isCurrentTurn) { setPulseScale(1); return; }
+    let raf;
+    const start = performance.now();
+    const tick = (now) => {
+      const t = (now - start) / 1000;
+      // ω ≈ 2.4 rad/s → ~2.6s per breath cycle, ±4% scale.
+      setPulseScale(1 + 0.04 * Math.sin(t * 2.4));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isCurrentTurn]);
+
+  // Inner Group does the scaling — outer Group stays at the unscaled (x,y)
+  // grid position so layout/coordinates downstream don't shift.
+  const innerProps = isCurrentTurn
+    ? {
+        x: tW / 2, y: tH / 2,
+        offsetX: tW / 2, offsetY: tH / 2,
+        scaleX: pulseScale, scaleY: pulseScale,
+      }
+    : {};
+
   return (
     <Group x={x} y={y} opacity={groupOpacity} listening={false}>
+      <Group {...innerProps} listening={false}>
       {isCurrentTurn && (
         <Rect width={tW} height={tH} stroke="#22d3ee" strokeWidth={3}
           fill="rgba(34,211,238,0.08)" cornerRadius={4} listening={false} />
@@ -473,6 +504,7 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
           </>
         );
       })()}
+      </Group>
     </Group>
   );
 }

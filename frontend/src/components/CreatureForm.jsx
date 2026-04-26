@@ -1752,16 +1752,21 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 {(form.inventory || []).map((item, i) => {
                   const isKnownLight = !!knownLightPreset(item.name);
                   const isWeapon = item.item_type === 'weapon';
+                  const isMagicItem = item.item_type === 'magic_item';
+                  // Plain mundane items don't get attuned — show the flag
+                  // only on weapons and magic items where it actually applies.
+                  const canAttune = isWeapon || isMagicItem;
                   return (
                   <div key={i} className="bg-gray-800 rounded-lg p-3 space-y-2">
                     <div className="flex gap-2">
                       <select
-                        className="w-24 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-dnd-gold"
+                        className="w-28 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-dnd-gold"
                         value={item.item_type || 'item'}
                         onChange={(e) => updateInventoryItem(i, 'item_type', e.target.value)}
                       >
                         <option value="item">Item</option>
                         <option value="weapon">Weapon</option>
+                        <option value="magic_item">Magic Item</option>
                       </select>
                       <input
                         className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-dnd-gold"
@@ -1877,18 +1882,20 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                     )}
 
                     <div className="flex items-center gap-3 flex-wrap">
-                      <label className="flex items-center gap-1.5 text-xs text-gray-300">
-                        <span className="text-gray-400">Attunement:</span>
-                        <select
-                          className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-dnd-gold"
-                          value={item.attunement_required ? 'yes' : 'no'}
-                          onChange={(e) => updateInventoryItem(i, 'attunement_required', e.target.value === 'yes')}
-                        >
-                          <option value="no">Not required</option>
-                          <option value="yes">Requires attunement</option>
-                        </select>
-                      </label>
-                      {item.attunement_required && (
+                      {canAttune && (
+                        <label className="flex items-center gap-1.5 text-xs text-gray-300">
+                          <span className="text-gray-400">Attunement:</span>
+                          <select
+                            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-dnd-gold"
+                            value={item.attunement_required ? 'yes' : 'no'}
+                            onChange={(e) => updateInventoryItem(i, 'attunement_required', e.target.value === 'yes')}
+                          >
+                            <option value="no">Not required</option>
+                            <option value="yes">Requires attunement</option>
+                          </select>
+                        </label>
+                      )}
+                      {canAttune && item.attunement_required && (
                         <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
                           <input
                             type="checkbox"

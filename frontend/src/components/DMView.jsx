@@ -790,6 +790,8 @@ export default function DMView() {
   const [uploadCustomName, setUploadCustomName] = useState('');
   const [treasureList, setTreasureList] = useState([]);
   const [sendingItemId, setSendingItemId] = useState(null);
+  const [showTreasureExport, setShowTreasureExport] = useState(false);
+  const [treasureExportSelected, setTreasureExportSelected] = useState(new Set());
   const [activeTool, setActiveTool] = useState('pan');
   const [placingCreature, setPlacingCreature] = useState(null);
   const [gridColor, setGridColor] = useState('rgba(0,0,0,0.35)');
@@ -2589,17 +2591,14 @@ export default function DMView() {
                     <div className="flex gap-1">
                       <button
                         onClick={() => {
-                          const payload = JSON.stringify({ version: 1, exported_at: new Date().toISOString(), loot: treasureList.map(({ id, ...rest }) => rest) }, null, 2);
-                          const blob = new Blob([payload], { type: 'application/json' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = 'treasure-export.json';
-                          a.click();
-                          URL.revokeObjectURL(url);
+                          // Default to "all selected" — the modal lets the
+                          // DM untick ones they don't want to export.
+                          setTreasureExportSelected(new Set(treasureList.map(it => it.id)));
+                          setShowTreasureExport(true);
                         }}
-                        className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-200"
-                        title="Download treasure list as JSON"
+                        disabled={treasureList.length === 0}
+                        className="text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-50 px-2 py-1 rounded text-gray-200"
+                        title="Choose which treasure items to export, then download as JSON"
                       >Export</button>
                       <label className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-200 cursor-pointer">
                         Import
@@ -2640,12 +2639,13 @@ export default function DMView() {
                             {/* Row 1: type / name / qty / send / remove */}
                             <div className="flex gap-1.5">
                               <select
-                                className="w-20 bg-gray-700 border border-gray-600 rounded px-1 py-1 text-xs text-gray-300 focus:outline-none focus:border-dnd-gold shrink-0"
+                                className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-1 text-xs text-gray-300 focus:outline-none focus:border-dnd-gold shrink-0"
                                 value={item.item_type || 'item'}
                                 onChange={e => updateTreasureItem(item.id, 'item_type', e.target.value)}
                               >
                                 <option value="item">Item</option>
                                 <option value="weapon">Weapon</option>
+                                <option value="magic_item">Magic Item</option>
                               </select>
                               <input
                                 className={`flex-1 ${inputCls}`}
@@ -2745,6 +2745,21 @@ export default function DMView() {
                                     onChange={e => updateTreasureItem(item.id, 'properties', e.target.value)} />
                                 </div>
                               </div>
+                            )}
+
+                            {/* Attunement (weapons + magic items only) */}
+                            {(item.item_type === 'weapon' || item.item_type === 'magic_item') && (
+                              <label className="flex items-center gap-1.5 text-xs text-gray-300">
+                                <span className="text-gray-400">Attunement:</span>
+                                <select
+                                  className={inputCls}
+                                  value={item.attunement_required ? 'yes' : 'no'}
+                                  onChange={e => updateTreasureItem(item.id, 'attunement_required', e.target.value === 'yes')}
+                                >
+                                  <option value="no">Not required</option>
+                                  <option value="yes">Requires attunement</option>
+                                </select>
+                              </label>
                             )}
 
                             {/* Description */}
@@ -3659,6 +3674,93 @@ export default function DMView() {
           </div>
         );
       })()}
+
+      {/* Treasure export modal */}
+      {showTreasureExport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="bg-dnd-panel border border-gray-700 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-700 flex items-center justify-between">
+              <h2 className="text-dnd-gold font-semibold text-base">Export Treasure</h2>
+              <span className="text-xs text-gray-400">{treasureExportSelected.size} of {treasureList.length} selected</span>
+            </div>
+            <div className="px-4 py-2 border-b border-gray-800 flex items-center justify-between text-xs text-gray-300">
+              <span>Tick the items you want to include in the export.</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setTreasureExportSelected(new Set(treasureList.map(it => it.id)))}
+                  className="text-[11px] text-emerald-300 hover:text-emerald-200 underline"
+                >All</button>
+                <button
+                  onClick={() => setTreasureExportSelected(new Set())}
+                  className="text-[11px] text-gray-400 hover:text-white underline"
+                >None</button>
+              </div>
+            </div>
+            <div className="p-3 max-h-[60vh] overflow-y-auto space-y-1">
+              {treasureList.length === 0 && (
+                <p className="text-xs text-gray-500 italic text-center py-6">No items in the treasure list.</p>
+              )}
+              {treasureList.map(it => {
+                const checked = treasureExportSelected.has(it.id);
+                return (
+                  <label
+                    key={it.id}
+                    className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer ${
+                      checked ? 'bg-emerald-900/30 border border-emerald-700/40' : 'bg-gray-800 border border-gray-700 hover:border-gray-600'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => setTreasureExportSelected(prev => {
+                        const next = new Set(prev);
+                        next.has(it.id) ? next.delete(it.id) : next.add(it.id);
+                        return next;
+                      })}
+                      className="w-4 h-4 accent-emerald-400 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-white truncate">{it.name || '(unnamed)'}</div>
+                      <div className="text-[11px] text-gray-400">
+                        {it.item_type === 'weapon' ? 'Weapon'
+                          : it.item_type === 'magic_item' ? 'Magic Item'
+                          : 'Item'}
+                        {it.qty > 1 ? ` ×${it.qty}` : ''}
+                        {it.attunement_required ? ' · attunement' : ''}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="px-4 py-3 border-t border-gray-700 flex justify-end gap-2">
+              <button
+                onClick={() => setShowTreasureExport(false)}
+                className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded"
+              >Cancel</button>
+              <button
+                onClick={() => {
+                  const items = treasureList
+                    .filter(it => treasureExportSelected.has(it.id))
+                    .map(({ id, ...rest }) => rest);
+                  if (items.length === 0) return;
+                  const payload = JSON.stringify({ version: 1, exported_at: new Date().toISOString(), loot: items }, null, 2);
+                  const blob = new Blob([payload], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `treasure-export-${new Date().toISOString().slice(0,10)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  setShowTreasureExport(false);
+                }}
+                disabled={treasureExportSelected.size === 0}
+                className="text-xs bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-3 py-1.5 rounded"
+              >Export ({treasureExportSelected.size})</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Combat Picker Modal */}
       {showCombatPicker && (

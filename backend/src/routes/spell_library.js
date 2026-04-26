@@ -1098,6 +1098,87 @@ router.get('/review', async (req, res) => {
   }
 });
 
+// GET /export — download a JSON dump of selected (or filtered) spells.
+// Query params:
+//   ids=1,2,3   — explicit selection (overrides filters)
+//   ids=all     — every row (alias for "no filters")
+//   level=N     — filter by spell level (0..9), same semantics as GET /
+//   klass=Name  — filter by allowed class, same semantics as GET /
+//   search=X    — name ILIKE filter, same semantics as GET /
+// Falls back to all rows if nothing matches. Returns Content-Disposition
+// for browser-side download.
+router.get('/export', async (req, res) => {
+  try {
+    const { ids, search, level, klass } = req.query;
+    let rows;
+    if (ids && ids !== 'all') {
+      const idList = String(ids).split(',').map(s => s.trim()).filter(Boolean);
+      if (!idList.length) return res.status(400).json({ error: 'Invalid ids' });
+      rows = (await db.query('SELECT * FROM spell_library WHERE id = ANY($1::uuid[]) ORDER BY name', [idList])).rows;
+    } else {
+      const params = [];
+      const conds = [];
+      if (search) { params.push(`%${search}%`); conds.push(`name ILIKE $${params.length}`); }
+      if (level !== undefined && level !== '') { params.push(parseInt(level, 10)); conds.push(`level = $${params.length}`); }
+      if (klass) {
+        params.push(String(klass));
+        conds.push(`EXISTS (SELECT 1 FROM jsonb_array_elements_text(allowed_classes) AS c WHERE LOWER(c) = LOWER($${params.length}))`);
+      }
+      const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+      rows = (await db.query(`SELECT * FROM spell_library ${where} ORDER BY name`, params)).rows;
+    }
+    // Strip the surrogate UUID — receiving instances reassign their own ids on
+    // import. Keeping `name` as the natural key (UNIQUE constraint on import).
+    const spells = rows.map(({ id, ...rest }) => rest);
+    const payload = JSON.stringify({ version: 1, exported_at: new Date().toISOString(), spells }, null, 2);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename="spells-export.json"');
+    res.send(payload);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /import — accept the JSON shape produced by /export and insert.
+// Uses ON CONFLICT (name) DO NOTHING so re-importing the same library is
+// idempotent; the response reports how many rows were skipped.
+const spellImportUpload = require('multer')({ storage: require('multer').memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+router.post('/import', spellImportUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    let parsed;
+    try { parsed = JSON.parse(req.file.buffer.toString()); }
+    catch { return res.status(400).json({ error: 'Invalid JSON' }); }
+    const list = Array.isArray(parsed.spells) ? parsed.spells : (Array.isArray(parsed) ? parsed : []);
+    if (!list.length) return res.status(400).json({ error: 'No spells found in file' });
+    let imported = 0, skipped = 0;
+    for (const raw of list) {
+      const s = normaliseSpell(raw);
+      if (!s) { skipped += 1; continue; }
+      try {
+        const row = (await db.query(
+          `INSERT INTO spell_library (id, name, level, type, school, casting_time, range_area, duration,
+           comp_v, comp_s, comp_m, comp_m_text, attack_save, save_ability, damage_entries, extra_effects, description, source, allowed_classes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+           ON CONFLICT (name) DO NOTHING RETURNING id`,
+          [
+            uuidv4(), s.name, s.level, s.type, s.school, s.casting_time, s.range_area, s.duration,
+            s.comp_v, s.comp_s, s.comp_m, s.comp_m_text, s.attack_save, s.save_ability,
+            JSON.stringify(s.damage_entries), s.extra_effects, s.description,
+            String(raw.source || 'import'),
+            JSON.stringify(s.allowed_classes),
+          ]
+        ));
+        if (row.rows[0]) imported += 1; else skipped += 1;
+      } catch (e) { skipped += 1; }
+    }
+    res.json({ imported, skipped, total: list.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const { search, level, klass } = req.query;

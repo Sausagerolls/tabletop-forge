@@ -22,6 +22,18 @@ export default function SpellLibrary({ aiSettings }) {
   const [reviewLoading, setReviewLoading] = useState(false);
   const [bulkRefreshState, setBulkRefreshState] = useState(null); // null | 'loading' | summary
   const [bulkRefreshErr, setBulkRefreshErr] = useState('');
+  // Export modal state. Pulls a fresh list from /api with the modal's own
+  // filters so the DM can pick a subset (e.g. just Wizard L3 spells) without
+  // changing what the main library list is showing.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportRows, setExportRows] = useState([]);
+  const [exportSelected, setExportSelected] = useState(new Set());
+  const [exportClass, setExportClass] = useState('');
+  const [exportLevel, setExportLevel] = useState('');
+  const [exportSearch, setExportSearch] = useState('');
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportSubmitting, setExportSubmitting] = useState(false);
+  const [importStatus, setImportStatus] = useState('');
   // Open5e SRD ruleset — '2014' (5.1) or '2024' (5.2). Affects both the scan
   // fallback and the per-spell "Refresh from open5e" action. Persisted across
   // reloads so the DM doesn't have to re-pick after every refresh.
@@ -226,6 +238,69 @@ export default function SpellLibrary({ aiSettings }) {
       setBulkRefreshState(null);
       setBulkRefreshErr(err.message);
     }
+  }
+
+  // ── Export / import ────────────────────────────────────────────────────
+  async function loadExportList() {
+    setExportLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (exportSearch) params.set('search', exportSearch);
+      if (exportLevel !== '') params.set('level', exportLevel);
+      if (exportClass) params.set('klass', exportClass);
+      const res = await fetch(`/api/spell-library?${params}`);
+      const data = await res.json();
+      const rows = Array.isArray(data) ? data : [];
+      setExportRows(rows);
+      // Pre-select everything that currently matches — most common case is
+      // "export this whole filtered subset", and the DM can untick outliers.
+      setExportSelected(new Set(rows.map(r => r.id)));
+    } catch (e) { console.error(e); }
+    finally { setExportLoading(false); }
+  }
+  function openExport() {
+    // Seed the modal's filters with whatever the main list is showing so the
+    // first visible result matches the DM's mental model.
+    setExportSearch(search);
+    setExportLevel(levelFilter);
+    setExportClass(classFilter);
+    setExportOpen(true);
+  }
+  useEffect(() => { if (exportOpen) loadExportList(); }, [exportOpen, exportSearch, exportLevel, exportClass]);
+
+  async function doExport() {
+    if (exportSelected.size === 0) return;
+    setExportSubmitting(true);
+    try {
+      const ids = [...exportSelected].join(',');
+      const res = await fetch(`/api/spell-library/export?ids=${encodeURIComponent(ids)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `spells-export-${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setExportOpen(false);
+    } catch (err) { alert('Export failed: ' + err.message); }
+    finally { setExportSubmitting(false); }
+  }
+
+  async function handleImportFile(file) {
+    if (!file) return;
+    setImportStatus('Importing…');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/spell-library/import', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setImportStatus(`Imported ${data.imported} of ${data.total} (${data.skipped} skipped — duplicates or invalid).`);
+      await load();
+    } catch (err) { setImportStatus('Import failed: ' + err.message); }
   }
 
   function skipReviewItem(idx) {
@@ -452,6 +527,24 @@ export default function SpellLibrary({ aiSettings }) {
           <div className="flex gap-2 flex-wrap">
             {spells.length > 0 && (
               <button
+                onClick={openExport}
+                className="text-xs bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700 text-emerald-200 px-2 py-1 rounded"
+                title="Export selected (or all) spells as a JSON file"
+              >
+                Export
+              </button>
+            )}
+            <label className="text-xs bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700 text-emerald-200 px-2 py-1 rounded cursor-pointer" title="Import a previously exported spells JSON file">
+              Import
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(e) => { handleImportFile(e.target.files?.[0]); e.target.value = ''; }}
+              />
+            </label>
+            {spells.length > 0 && (
+              <button
                 onClick={handleBulkRefresh}
                 disabled={bulkRefreshState === 'loading'}
                 className="text-xs bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-700 text-indigo-200 px-2 py-1 rounded disabled:opacity-50"
@@ -505,6 +598,12 @@ export default function SpellLibrary({ aiSettings }) {
             {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
+        {importStatus && (
+          <div className="text-xs text-emerald-200 bg-emerald-900/30 border border-emerald-800 rounded-lg px-3 py-2 flex items-center justify-between">
+            <span>{importStatus}</span>
+            <button onClick={() => setImportStatus('')} className="text-[11px] text-gray-400 hover:text-white">dismiss</button>
+          </div>
+        )}
         {bulkRefreshErr && (
           <div className="text-xs text-red-300 bg-red-900/30 border border-red-800 rounded-lg px-3 py-2">
             Refresh failed: {bulkRefreshErr}
@@ -580,6 +679,28 @@ export default function SpellLibrary({ aiSettings }) {
         </div>
       </div>
 
+      {exportOpen && (
+        <ExportModal
+          rows={exportRows}
+          selected={exportSelected}
+          search={exportSearch}
+          level={exportLevel}
+          klass={exportClass}
+          loading={exportLoading}
+          submitting={exportSubmitting}
+          onSearch={setExportSearch}
+          onLevel={setExportLevel}
+          onKlass={setExportClass}
+          onToggle={(id) => setExportSelected(prev => {
+            const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+          })}
+          onSelectAll={() => setExportSelected(new Set(exportRows.map(r => r.id)))}
+          onSelectNone={() => setExportSelected(new Set())}
+          onClose={() => setExportOpen(false)}
+          onExport={doExport}
+        />
+      )}
+
       {reviewOpen && (
         <ReviewModal
           items={reviewItems}
@@ -591,6 +712,95 @@ export default function SpellLibrary({ aiSettings }) {
           onApplyAll={applyAllReview}
         />
       )}
+    </div>
+  );
+}
+
+function ExportModal({ rows, selected, search, level, klass, loading, submitting,
+  onSearch, onLevel, onKlass, onToggle, onSelectAll, onSelectNone, onClose, onExport }) {
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+          <div>
+            <h3 className="text-base font-semibold text-dnd-gold">Export spells</h3>
+            <p className="text-[11px] text-gray-400">Filter to narrow the list, tick the spells you want, then download.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-sm px-2">✕</button>
+        </div>
+        <div className="px-4 py-2 border-b border-gray-700 grid grid-cols-3 gap-2">
+          <input
+            placeholder="Search…"
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white"
+          />
+          <select
+            className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white"
+            value={level}
+            onChange={(e) => onLevel(e.target.value)}
+          >
+            <option value="">All levels</option>
+            {LEVEL_LABELS.map((label, i) => <option key={i} value={i}>{label}</option>)}
+          </select>
+          <select
+            className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white"
+            value={klass}
+            onChange={(e) => onKlass(e.target.value)}
+          >
+            <option value="">All classes</option>
+            {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div className="px-4 py-2 border-b border-gray-800 flex items-center justify-between text-xs text-gray-300">
+          <span>{loading ? 'Loading…' : `${selected.size} of ${rows.length} selected`}</span>
+          <div className="flex gap-2">
+            <button onClick={onSelectAll} className="text-[11px] text-emerald-300 hover:text-emerald-200 underline">Select all</button>
+            <button onClick={onSelectNone} className="text-[11px] text-gray-400 hover:text-white underline">Select none</button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {!loading && rows.length === 0 && (
+            <p className="text-xs text-gray-500 italic text-center py-8">No spells match these filters.</p>
+          )}
+          {rows.map(s => {
+            const checked = selected.has(s.id);
+            return (
+              <label
+                key={s.id}
+                className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer ${
+                  checked ? 'bg-emerald-900/30 border border-emerald-700/40' : 'bg-gray-800 border border-gray-700 hover:border-gray-600'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onToggle(s.id)}
+                  className="w-4 h-4 accent-emerald-400 shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-white truncate">{s.name}</div>
+                  <div className="text-[11px] text-gray-400">
+                    {LEVEL_LABELS[s.level] || `lvl ${s.level}`}
+                    {s.school ? ` · ${s.school}` : ''}
+                    {Array.isArray(s.allowed_classes) && s.allowed_classes.length > 0 ? ` · ${s.allowed_classes.join(', ')}` : ''}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        <div className="px-4 py-3 border-t border-gray-700 flex justify-end gap-2">
+          <button onClick={onClose} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded">Cancel</button>
+          <button
+            onClick={onExport}
+            disabled={selected.size === 0 || submitting}
+            className="text-xs bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-3 py-1.5 rounded"
+          >
+            {submitting ? 'Exporting…' : `Export ${selected.size}`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

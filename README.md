@@ -274,7 +274,7 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 
 ## Changelog
 
-### Post v1.0 — what's been added since release
+### v1.1.0 — Plugin system, PDF spell scanner, big combat + spell-template improvements
 
 **Plugin system**
 - New extension points: spell-template decorators, template-editor extensions, DM tabs, template overlays (host-rendered effects via canvas), map decorations, and map click handlers
@@ -308,6 +308,7 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 **Spell templates**
 - DM-only place / edit / move / colour controls for cones, circles, lines, squares
 - Spell templates broadcast to players (read-only) so plugin overlays are visible at the table
+- Live feet readout while drawing — chip matches the existing Measurement-tool style (radius for circles, side dimensions for squares, length for cones and lines)
 
 **Map / world**
 - Multi-floor map labels

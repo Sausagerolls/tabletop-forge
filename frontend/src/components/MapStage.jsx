@@ -944,16 +944,121 @@ function TemplateShapeWithDecorators({ template, isSelected = false }) {
   );
 }
 
-function TemplatePreview({ preview }) {
+function TemplatePreview({ preview, gridSize }) {
   const { previewFill, previewStroke } = colorToFillStroke(preview?.color || '#a855f7');
   if (!preview) return null;
   const props = templateShapeProps(preview, previewFill, previewStroke, [4, 3]);
   if (!props) return null;
-  if (props.kind === 'circle') return <Circle x={props.x} y={props.y} radius={props.radius} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />;
-  if (props.kind === 'rect')   return <Rect x={props.x} y={props.y} width={props.width} height={props.height} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />;
-  if (props.kind === 'wedge')  return <Wedge x={props.x} y={props.y} radius={props.radius} angle={props.angle} rotation={props.rotation} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />;
-  if (props.kind === 'line')   return <Line points={props.points} stroke={props.stroke} strokeWidth={3} dash={[6, 4]} listening={false} />;
-  return null;
+
+  // Live feet readout while dragging — matches the style used by the
+  // measurement tool's MeasureOverlay (black rounded chip + bold label).
+  // Position varies per shape so the label sits next to the bit the DM
+  // is actually adjusting (centre for circles, far corner for squares,
+  // tip for cones, midpoint for lines).
+  function readoutNode() {
+    if (!gridSize) return null;
+    // Big, easily-readable chip — sized for a DM zoomed out to see the
+    // whole battlefield rather than zoomed in on the click. Tweak both
+    // CHIP_H and FONT_SIZE together to keep the text vertically centred.
+    const FONT_SIZE = 36;
+    const CHIP_H    = 54;
+    const TEXT_PAD  = 8;        // vertical offset to centre text in chip
+    const CHIP_PAD  = 20;       // horizontal padding inside chip
+    const APPROX_CHAR_W = FONT_SIZE * 0.62;
+    const chipFor = (text) => Math.max(140, Math.ceil(text.length * APPROX_CHAR_W) + CHIP_PAD * 2);
+
+    const labelStyle = {
+      fill: 'rgba(0,0,0,0.82)',
+      stroke: 'rgba(255,255,255,0.18)',
+      strokeWidth: 1,
+      cornerRadius: 6,
+      listening: false,
+    };
+    const textStyle = {
+      fill: props.stroke,
+      fontSize: FONT_SIZE,
+      fontStyle: 'bold',
+      listening: false,
+    };
+
+    if (props.kind === 'circle') {
+      const ft = pxToFt(props.radius, gridSize);
+      const text = `r = ${ft} ft`;
+      const w = chipFor(text);
+      const lx = props.x - w / 2;
+      const ly = props.y - props.radius - CHIP_H - 8;
+      return (
+        <>
+          <Rect x={lx} y={ly} width={w} height={CHIP_H} {...labelStyle} />
+          <Text x={lx} y={ly + TEXT_PAD} width={w} align="center" text={text} {...textStyle} />
+        </>
+      );
+    }
+    if (props.kind === 'rect') {
+      // Squares are drawn corner-to-corner — show width × height in ft so
+      // the DM gets both axes if they're not perfectly square.
+      const wFt = pxToFt(props.width,  gridSize);
+      const hFt = pxToFt(props.height, gridSize);
+      const text = wFt === hFt ? `${wFt} ft` : `${wFt} × ${hFt} ft`;
+      const w = chipFor(text);
+      const lx = props.x + props.width / 2 - w / 2;
+      const ly = props.y - CHIP_H - 8;
+      return (
+        <>
+          <Rect x={lx} y={ly} width={w} height={CHIP_H} {...labelStyle} />
+          <Text x={lx} y={ly + TEXT_PAD} width={w} align="center" text={text} {...textStyle} />
+        </>
+      );
+    }
+    if (props.kind === 'wedge') {
+      // Cone: place the chip at the tip along the cone's centerline so
+      // the reading sits next to the part the DM is dragging.
+      const ft = pxToFt(props.radius, gridSize);
+      const text = `${ft} ft`;
+      const w = chipFor(text);
+      const midRad = (props.rotation + props.angle / 2) * Math.PI / 180;
+      const tipX = props.x + Math.cos(midRad) * (props.radius + 40);
+      const tipY = props.y + Math.sin(midRad) * (props.radius + 40);
+      return (
+        <>
+          <Rect x={tipX - w / 2} y={tipY - CHIP_H / 2} width={w} height={CHIP_H} {...labelStyle} />
+          <Text x={tipX - w / 2} y={tipY - CHIP_H / 2 + TEXT_PAD} width={w} align="center" text={text} {...textStyle} />
+        </>
+      );
+    }
+    if (props.kind === 'line') {
+      const [x1, y1, x2, y2] = props.points;
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      if (len < 1) return null;
+      const ft = pxToFt(len, gridSize);
+      const text = `${ft} ft`;
+      const w = chipFor(text);
+      // Offset the chip perpendicular to the line so it doesn't sit
+      // directly on top of the line.
+      const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+      const off = CHIP_H / 2 + 6;
+      const px = -uy * off, py = ux * off;
+      const mx = (x1 + x2) / 2 + px;
+      const my = (y1 + y2) / 2 + py;
+      return (
+        <>
+          <Rect x={mx - w / 2} y={my - CHIP_H / 2} width={w} height={CHIP_H} {...labelStyle} />
+          <Text x={mx - w / 2} y={my - CHIP_H / 2 + TEXT_PAD} width={w} align="center" text={text} {...textStyle} />
+        </>
+      );
+    }
+    return null;
+  }
+
+  return (
+    <>
+      {props.kind === 'circle' && <Circle x={props.x} y={props.y} radius={props.radius} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />}
+      {props.kind === 'rect'   && <Rect x={props.x} y={props.y} width={props.width} height={props.height} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />}
+      {props.kind === 'wedge'  && <Wedge x={props.x} y={props.y} radius={props.radius} angle={props.angle} rotation={props.rotation} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />}
+      {props.kind === 'line'   && <Line points={props.points} stroke={props.stroke} strokeWidth={3} dash={[6, 4]} listening={false} />}
+      {readoutNode()}
+    </>
+  );
 }
 
 function findNearestTemplate(mapX, mapY, templates, threshold) {
@@ -3456,7 +3561,7 @@ export default function MapStage({
             );
           })}
           {!isPlayer && (TEMPLATE_TOOLS.has(activeTool) || activeTool === 'tpl-erase') && templatePreview && (
-            <TemplatePreview preview={templatePreview} />
+            <TemplatePreview preview={templatePreview} gridSize={gridSize} />
           )}
         </Layer>
 

@@ -784,6 +784,67 @@ function PluginTemplateEditorExtensions({ template }) {
   );
 }
 
+// Built-in panel tab bar — filtered by the panelTabHidden registry.
+// Subscribing to the registry version means a plugin enabling/disabling a
+// hide rule re-renders the bar live. Hiding only removes the BUTTON;
+// the corresponding tab content is still rendered when active so a
+// plugin can call setPanelTab to land the user inside a hidden tab.
+function PanelTabBar({ tabs, labels, activeTab, onSelect }) {
+  useRegistryVersion();
+  const hidden = new Set();
+  for (const set of pluginRegistries.panelTabHidden.values()) {
+    for (const id of set) hidden.add(id);
+  }
+  const visible = tabs.filter((t) => !hidden.has(t));
+  return (
+    <>
+      {visible.map((t) => (
+        <button
+          key={t}
+          onClick={() => onSelect(t)}
+          className={`flex-1 py-2 text-xs font-medium transition-colors truncate px-1 ${
+            activeTab === t ? 'text-dnd-gold border-b-2 border-dnd-gold bg-black/20' : 'text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          {labels[t]}
+        </button>
+      ))}
+    </>
+  );
+}
+
+// Renders any plugin extensions targeted at a specific built-in panel
+// tab. Drop one of these inside each tab's body just before any
+// host-trailing UI. Extensions are rendered in plugin-registration
+// order; throws are caught per-plugin so one bad extension can't blank
+// the rest of the tab.
+function PluginPanelTabExtensions({ tabId, ctx }) {
+  useRegistryVersion();
+  const ext = pluginRegistries.panelTabExtensions;
+  const items = [];
+  for (const [pid, def] of ext.entries()) {
+    if (!def || def.tabId !== tabId || typeof def.render !== 'function') continue;
+    items.push([pid, def]);
+  }
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-3">
+      {items.map(([pid, def]) => {
+        let node = null;
+        try { node = def.render(ctx || {}); }
+        catch (err) {
+          return (
+            <div key={pid} className="text-[11px] text-red-300 bg-red-900/30 border border-red-800 rounded px-2 py-1.5">
+              Plugin "{pid}" panel extension threw: {String(err.message || err)}
+            </div>
+          );
+        }
+        return node ? <React.Fragment key={pid}>{node}</React.Fragment> : null;
+      })}
+    </div>
+  );
+}
+
 // Renders any plugin-registered DM tabs as additional buttons in the panel
 // tab bar. Tabs are identified by their plugin id; the registry value is a
 // { label, icon, render } object. The render function is called with a
@@ -1014,7 +1075,11 @@ export default function DMView() {
     let cancelled = false;
     (async () => {
       const { errors } = await loadPlugins({
-        context: { sessionId: session.id, role: 'dm', socket },
+        // setPanelTab is forwarded so plugins can switch tabs from
+        // their UI (e.g. a tab-visibility manager that needs to "open"
+        // a currently-hidden tab). Hidden tabs still render their
+        // body, so this works seamlessly with panelTabHidden.
+        context: { sessionId: session.id, role: 'dm', socket, setPanelTab },
       });
       if (!cancelled) setPluginLoadErrors(errors || []);
     })();
@@ -2343,17 +2408,12 @@ export default function DMView() {
         />
         <div className="bg-dnd-panel border-l border-gray-700 flex flex-col shrink-0 h-full" style={{ width: panelWidth }}>
           <div className="flex border-b border-gray-700 shrink-0 overflow-x-auto">
-            {PANEL_TABS.map((t) => (
-              <button
-                key={t}
-                onClick={() => setPanelTab(t)}
-                className={`flex-1 py-2 text-xs font-medium transition-colors truncate px-1 ${
-                  panelTab === t ? 'text-dnd-gold border-b-2 border-dnd-gold bg-black/20' : 'text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                {PANEL_LABELS[t]}
-              </button>
-            ))}
+            <PanelTabBar
+              tabs={PANEL_TABS}
+              labels={PANEL_LABELS}
+              activeTab={panelTab}
+              onSelect={setPanelTab}
+            />
             <PluginDmTabs activeTab={panelTab} onSelect={setPanelTab} />
           </div>
 
@@ -3355,6 +3415,15 @@ export default function DMView() {
                     )}
                   </div>
                 </div>
+
+                {/* Plugin extensions targeting the Session tab — render
+                    just above the manager so plugin-driven controls are
+                    closer to the top while the install / enable UI stays
+                    near the bottom. */}
+                <PluginPanelTabExtensions
+                  tabId="session"
+                  ctx={{ sessionId: session.id, role: 'dm', socket, setPanelTab }}
+                />
 
                 {/* Plugin manager — install / enable / disable / delete. */}
                 <PluginManager

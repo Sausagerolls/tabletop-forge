@@ -135,6 +135,7 @@ Runtime environment for your plugin. Fields:
 | `notifyChange` | `() => void` | Forces every host component subscribed to the registry to re-render. Call this after a state change that should be visible immediately. See §7. |
 | `subscribe` | `(handler) => unsubscribe` | Subscribe to incoming `plugin_event` frames addressed to your plugin. See §6. |
 | `emitEvent` | `(type, payload) => void` | Broadcast a custom event to every other client in the session. See §6. |
+| `setPanelTab` | `(tabId: string) => void` | DM only. Programmatically switch the active panel tab. Works for built-in tab ids (`'map'`, `'session'`, etc.), plugin-supplied tab ids (`'plugin:<pluginId>'`), and tabs currently hidden via `panelTabHidden`. |
 
 ### What `unregister` receives
 
@@ -241,6 +242,30 @@ Other fields exist on tokens but aren't part of the supported plugin contract �
 
 Tokens with multi-cell footprints centre at `(grid_col + cells/2) * gridSize`, where `cells` is `1` / `2` / `3` / `4` from the table above. Use the longer axis for radius-style hit tests.
 
+#### Hit-testing tokens from a click
+
+A common need: given a click at `(x, y)` in map-pixel coordinates, which token did the player click? The `Token shape` table above has the cell footprint per size, so a tight loop does it in a few lines:
+
+```js
+const SIZE_TO_CELLS = { tiny: 1, small: 1, medium: 1, large: 2, huge: 3, gargantuan: 4 };
+
+function tokenAt(x, y, ctx) {
+  // Iterate last-to-first so visually-on-top tokens win when stacked.
+  for (let i = ctx.tokens.length - 1; i >= 0; i--) {
+    const t = ctx.tokens[i];
+    const cells = SIZE_TO_CELLS[t.size] || 1;
+    const tx = ctx.offsetX + Number(t.grid_col) * ctx.gridSize;
+    const ty = ctx.offsetY + Number(t.grid_row) * ctx.gridSize;
+    const tw = cells * ctx.gridSize;
+    const th = cells * ctx.gridSize;
+    if (x >= tx && x < tx + tw && y >= ty && y < ty + th) return t;
+  }
+  return null;
+}
+```
+
+Use this from a `mapClickHandlers` callback (after caching `lastCtx`, see below) when your plugin's UX is "click a token to do X".
+
 #### Reaching map state from a click handler
 
 `mapClickHandlers` callbacks receive only `{ x, y, tool, isPlayer }` — they don't get `ctx.tokens` or grid sizing. The standard pattern is to **cache the latest mapDecorations ctx** at module scope and read it from the handler:
@@ -263,6 +288,35 @@ registries.mapClickHandlers.set(pluginId, {
 ```
 
 `lastCtx.tokens` and `playerTokenId` reflect whatever was current the last time the map drew, which is fresh enough for any UX driven by clicking.
+
+### `panelTabHidden`
+
+```js
+registries.panelTabHidden.set(pluginId, new Set(['spells', 'markers']))
+```
+
+Plugins can hide built-in DM panel tabs from the tab bar. The host filters the bar by the **union** of every plugin's set, so multiple plugins can independently mark tabs hidden without trampling each other.
+
+Hiding only removes the BUTTON. The corresponding tab body is still rendered when active — i.e. you can call `context.setPanelTab('spells')` to land the user inside a hidden tab even though it's missing from the bar. This is the standard pattern for a tab-management plugin: "hide from clutter, but keep reachable via plugin UI".
+
+Registry value is a `Set<string>` of built-in tab ids. The currently shipped ids are `'map' | 'library' | 'spells' | 'tokens' | 'markers' | 'treasure' | 'handouts' | 'session'`.
+
+### `panelTabExtensions`
+
+```js
+registries.panelTabExtensions.set(pluginId, {
+  tabId: 'session',                 // built-in tab id to extend
+  render: (ctx) => ReactNode,       // DOM React, not Konva
+})
+```
+
+Plugins can append content inside the body of a specific built-in tab. The host renders the extension at the end of that tab's content, just before any host-defined trailing UI (e.g. the **Leave Session** button on the Session tab).
+
+`ctx` includes `{ sessionId, role, socket, setPanelTab }` — same fields plugins receive in `register({ context })`.
+
+One extension per plugin per tab. If you need multiple chunks, return a Fragment.
+
+> **Currently only the Session tab honours panelTabExtensions.** The other built-in tabs don't yet have the host-side render slot wired up — that's a one-line `<PluginPanelTabExtensions tabId="..." />` insertion per tab in `DMView.jsx`. If you need to extend a different tab, open an issue or PR.
 
 ### `mapClickHandlers`
 
@@ -314,6 +368,8 @@ context.emitEvent('my-event-type', { ... });   // broadcast to everyone in the s
 ```
 
 Use this for state that doesn't fit the KV model — transient signals like "shake the screen", "play a sound", "flash this token's outline".
+
+> **Subscriptions are scoped per-plugin.** The relay routes events by `pluginId`, so your `subscribe` handler will only ever see events emitted by your own plugin (across any client). Other plugins' `data` events and custom events are invisible to you and vice-versa. You don't need to namespace-prefix your event types like `'my-plugin:fire'` — `'fire'` is fine, it can never collide with another plugin's `'fire'`.
 
 Auto-broadcast `data` events have this shape, so a single subscribe handler can react to both KV writes and your own events:
 
@@ -435,6 +491,35 @@ function MyAnim({ template, baseProps }) {
 ```
 
 The cleanup return is mandatory — your component unmounts when the plugin is disabled, and a leaked RAF loop will keep firing setState on an unmounted component.
+
+### Pattern: transient one-shot effects (damage numbers, explosions, etc.)
+
+For event-fired finite-duration effects — a damage pop-up that floats up and fades, an explosion at a hit location, a brief screen shake — the canonical shape is:
+
+```js
+let active = [];                            // [{ id, /* whatever */, spawnTime }]
+const DUR = 2400;                           // ms
+
+context.subscribe(({ type, payload }) => {
+  if (type !== 'pop') return;
+  const id = payload.popId || `${performance.now()}-${Math.random()}`;
+  active = [...active, { id, ...payload, spawnTime: performance.now() }];
+  context.notifyChange();                   // map re-renders, picks up new entry
+  setTimeout(() => {
+    active = active.filter((p) => p.id !== id);
+    context.notifyChange();                 // map re-renders, drops the entry
+  }, DUR + 250);                            // grace period so the final frame paints
+});
+
+registries.mapDecorations.set(pluginId, (ctx) =>
+  React.createElement(Group, { listening: false },
+    active.map((p) => React.createElement(Effect, { key: p.id, item: p, ctx })))
+);
+```
+
+Each `<Effect>` runs its own RAF loop (per the pattern above) and reads `performance.now() - item.spawnTime` to derive its phase. `key={p.id}` so React mounts a fresh component per entry — when `setTimeout` purges the entry, the component unmounts, its `useEffect` cleanup cancels the RAF, no leaks. The DM-side trigger emits `context.emitEvent('pop', { tokenId, value, ... })` — every client (including the sender) sees the event and renders the effect, so you don't need separate "show locally" logic.
+
+### Mode-switch animation pattern
 
 If your effect has multiple distinct modes (rain / snow / fog, fire / ice / etc.) and you want a clean RAF restart when the user switches modes, set `key={mode}` on the animated component:
 

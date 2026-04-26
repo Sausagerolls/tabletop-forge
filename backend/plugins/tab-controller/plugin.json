@@ -1,0 +1,10 @@
+{
+  "id": "tab-controller",
+  "name": "Tab Controller",
+  "version": "1.0.0",
+  "description": "Adds a Tab Visibility section to the Session tab. Hide rarely-used built-in tabs from the bar to declutter; click Open to jump into a hidden tab without showing it again. Map / Token library / Token list / Session are protected and never offered as hideable.",
+  "author": "TableTop Forge",
+  "requires": [],
+  "frontend_entry": "client.js",
+  "extension_points": ["panel_tab_extension", "panel_tab_hidden"]
+}

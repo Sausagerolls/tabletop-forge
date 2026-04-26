@@ -69,6 +69,20 @@ export const registries = {
   // a role the handler runs for both. Use this when a plugin needs
   // map-pick behaviour (e.g. "click to place a tree").
   mapClickHandlers: new Map(),
+  // Map<pluginId, Set<tabId>>
+  // Plugins can hide built-in DM panel tabs by adding their ids here.
+  // The host filters the tab bar by the UNION of all sets. Hiding only
+  // affects the bar — the tab's body still renders if it's the active
+  // tab (so plugins can call context.setPanelTab to a hidden tab and
+  // the user lands inside its UI).
+  panelTabHidden: new Map(),
+  // Map<pluginId, { tabId, render }>
+  // Plugins can append content to a specific built-in DM panel tab.
+  // The host renders the extension at the end of that tab's content,
+  // just before any host-defined trailing UI like "Leave Session".
+  // One extension per plugin per tab — return a Fragment if you need
+  // multiple chunks.
+  panelTabExtensions: new Map(),
 };
 
 // Snapshot helpers — components subscribe via React state to a snapshot

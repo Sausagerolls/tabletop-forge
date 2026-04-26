@@ -60,6 +60,33 @@ rsync -a --exclude='node_modules' --exclude='dist' frontend/public/ "$RELEASE_DI
 # --- sounds (mounted into backend container by docker-compose) ---
 rsync -a sounds/ "$RELEASE_DIR/sounds/"
 
+# --- plugins (mounted into backend container by docker-compose) ---
+# The host's `./backend/plugins:/app/plugins` bind mount means the
+# directory MUST exist when `docker compose up` runs — even if empty.
+# We always create it. Only plugins flagged `"builtin": true` in their
+# manifest are bundled with the release; everything else is meant to
+# be downloaded from the website's plugin store and uploaded via the
+# in-app manager (so the DM gets exactly the plugins they want, not
+# whatever happened to be in the maintainer's working tree).
+mkdir -p "$RELEASE_DIR/backend/plugins"
+if [ -d backend/plugins ]; then
+  for d in backend/plugins/*/; do
+    [ -f "$d/plugin.json" ] || continue
+    if grep -q '"builtin"[[:space:]]*:[[:space:]]*true' "$d/plugin.json"; then
+      name=$(basename "$d")
+      rsync -a "$d" "$RELEASE_DIR/backend/plugins/$name/"
+      echo "  bundled plugin: $name"
+    fi
+  done
+fi
+
+# --- top-level docs ---
+# README.md is the operator-facing install guide; PLUGINS.md is the
+# plugin authoring guide. Both ship with the release so the DM can
+# read them offline without reaching for GitHub.
+[ -f README.md  ]  && cp README.md  "$RELEASE_DIR/"
+[ -f PLUGINS.md ]  && cp PLUGINS.md "$RELEASE_DIR/"
+
 echo ""
 echo "Release ready: $RELEASE_DIR"
 echo ""

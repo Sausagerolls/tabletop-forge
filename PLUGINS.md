@@ -11,7 +11,7 @@ A plugin is a folder of static files. The backend never executes plugin code; it
 A plugin can do three kinds of things, alone or in combination:
 
 1. **Decorate** existing objects — overlay animated effects on a spell template, draw extra Konva shapes on the map, add fields to a built-in popup, add tabs to the DM panel.
-2. **Persist data** in a per-plugin JSONB key/value store via `data.read/write/delete`. The host writes are auto-broadcast to every other client in the session, so DM ↔ player sync is free.
+2. **Persist data** in a per-plugin JSONB key/value store via `data.read/write/delete`. The host writes are auto-broadcast to **every client in the session including the sender**, so DM ↔ player sync is free.
 3. **Listen for and emit events** between clients in the same session via `subscribe(handler)` and `emitEvent(type, payload)`.
 
 What a plugin cannot do:
@@ -215,6 +215,10 @@ Returned nodes are drawn in a single non-interactive Konva Layer **above the tok
 
 If you want different content for the DM and players, branch on `ctx.isPlayer` and return different nodes (or `null`).
 
+#### Map-spanning effects
+
+Decorations don't have to anchor to a specific point. For ambient effects that cover the whole map (weather, parallax sky, tinted lighting overlays, scrolling textures), use `ctx.mapWidth` and `ctx.mapHeight` as your canvas bounds and lay particles out across them. The bundled `weather-effects` plugin uses this pattern — it spawns hundreds of particles across `(0, 0)` → `(mapWidth, mapHeight)` and lets each one drift with a per-particle seed.
+
 #### Token shape
 
 Each entry in `ctx.tokens` is an object with these fields you'll commonly need:
@@ -295,7 +299,9 @@ await context.data.delete(key);
 - Scoped to your `pluginId` — your keys never collide with another plugin's.
 - Survives plugin disable, plugin delete, and backend restarts.
 - Re-installing your plugin restores the data exactly as it was.
-- `write` and `delete` **automatically broadcast** a `plugin_event` of type `'data'` to every other client in the session. You do not have to call `emitEvent` yourself for KV changes.
+- `write` and `delete` **automatically broadcast** a `plugin_event` of type `'data'` to every client in the session — **including the sender**. Your own `subscribe` handler will fire for your own writes. The simplest pattern is to make your handler idempotent (just re-apply the same value) so this round-trip is harmless. Don't try to update local state only on inbound events and skip the local update — your UI will lag a server round-trip behind the user's interaction.
+
+> **Per-session vs global keys.** The KV store is scoped to your plugin id, not to the active session. If two campaigns are running on the same backend they share the same `plugin_data` rows. For state that should be per-session (weather, scene flags, anything tied to one game), include `context.sessionId` in your key — e.g. `current_${sessionId}` or `tag_${sessionId}_${tokenId}`. The bundled examples avoid this issue by accident: they key on template/token ids which are session-unique already.
 
 ### `subscribe` and `emitEvent` — cross-client coordination
 
@@ -429,6 +435,14 @@ function MyAnim({ template, baseProps }) {
 ```
 
 The cleanup return is mandatory — your component unmounts when the plugin is disabled, and a leaked RAF loop will keep firing setState on an unmounted component.
+
+If your effect has multiple distinct modes (rain / snow / fog, fire / ice / etc.) and you want a clean RAF restart when the user switches modes, set `key={mode}` on the animated component:
+
+```js
+React.createElement(Weather, { key: state.kind, kind: state.kind, ... })
+```
+
+A different `key` makes React unmount the prior instance and mount a fresh one — your `useEffect` cleanup runs, the old RAF cancels, and the new instance starts its own clock. Without the key you'd be re-using the same component across modes and any internal state (start times, accumulated phase) carries over awkwardly.
 
 ### Always set `listening: false` on Konva nodes inside `mapDecorations`
 

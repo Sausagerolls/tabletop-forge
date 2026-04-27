@@ -275,6 +275,21 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 
 ## Changelog
 
+### v1.4.1 — Mobile reconnect resilience, server-side AI settings, cone hit-test fix
+
+**Mobile reconnect resilience:**
+- Server: `pingInterval: 25 s`, `pingTimeout: 60 s` (up from the 20 s default). Tolerates the 30–45 s heartbeat gaps iOS WebKit and Brave-on-iOS introduce during cell-tower handover and lock-screen suspend, even on actively-used tabs.
+- Client: dropped the explicit `transports: ['websocket','polling']` override. The default polling-first / WS-upgrade order probes reliably through transparent proxies and cellular networks where the upfront WS handshake can silently fail. Reconnection knobs added: forever, 500 ms → 5 s with 50% jitter.
+- DMView + PlayerView no longer kick the user back to the connecting spinner on every brief socket drop. Once `session` is loaded, a small top banner ("Reconnecting (attempt N)…") shows during a drop and disappears the moment the socket reconnects.
+
+**AI settings persistence:**
+- AI config (LM Studio / Ollama / SwarmUI URLs, models, prompt templates) used to live in `localStorage` only, which is per-origin per-browser. New device, incognito tab, or aggressive iOS storage cleanup wiped it.
+- New generic `app_settings` table (key TEXT pk, JSONB value) + `/api/settings/:key` routes (GET / PUT / DELETE). DMView writes-through to the server on every change and hydrates from there on mount; localStorage is kept as a first-paint cache and as the read source for plugins, so `context.getAiSettings()` still works unchanged.
+- Settings now follow the DM across phones, browsers, and incognito sessions.
+
+**Cone template hit-test bug fix:**
+- `findNearestTemplate`'s cone branch returned hypot-from-apex, so a click 30 px from the cone's apex in any direction (including the half-plane behind the caster) registered as a hit on `tpl-edit` / `tpl-erase`. Replaced with a proper inside-the-wedge test plus perpendicular distance to the nearest cone edge for outside hits.
+
 ### v1.4.0 — Languages registry, Fog colour, six new plugins
 
 **First-class languages:**

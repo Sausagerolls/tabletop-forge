@@ -23,8 +23,19 @@ const { router: pluginsRouter, reconcilePluginsTable } = require('./routes/plugi
 
 const app = express();
 const server = http.createServer(app);
+// pingInterval/pingTimeout tuned for mobile reliability:
+// — pingInterval (25 s) keeps the WebSocket "active" ahead of the
+//   ~60 s idle timeouts on Cloudflare and most reverse proxies.
+// — pingTimeout (60 s, up from the 20 s default) tolerates the brief
+//   stalls iOS WebKit and Brave-on-iOS hit during cell-tower handover,
+//   memory-pressure pauses, and the lock-screen suspend that fires
+//   even on actively-used tabs. The trade-off is that a permanently
+//   gone client takes ~85 s to be evicted server-side; that's fine
+//   for a small-room VTT where there's almost never reconnect storm.
 const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
+  pingInterval: 25000,
+  pingTimeout: 60000,
 });
 
 app.use(cors());

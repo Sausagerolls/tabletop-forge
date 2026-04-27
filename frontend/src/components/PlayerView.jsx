@@ -518,6 +518,7 @@ export default function PlayerView() {
   const [diceRolls, setDiceRolls] = useState([]);
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [showDice, setShowDice] = useState(false);
   const [selectedToken, setSelectedToken] = useState(null);
   const [activeTool, setActiveTool] = useState('move');
@@ -620,8 +621,13 @@ export default function PlayerView() {
 
     socket.on('connect', () => {
       setConnected(true);
+      setReconnectAttempt(0);
+      // Re-emit on every connect (including reconnect) — the server
+      // treats join_session as idempotent and re-hydrates state.
       socket.emit('join_session', { sessionCode: code, role: 'player', name });
     });
+    socket.io.on('reconnect_attempt', (n) => setReconnectAttempt(n));
+    socket.io.on('reconnect_failed', () => setReconnectAttempt(-1));
 
     socket.on('session_joined', ({ state, userColors: uc }) => {
       setSession(state.session);
@@ -1123,12 +1129,18 @@ export default function PlayerView() {
     );
   }
 
-  if (!connected || !session) {
+  // Only show the full-screen entering-the-dungeon spinner BEFORE the
+  // first session payload lands. Once `session` is populated, brief
+  // socket drops get a small top banner instead of yanking the player
+  // out of the live map view.
+  if (!session) {
     return (
       <div className="min-h-screen bg-dnd-dark flex items-center justify-center">
         <div className="flex flex-col items-center text-center">
           <div className="mb-4 text-dnd-gold"><SpinnerIcon /></div>
-          <div className="text-gray-400">Entering the dungeon...</div>
+          <div className="text-gray-400">
+            {reconnectAttempt > 0 ? `Reconnecting (attempt ${reconnectAttempt})…` : 'Entering the dungeon...'}
+          </div>
         </div>
       </div>
     );
@@ -1162,6 +1174,19 @@ export default function PlayerView() {
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-gray-900 flex flex-col">
+      {/* Reconnect banner — visible while the socket is dropped, hidden
+          the moment it reconnects. Player keeps seeing the last-known
+          map state instead of being thrown back to the loading screen. */}
+      {!connected && (
+        <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-900/90 border border-yellow-600/60 text-yellow-100 px-3 py-1.5 rounded-lg text-xs font-medium shadow-lg flex items-center gap-2 pointer-events-none">
+          <span className="inline-block w-2 h-2 rounded-full bg-yellow-300 animate-pulse" />
+          {reconnectAttempt < 0
+            ? 'Reconnect failed — pull-to-refresh to retry'
+            : reconnectAttempt > 0
+              ? `Reconnecting (attempt ${reconnectAttempt})…`
+              : 'Connection dropped — reconnecting…'}
+        </div>
+      )}
       {/* Combat tracker strip */}
       {combatActive && sortedCombat.length > 0 && (
         <PlayerCombatStrip

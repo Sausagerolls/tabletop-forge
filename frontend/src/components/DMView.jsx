@@ -1021,6 +1021,11 @@ export default function DMView() {
   const [diceRolls, setDiceRolls] = useState([]);
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
+  // `reconnectAttempt` is bumped by socket.io's reconnect_attempt event;
+  // 0 means "no reconnect in progress". Drives the dropped-connection
+  // banner so the user knows the network blip is being recovered
+  // automatically rather than wondering why the UI just sat there.
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [panelTab, setPanelTab] = useState('map');
   const [panelOpen, setPanelOpen] = useState(true);
   const [selectedToken, setSelectedToken] = useState(null);
@@ -1285,8 +1290,13 @@ export default function DMView() {
 
     socket.on('connect', () => {
       setConnected(true);
+      setReconnectAttempt(0);
+      // Re-emit on every connect, including after a reconnect — the
+      // server treats join_session as idempotent and re-hydrates state.
       socket.emit('join_session', { sessionCode: code, role: 'dm', name: 'Dungeon Master', dmPassword: pass });
     });
+    socket.io.on('reconnect_attempt', (n) => setReconnectAttempt(n));
+    socket.io.on('reconnect_failed', () => setReconnectAttempt(-1));
 
     socket.on('session_joined', ({ state, userColors: uc, users: u }) => {
       setSession(state.session);
@@ -2066,12 +2076,18 @@ export default function DMView() {
     );
   }
 
-  if (!connected || !session) {
+  // Only show the full-screen connecting spinner BEFORE the first
+  // session payload lands. Once `session` is populated, brief socket
+  // drops (cell handover, iOS WebKit suspending the WS) get a small
+  // top banner instead of yanking the DM out of their working view.
+  if (!session) {
     return (
       <div className="min-h-screen bg-dnd-dark flex items-center justify-center">
         <div className="flex flex-col items-center text-center">
           <div className="mb-4 text-dnd-gold"><SpinnerIcon /></div>
-          <div className="text-gray-400">Connecting as Dungeon Master...</div>
+          <div className="text-gray-400">
+            {reconnectAttempt > 0 ? `Reconnecting (attempt ${reconnectAttempt})…` : 'Connecting as Dungeon Master...'}
+          </div>
         </div>
       </div>
     );
@@ -2090,6 +2106,20 @@ export default function DMView() {
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-gray-900">
+      {/* Reconnect banner — visible while the socket is dropped, hidden
+          the moment it reconnects. Stays out of the way of the live
+          UI so the DM can keep working with the last-known state
+          rather than being kicked back to the login spinner. */}
+      {!connected && (
+        <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-900/90 border border-yellow-600/60 text-yellow-100 px-3 py-1.5 rounded-lg text-xs font-medium shadow-lg flex items-center gap-2 pointer-events-none">
+          <span className="inline-block w-2 h-2 rounded-full bg-yellow-300 animate-pulse" />
+          {reconnectAttempt < 0
+            ? 'Reconnect failed — pull-to-refresh to retry'
+            : reconnectAttempt > 0
+              ? `Reconnecting (attempt ${reconnectAttempt})…`
+              : 'Connection dropped — reconnecting…'}
+        </div>
+      )}
       {/* Map area */}
       <div className="flex-1 relative overflow-hidden flex flex-col" style={{ cursor: placingCreature ? 'crosshair' : 'default' }}>
         {/* Combat tracker strip */}

@@ -19,6 +19,7 @@ const lightsRouter = require('./routes/lights');
 const dd2vttRouter = require('./routes/dd2vtt');
 const spellLibraryRouter = require('./routes/spell_library');
 const languagesRouter = require('./routes/languages');
+const settingsRouter = require('./routes/settings');
 const { router: pluginsRouter, reconcilePluginsTable } = require('./routes/plugins');
 
 const app = express();
@@ -141,6 +142,7 @@ app.use('/api/lights', lightsRouter);
 app.use('/api/dd2vtt', dd2vttRouter);
 app.use('/api/spell-library', spellLibraryRouter);
 app.use('/api/languages', languagesRouter);
+app.use('/api/settings', settingsRouter);
 app.use('/api/plugins', pluginsRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
@@ -1494,6 +1496,19 @@ server.listen(PORT, async () => {
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS fow_enabled BOOLEAN DEFAULT false`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS fow_blur INTEGER DEFAULT 16`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS fow_color VARCHAR(9) DEFAULT '#000000'`);
+
+    // Generic key/value settings table. Currently used to persist DM AI
+    // configuration across devices / browser clears (it used to live in
+    // localStorage only); designed so future "global app settings" can
+    // share the same store without another migration. Values are JSONB
+    // so callers can stash whatever shape they like.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key VARCHAR(120) PRIMARY KEY,
+        value JSONB NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ambient_light VARCHAR(10) DEFAULT 'bright'`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS vision_type VARCHAR(20) DEFAULT 'normal'`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS vision_range INTEGER DEFAULT 0`);

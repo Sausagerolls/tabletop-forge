@@ -1077,7 +1077,44 @@ function findNearestTemplate(mapX, mapY, templates, threshold) {
     } else if (t.type === 'line' && p.length >= 4) {
       d = distToSeg(mapX, mapY, p[0], p[1], p[2], p[3]);
     } else if (t.type === 'cone' && p.length >= 4) {
-      d = Math.hypot(mapX - p[0], mapY - p[1]);
+      // Old version returned `hypot(mapX-p[0], mapY-p[1])` — distance
+      // from the cone's apex only. That meant clicking ANY direction
+      // 30 px away from the apex registered as a hit, including the
+      // half of the map BEHIND the caster, which is why the DM saw
+      // templates jump when they thought they were clicking empty
+      // ground. Proper hit-test:
+      //   - inside the 60° wedge AND within range  → 0
+      //   - outside the wedge angular range        → perp distance to
+      //                                              the nearest cone edge
+      //   - past the cone's tip but still inside
+      //     the wedge angular range                → distance past the arc
+      const dx = p[2] - p[0], dy = p[3] - p[1];
+      const len = Math.hypot(dx, dy);
+      const vx = mapX - p[0], vy = mapY - p[1];
+      const distFromApex = Math.hypot(vx, vy);
+      const HALF_ANG = Math.PI / 6;       // 30° → 60° total wedge
+      if (len === 0 || distFromApex === 0) {
+        d = 0;
+      } else {
+        const coneAng  = Math.atan2(dy, dx);
+        const clickAng = Math.atan2(vy, vx);
+        let delta = clickAng - coneAng;
+        while (delta >  Math.PI) delta -= 2 * Math.PI;
+        while (delta < -Math.PI) delta += 2 * Math.PI;
+        if (Math.abs(delta) <= HALF_ANG) {
+          d = distFromApex <= len ? 0 : distFromApex - len;
+        } else {
+          // Perpendicular distance to whichever edge is on the
+          // click's side. Edge runs from apex out to (cos*len, sin*len).
+          const sign = delta > 0 ? 1 : -1;
+          const edgeAng = coneAng + sign * HALF_ANG;
+          const ex = Math.cos(edgeAng), ey = Math.sin(edgeAng);
+          const along = vx * ex + vy * ey;
+          if (along <= 0)        d = distFromApex;
+          else if (along >= len) d = Math.hypot(vx - ex * len, vy - ey * len);
+          else                   d = Math.abs(vx * (-ey) + vy * ex);
+        }
+      }
     }
     if (d < minDist) { minDist = d; nearest = { template: t, dist: d }; }
   }

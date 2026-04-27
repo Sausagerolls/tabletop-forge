@@ -1199,11 +1199,17 @@ export default function DMView() {
     imageAllowNsfw: false,
   };
 
+  // AI settings live server-side in `app_settings` (key `ai_config`)
+  // so they follow the DM across phones, browsers, and incognito tabs.
+  // localStorage is kept as a SECOND-line read for two reasons:
+  //   (a) instant first paint while the server fetch is in flight, and
+  //   (b) plugins read settings via context.getAiSettings(), which
+  //       still pulls from localStorage. Mirroring the server value
+  //       into localStorage on every load keeps that contract working
+  //       without modifying every plugin.
   const [aiSettings, setAISettings] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('dndvtt_ai_settings') || 'null');
-      // Merge so newly-added image fields pick up defaults for users
-      // who saved the older shape.
       return { ...AI_DEFAULTS, ...(stored || {}) };
     } catch {
       return { ...AI_DEFAULTS };
@@ -1214,11 +1220,43 @@ export default function DMView() {
   const [aiImageTestStatus, setAIImageTestStatus] = useState(null);
   const [aiImageTestMessage, setAIImageTestMessage] = useState('');
   const [aiImageModelList, setAIImageModelList] = useState([]);
+  // Latch so we don't fire a server PUT for the initial state
+  // (which would clobber whatever's already saved with the local
+  // defaults during the brief window before the GET finishes).
+  const aiHydratedRef = useRef(false);
+
+  // One-shot fetch from the server's app_settings store. Failure is
+  // non-fatal — we keep whatever localStorage gave us.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/settings/ai_config')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((row) => {
+        if (cancelled || !row || !row.value) { aiHydratedRef.current = true; return; }
+        setAISettings((prev) => {
+          const next = { ...AI_DEFAULTS, ...prev, ...row.value };
+          try { localStorage.setItem('dndvtt_ai_settings', JSON.stringify(next)); } catch {}
+          return next;
+        });
+        aiHydratedRef.current = true;
+      })
+      .catch(() => { aiHydratedRef.current = true; });
+    return () => { cancelled = true; };
+  }, []);
 
   function updateAISettings(updates) {
     setAISettings((prev) => {
       const next = { ...prev, ...updates };
-      localStorage.setItem('dndvtt_ai_settings', JSON.stringify(next));
+      try { localStorage.setItem('dndvtt_ai_settings', JSON.stringify(next)); } catch {}
+      // Don't overwrite the server value with our local defaults
+      // before the initial GET has completed.
+      if (aiHydratedRef.current) {
+        fetch('/api/settings/ai_config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value: next }),
+        }).catch(() => { /* offline write: localStorage is the fallback */ });
+      }
       return next;
     });
     setAITestStatus(null);

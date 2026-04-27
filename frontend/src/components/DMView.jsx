@@ -1156,6 +1156,7 @@ export default function DMView() {
   const [editingTemplateId, setEditingTemplateId] = useState(null);
   const [fowEnabled, setFowEnabled] = useState(false);
   const [fowBlur, setFowBlur] = useState(16);
+  const [fowColor, setFowColor] = useState('#000000');
   const [ambientLight, setAmbientLight] = useState('bright');
 
   // DM markers
@@ -1300,6 +1301,7 @@ export default function DMView() {
       setSpawnPoint(state.spawnPoint || { col: 0, row: 0 });
       setFowEnabled(state.session.fow_enabled || false);
       setFowBlur(state.session.fow_blur ?? 16);
+      setFowColor(state.session.fow_color || '#000000');
       setAmbientLight(state.session.ambient_light || 'bright');
       setGridSize(state.session.grid_size || 50);
       const gc = state.session.grid_color || 'rgba(0,0,0,0.35)';
@@ -1499,6 +1501,7 @@ export default function DMView() {
 
     socket.on('fow_changed',           ({ enabled })            => setFowEnabled(enabled));
     socket.on('fow_blur_changed',      ({ blur })               => setFowBlur(blur));
+    socket.on('fow_color_changed',     ({ color })              => setFowColor(color || '#000000'));
     socket.on('ambient_light_changed', ({ ambientLight: al })   => setAmbientLight(al));
 
     socket.on('grid_size_changed', ({ gridSize: gs }) => {
@@ -1806,6 +1809,17 @@ export default function DMView() {
     setFowBlur(val);
     if (!session) return;
     socket.emit('set_fow_blur', { sessionId: session.id, blur: val });
+  }
+
+  function handleFowColorChange(val) {
+    // Accept anything the picker emits; only commit if it's a valid hex.
+    // The backend re-validates (set_fow_color rejects bad values), so
+    // typing partial hex into the text input doesn't push noise to the DB.
+    const v = String(val || '').trim();
+    setFowColor(v || '#000000');
+    if (!session) return;
+    if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)) return;
+    socket.emit('set_fow_color', { sessionId: session.id, color: v });
   }
 
   function handleAddToMap(creature) {
@@ -2628,6 +2642,28 @@ export default function DMView() {
                         className="flex-1 accent-orange-500"
                       />
                       <span className="text-xs text-gray-300 w-6 text-right">{fowBlur}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs text-gray-400 shrink-0 w-24">Fog colour</label>
+                      <input
+                        type="color"
+                        value={/^#[0-9a-fA-F]{6}$/.test(fowColor) ? fowColor : '#000000'}
+                        onChange={(e) => handleFowColorChange(e.target.value)}
+                        className="w-9 h-7 rounded cursor-pointer bg-transparent border border-gray-700"
+                        title="Visible only when Fog of War is on"
+                      />
+                      <input
+                        type="text"
+                        value={fowColor}
+                        onChange={(e) => handleFowColorChange(e.target.value)}
+                        className="w-24 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white font-mono"
+                        placeholder="#000000"
+                      />
+                      <button
+                        onClick={() => handleFowColorChange('#000000')}
+                        className="text-[10px] text-gray-500 hover:text-gray-300"
+                        title="Reset to default black"
+                      >Reset</button>
                     </div>
                     <div className="text-xs text-gray-400">
                       Use the wall tools (W, R, P, O) in the left toolbar to draw LOS barriers. The DM always sees the full map.

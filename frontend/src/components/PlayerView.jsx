@@ -544,6 +544,7 @@ export default function PlayerView() {
   const [magicalDarkness, setMagicalDarkness] = useState([]);
   const [fowEnabled, setFowEnabled] = useState(false);
   const [fowBlur, setFowBlur] = useState(16);
+  const [fowColor, setFowColor] = useState('#000000');
   const [ambientLight, setAmbientLight] = useState('bright');
   const [torchPreset, setTorchPreset] = useState(0); // 0=None 1=Candle 2=Torch 3=Lantern
   const [showLightMenu, setShowLightMenu] = useState(false);
@@ -636,6 +637,7 @@ export default function PlayerView() {
       setMagicalDarkness(state.magicalDarkness || []);
       setFowEnabled(state.session.fow_enabled || false);
       setFowBlur(state.session.fow_blur ?? 16);
+      setFowColor(state.session.fow_color || '#000000');
       setAmbientLight(state.session.ambient_light || 'bright');
       if (state.session.grid_color) setGridColor(state.session.grid_color);
       if (state.session.grid_thickness != null) setGridThickness(state.session.grid_thickness);
@@ -875,6 +877,7 @@ export default function PlayerView() {
 
     socket.on('fow_changed',           ({ enabled })      => setFowEnabled(enabled));
     socket.on('fow_blur_changed',      ({ blur })         => setFowBlur(blur));
+    socket.on('fow_color_changed',     ({ color })        => setFowColor(color || '#000000'));
     socket.on('ambient_light_changed', ({ ambientLight: al }) => setAmbientLight(al));
     socket.on('token_vision_changed',  ({ tokenId, senses, visionType: vt, visionRange: vr }) => {
       setTokens(prev => prev.map(t => {
@@ -1193,6 +1196,7 @@ export default function PlayerView() {
           spellTemplates={spellTemplates}
           fogOfWar={fowEnabled}
           fowBlur={fowBlur}
+          fowColor={fowColor}
           ambientLight={ambientLight}
           onDoorToggle={handleDoorToggle}
           centerOnMapPoint={centerOnMapPoint}

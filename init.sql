@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   combat_turn INTEGER DEFAULT 0,
   fow_enabled BOOLEAN DEFAULT false,
   fow_blur INTEGER DEFAULT 16,
+  fow_color VARCHAR(9) DEFAULT '#000000',
   ambient_light VARCHAR(10) DEFAULT 'bright',
   created_at TIMESTAMP DEFAULT NOW()
 );

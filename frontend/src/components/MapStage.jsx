@@ -1223,6 +1223,7 @@ export default function MapStage({
   lights = [],
   fogOfWar = false,
   fowBlur = 16,
+  fowColor = '#000000',
   ambientLight = 'bright',
   onWallAdd = null,
   onWallDelete = null,
@@ -1922,8 +1923,11 @@ export default function MapStage({
     // Scaling the blur by the current zoom keeps the softness visually constant regardless of zoom level.
     ctx.translate(pos.x + fowBlur * scale, pos.y + fowBlur * scale);
     ctx.scale(scale, scale);
-    // Fill entire map with fully-opaque fog
-    ctx.fillStyle = '#000';
+    // Fill entire map with fully-opaque fog. Colour is configurable
+    // (sessions.fow_color); the destination-out passes below ignore
+    // colour and only modulate alpha, so the visible fog tint is set
+    // entirely by THIS fillStyle.
+    ctx.fillStyle = fowColor;
     ctx.fillRect(0, 0, mW, mH);
     // Punch fully-transparent visibility holes using destination-out.
     // CSS filter blur is applied to the canvas element itself (works on all browsers
@@ -2265,7 +2269,7 @@ export default function MapStage({
       running = false;
       cancelAnimationFrame(raf);
     };
-  }, [fogOfWar, visPolys, fowBlur, pos, scale, mW, mH, stageSize, ambientLight, visibilityTick, fogZoneLOS, magicalDarkness, visOrigins, gridSize, walls, doors]);
+  }, [fogOfWar, visPolys, fowBlur, fowColor, pos, scale, mW, mH, stageSize, ambientLight, visibilityTick, fogZoneLOS, magicalDarkness, visOrigins, gridSize, walls, doors]);
 
   // Water/illusion effect canvas — sits above the Konva stage, below the FoW.
   // Reads pixels from the Konva map layer and replays them with sinusoidal

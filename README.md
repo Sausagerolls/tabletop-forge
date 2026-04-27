@@ -275,6 +275,31 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 
 ## Changelog
 
+### v1.4.0 — Languages registry, Fog colour, six new plugins
+
+**First-class languages:**
+- New `languages` table seeded with the SRD set on startup (8 standard, 8 exotic, 2 rare). DMs can add custom entries via the picker; the SRD seed is protected from deletion.
+- New `LanguagePicker` component replaces the freeform Languages text input on creatures — multi-select, grouped by category, fluency qualifier dropdown ("understands but cannot speak" etc).
+- AI stat-block prompt now embeds the canonical language list at request time and tells the model to ONLY use those names; output is canonicalised to match casing before insert, so the picker recognises every value.
+- Plugins can read `/api/languages`. The bundled `npc-chat` plugin uses this as its language source instead of hard-coding a list.
+
+**Fog of War — configurable colour:**
+- New `sessions.fow_color` column (default `#000000`). DM-only `set_fow_color` socket; live re-tints the player view as the picker drags.
+- Picker added to **Session tab → Fog of War** (under the edge-feather slider) with hex text input and Reset.
+
+**New bundled plugins (downloadable from the Plugin Store):**
+- **Theme Customizer** — accent colour, panel + window backdrop (gradients: Forest, Ember, Nebula, Cinnabar dusk, Deep ocean, plus solid presets), UI font family. Live-syncs to every player in the session and reverts cleanly on disable.
+- **NPC Chat** — one-way DM-to-player speech with per-language scrambling. Pulls the canonical language list from the host; per-token knowledge derived from each character's `creature.languages`, no separate KV needed. Players who don't understand see "Speaks in a tongue you do not know" so they can't deduce the language from the popup.
+- **3D Dice** — three.js polyhedra (Tetrahedron / Cube / Octahedron / custom d10 trapezohedron / Dodecahedron / Icosahedron) tumbling across every player's screen. Faces are blank during the roll; once the dice settle, the rolled value fades in as a textured plane locked to the camera-facing face — rotated to match the die's own orientation. GLB models bundled for d6 / d20 / d100; drop other GLBs in the plugin folder to swap any procedural shape. Per-die colour overrides persist per session and sync to all players. Plugin hijacks the host's built-in dice roller so quick-rolls and character-sheet rolls also get the full 3D animation.
+- **SRD 2024 Content Pack / SRD 2014 Content Pack** — pull the full WotC SRD set (creatures + magic items) from Open5e on enable. Creatures land in the host library tagged by edition; magic items live in the plugin tab with **Send to player** (uses the existing `send_treasure` socket) and **Treasure JSON** download (matches the format the Treasure tab's **Load** button accepts). Disabling the plugin deletes every creature it inserted by tracked ID — clean test of the disable/cleanup contract.
+- **Content Exporter** — multi-select creatures and spells from your library, fill in a manifest, download a self-contained installable plugin .zip. The exported pack auto-imports its content on enable and removes it on disable using the same install/cleanup pattern the bundled SRD packs use. Zip is built in-browser with an inline STORE-method ZIP encoder — no external dependencies.
+
+**Plugin API + docs:**
+- New section in `PLUGINS.md` covering bulk import/export endpoints (`/api/creatures/{export,import}`, `/api/spell-library/{export,import}`) with the multipart `file` shape both routes accept.
+- Documented that `unregister` receives only `{ registries }` (no `context`), with the module-scope `savedDataApi` capture pattern for plugins that need to flush KV state during cleanup.
+- Documented "no `playerTabs` registry" — DOM-injection pattern for player-side UI, with the `react-dom/client` caveat.
+- Documented the `/api/languages` endpoint and the canonical-vs-custom matching pattern.
+
 ### v1.3.0 — SwarmUI image generation, Random Encounter Builder, AI generator hardening
 
 **AI image generation (optional, via [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI)):**

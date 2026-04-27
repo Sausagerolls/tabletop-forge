@@ -234,6 +234,7 @@ async function getSessionState(sessionCode) {
       combat_turn: session.combat_turn || 0,
       fow_enabled: session.fow_enabled || false,
       fow_blur: session.fow_blur ?? 16,
+      fow_color: session.fow_color || '#000000',
       ambient_light: session.ambient_light || 'bright',
     },
     tokens: tokensRows,
@@ -1239,6 +1240,24 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── FOW colour change (DM only) ───────────────────────────────────────────
+  // Validates the input as a 3- or 6-digit hex literal — anything else is
+  // rejected silently. Empty / null clears back to the default black so the
+  // DM can recover a borked picker state without re-creating the session.
+  socket.on('set_fow_color', async ({ sessionId, color }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    const value = (color === null || color === '') ? '#000000' : String(color || '');
+    if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value)) return;
+    try {
+      await db.query('UPDATE sessions SET fow_color=$1 WHERE id=$2', [value, sessionId]);
+      io.to(sessionCode).emit('fow_color_changed', { color: value });
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
   // ── Grid size change (DM only) ────────────────────────────────────────────
   socket.on('change_grid_size', async ({ sessionId, gridSize }) => {
     if (socket.data.role !== 'dm') return;
@@ -1463,6 +1482,7 @@ server.listen(PORT, async () => {
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS player_owner VARCHAR(255)`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS fow_enabled BOOLEAN DEFAULT false`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS fow_blur INTEGER DEFAULT 16`);
+    await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS fow_color VARCHAR(9) DEFAULT '#000000'`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ambient_light VARCHAR(10) DEFAULT 'bright'`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS vision_type VARCHAR(20) DEFAULT 'normal'`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS vision_range INTEGER DEFAULT 0`);

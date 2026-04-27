@@ -1,7 +1,7 @@
 {
   "id": "elemental-templates",
   "name": "Elemental Templates",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Animated elemental overlays on spell templates — fire, water, ice, lightning, void, acid. Set per template in the template-edit popup. Line templates emit their effects from the line's start point along its length.",
   "author": "TableTop Forge",
   "requires": [],

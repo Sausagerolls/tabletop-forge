@@ -501,90 +501,102 @@ export default {
         }
 
       } else if (element === 'void' && lineSource) {
-        // Line variant — the classic black-hole vortex doesn't make
-        // sense as a circle on a 1ft-wide line spell. Instead, render
-        // as a "tear in space" running along the line: a dark band
-        // with travelling pulses converging toward the line's centre
-        // line, plus tiny event-horizon points spaced along it.
+        // Line variant — solid black beam running down the centre of
+        // the line with perpendicular "waves" falling into it from
+        // both sides. Reads as a gravitational seam tearing across
+        // the affected strip rather than a single point singularity.
         const nx = -lineSource.dirY, ny = lineSource.dirX;
-        const halfW = Math.max(lineSource.halfWidth, 8) * 2;     // visible band, not the literal 1ft sliver
         const A = { x: lineSource.startX, y: lineSource.startY };
         const B = { x: lineSource.endX,   y: lineSource.endY   };
 
-        // ── Dark band along the line ───────────────────────────────
-        // Polygon = (A+nL, B+nL, B-nL, A-nL). Filled with a vertical
-        // (perpendicular-to-line) gradient so the centre is darkest
-        // and the edges fade out, mirroring the radial vignette in
-        // the circular variant.
-        const bandPts = [
-          A.x + nx * halfW, A.y + ny * halfW,
-          B.x + nx * halfW, B.y + ny * halfW,
-          B.x - nx * halfW, B.y - ny * halfW,
-          A.x - nx * halfW, A.y - ny * halfW,
+        // ── Outer aura — soft purple glow flanking the beam ──────
+        // Wider than the beam itself so the wave streaks have a
+        // visual "field" they're crossing through.
+        const auraHalf = Math.max(lineSource.halfWidth * 4, 18);
+        const auraPts = [
+          A.x + nx * auraHalf, A.y + ny * auraHalf,
+          B.x + nx * auraHalf, B.y + ny * auraHalf,
+          B.x - nx * auraHalf, B.y - ny * auraHalf,
+          A.x - nx * auraHalf, A.y - ny * auraHalf,
         ];
         nodes.push(React.createElement(Line, {
-          key: 'vshade', points: bandPts, closed: true,
-          fillLinearGradientStartPoint: { x: A.x + nx * halfW, y: A.y + ny * halfW },
-          fillLinearGradientEndPoint:   { x: A.x - nx * halfW, y: A.y - ny * halfW },
+          key: 'vaura', points: auraPts, closed: true,
+          fillLinearGradientStartPoint: { x: A.x + nx * auraHalf, y: A.y + ny * auraHalf },
+          fillLinearGradientEndPoint:   { x: A.x - nx * auraHalf, y: A.y - ny * auraHalf },
           fillLinearGradientColorStops: [
-            0,   'rgba(40,15,55,0)',
-            0.5, 'rgba(0,0,0,0.85)',
-            1,   'rgba(40,15,55,0)',
+            0,   'rgba(168,85,247,0)',
+            0.5, 'rgba(40,15,55,0.55)',
+            1,   'rgba(168,85,247,0)',
           ],
           listening: false,
         }));
 
-        // ── Distortion pulses travelling toward the line's midpoint ─
-        // Each pulse has a phase 0..1; born at a random end, arrives
-        // at the midpoint as it ages.
-        const midX = (A.x + B.x) / 2, midY = (A.y + B.y) / 2;
-        const pulseCount = 4;
-        for (let i = 0; i < pulseCount; i++) {
-          const phase = ((t * 0.42 + i / pulseCount) % 1);
-          const fromStart = (i % 2) === 0;
-          const sx = fromStart ? A.x : B.x;
-          const sy = fromStart ? A.y : B.y;
-          const px = sx + (midX - sx) * phase;
-          const py = sy + (midY - sy) * phase;
-          const alpha = Math.sin(phase * Math.PI) * 0.55;
-          // Pulse = small ellipse perpendicular to line, shrinking as it converges.
-          const spanAlong = lineSource.length * 0.05 * (1 - phase * 0.5);
-          const spanPerp  = halfW * 0.7 * (1 - phase * 0.4);
-          // Approximate the rotated ellipse with a polygon along the line normal.
-          const ringSegs = 24;
-          const ringPts = [];
-          for (let s = 0; s <= ringSegs; s++) {
-            const a = (s / ringSegs) * Math.PI * 2;
-            const along = Math.cos(a) * spanAlong;
-            const perp  = Math.sin(a) * spanPerp;
-            ringPts.push(
-              px + lineSource.dirX * along + nx * perp,
-              py + lineSource.dirY * along + ny * perp
-            );
-          }
-          nodes.push(React.createElement(Line, {
-            key: `vw-${i}`, points: ringPts, closed: true,
-            stroke: palette.stroke, strokeWidth: 1.4, opacity: alpha,
-            listening: false,
-          }));
-        }
+        // ── The beam itself — a solid dark band along the centre ─
+        // Visually the strongest element. Slightly thicker than the
+        // 1ft template silhouette so it reads as the "hungry seam"
+        // rather than a thin scratch.
+        const beamHalf = Math.max(lineSource.halfWidth * 1.8, 4);
+        const beamPts = [
+          A.x + nx * beamHalf, A.y + ny * beamHalf,
+          B.x + nx * beamHalf, B.y + ny * beamHalf,
+          B.x - nx * beamHalf, B.y - ny * beamHalf,
+          A.x - nx * beamHalf, A.y - ny * beamHalf,
+        ];
+        nodes.push(React.createElement(Line, {
+          key: 'vbeam', points: beamPts, closed: true,
+          fill: 'rgba(0,0,0,0.97)',
+          stroke: palette.stroke, strokeWidth: 1.1, opacity: 0.95,
+          listening: false,
+        }));
 
-        // ── Event-horizon dots spaced along the line ───────────────
-        // Three tiny black dots equidistant along the line — visually
-        // suggests a connected tear rather than one big singularity.
-        const horizonCount = 3;
-        for (let i = 0; i < horizonCount; i++) {
-          const slot = (i + 1) / (horizonCount + 1);
-          const hx = A.x + (B.x - A.x) * slot;
-          const hy = A.y + (B.y - A.y) * slot;
-          const r = Math.max(2.5, halfW * 0.18);
-          nodes.push(React.createElement(Circle, {
-            key: `vcore-${i}`, x: hx, y: hy, radius: r,
-            fill: 'rgba(0,0,0,0.97)', listening: false,
-          }));
-          nodes.push(React.createElement(Circle, {
-            key: `vedge-${i}`, x: hx, y: hy, radius: r + 0.6,
-            stroke: palette.stroke, strokeWidth: 1.1, opacity: 0.9,
+        // ── Waves falling into the beam ──────────────────────────
+        // For each wave column along the line, two streaks (one
+        // either side) fade in far from the beam, slide perpendicularly
+        // toward it, and disappear as they're absorbed. Each streak
+        // is a short line segment parallel to the beam (i.e. parallel
+        // to lineSource.dir), curving slightly via a 3-point bend
+        // toward the beam centre to sell the "pulled in" feel.
+        const waveCount = Math.max(10, Math.min(40, Math.floor(lineSource.length / 14)));
+        for (let i = 0; i < waveCount; i++) {
+          const slot = (i * 0.61803398) % 1;            // golden-ratio spread
+          const along = slot * lineSource.length;
+          const side  = (i % 2 === 0) ? 1 : -1;
+          const phase = ((t * 0.55 + i * 0.137) % 1);    // 0 = born far, 1 = absorbed
+
+          // Distance from beam shrinks over phase — fall toward the beam.
+          const maxDist = auraHalf;
+          const minDist = beamHalf;
+          const dist = maxDist * (1 - phase) + minDist * phase;
+
+          // Anchor point on the line, then push perpendicular to `side`.
+          const baseX = A.x + lineSource.dirX * along;
+          const baseY = A.y + lineSource.dirY * along;
+          const cx = baseX + nx * side * dist;
+          const cy = baseY + ny * side * dist;
+
+          // Each streak is a short segment parallel to the beam,
+          // shrinking as it nears the beam (further compressed by gravity).
+          const segLen = (10 + (i % 3) * 4) * (0.4 + 0.6 * (1 - phase));
+          // Slight inward bow on the streak — the centre of the streak
+          // is pulled toward the beam more than its ends, so the line
+          // visibly sags as it falls.
+          const bow = (1 - Math.abs(phase - 0.5) * 2) * 4;        // peaks mid-flight
+          const halfSeg = segLen / 2;
+          // Ends along the line direction, centre offset toward beam.
+          const ax = cx + lineSource.dirX * halfSeg;
+          const ay = cy + lineSource.dirY * halfSeg;
+          const bx = cx - lineSource.dirX * halfSeg;
+          const by = cy - lineSource.dirY * halfSeg;
+          const mx = cx - nx * side * bow;
+          const my = cy - ny * side * bow;
+
+          // Sin envelope for opacity — fade in, peak mid-fall, fade out.
+          const alpha = Math.sin(phase * Math.PI) * 0.85;
+          nodes.push(React.createElement(Line, {
+            key: `vw-${i}`,
+            points: [ax, ay, mx, my, bx, by],
+            stroke: palette.stroke, strokeWidth: 1.4, opacity: alpha,
+            tension: 0.6,
             listening: false,
           }));
         }

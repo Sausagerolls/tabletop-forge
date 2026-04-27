@@ -517,9 +517,26 @@ export default function PlayerView() {
   const queryCreature = searchParams.get('creatureId') ? parseInt(searchParams.get('creatureId'), 10) : null;
   const queryHp = parseInt(searchParams.get('hp') || '20', 10);
   const querySize = searchParams.get('size') || 'medium';
+  // Preview mode: the DM's player-preview plugin opens this view in an
+  // iframe with `?previewTokenId=<existing token>` so the iframe can
+  // bind to a token that already exists on the map instead of asking
+  // the server to spawn another one. When set, we:
+  //   - skip the create_player_token emit (no new session_token row)
+  //   - set playerTokenId directly to the supplied id so MapStage's
+  //     fog-of-war / vision math runs from the real player's token
+  //   - bypass CharacterSetup entirely (deep-link semantics)
+  const previewTokenId = searchParams.get('previewTokenId') ? parseInt(searchParams.get('previewTokenId'), 10) : null;
   const [setup, setSetup] = useState(() => {
-    if (queryName) {
-      return { ready: true, name: queryName, creatureId: queryCreature, maxHp: queryHp, size: querySize };
+    // Preview mode is observe-only — bypass character setup so the
+    // DM doesn't have to fake a name + creature in the iframe URL.
+    if (previewTokenId || queryName) {
+      return {
+        ready: true,
+        name: queryName || 'Preview',
+        creatureId: queryCreature,
+        maxHp: queryHp,
+        size: querySize,
+      };
     }
     let remembered = null;
     try { remembered = SETUP_KEY ? JSON.parse(localStorage.getItem(SETUP_KEY) || 'null') : null; } catch {}
@@ -693,13 +710,21 @@ export default function PlayerView() {
 
       if (!playerTokenCreated.current) {
         playerTokenCreated.current = true;
-        socket.emit('create_player_token', {
-          sessionId: state.session.id,
-          playerName: name,
-          maxHp: hpParam,
-          size: sizeParam,
-          creatureId: creatureIdParam,
-        });
+        if (previewTokenId) {
+          // Preview mode — bind to the existing token instead of asking
+          // the server to create a new one. MapStage uses playerTokenId
+          // as the FoW / vision origin, so the iframe ends up rendering
+          // the real player's view of the map.
+          setPlayerTokenId(previewTokenId);
+        } else {
+          socket.emit('create_player_token', {
+            sessionId: state.session.id,
+            playerName: name,
+            maxHp: hpParam,
+            size: sizeParam,
+            creatureId: creatureIdParam,
+          });
+        }
       }
     });
 

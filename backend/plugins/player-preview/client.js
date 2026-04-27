@@ -103,17 +103,19 @@ function buildPlayerUrl(token) {
   // Read the current session code from the DM's URL — the only
   // bit of "host state" a plugin can lift without a context API.
   const code = new URL(window.location.href).searchParams.get('code') || '';
-  // Suffix the name so the duplicate connection is obvious in the
-  // user list (`Alice (preview)` rather than two `Alice` rows).
+  // `previewTokenId` is the key knob — PlayerView treats it as
+  // observe-only mode: skip the create_player_token emit and bind
+  // playerTokenId directly to this id, so MapStage's FoW / vision
+  // math runs from the existing token without ever spawning a
+  // duplicate. The host added this in the same release as this
+  // plugin's first version, so a stale host won't recognise it —
+  // older deploys would fall back to spawning a "(preview)" token.
   const baseName = token.nickname || token.player_name || token.name || 'Player';
-  const previewName = `${baseName} (preview)`;
   const params = new URLSearchParams({
     code,
-    name: previewName,
+    previewTokenId: String(token.id),
+    name: `${baseName} (preview)`,
   });
-  if (token.creature_id) params.set('creatureId', String(token.creature_id));
-  if (token.max_hp)      params.set('hp', String(token.max_hp));
-  if (token.size)        params.set('size', token.size);
   return `/play?${params.toString()}`;
 }
 

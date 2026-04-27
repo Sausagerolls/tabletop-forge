@@ -212,13 +212,14 @@ export function ledgeFarSidePolygon(ledge, ox, oy, mapW, mapH) {
   // With N = (uy, -ux): dx*(-ux) - dy*(uy) = -len < 0 → side = +1 (above).
   // So above-pointing normal is (uy, -ux).
   const nx = uy, ny = -ux;
+  // The dim polygon is the rectangular strip directly behind the ledge
+  // segment, only as wide as the ledge itself. The earlier version
+  // also extended A and B by L along the ledge axis (treating the
+  // ledge line as effectively infinite), which dimmed light WAY past
+  // the actual ledge endpoints — the bug the DM noticed where a
+  // 50-px ledge dropped a shadow across half the map.
   const L = Math.max(mapW, mapH) * 4;
-  // Extend A and B along the line by L in each direction so the ledge line
-  // appears effectively infinite within the map.
-  const AxE = ax - ux * L, AyE = ay - uy * L;
-  const BxE = bx + ux * L, ByE = by + uy * L;
-  // Push points L deep into the above (far) side.
-  const AxF = AxE + nx * L, AyF = AyE + ny * L;
-  const BxF = BxE + nx * L, ByF = ByE + ny * L;
-  return [AxE, AyE, BxE, ByE, BxF, ByF, AxF, AyF];
+  const AxF = ax + nx * L, AyF = ay + ny * L;
+  const BxF = bx + nx * L, ByF = by + ny * L;
+  return [ax, ay, bx, by, BxF, ByF, AxF, AyF];
 }

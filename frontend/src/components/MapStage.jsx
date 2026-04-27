@@ -870,7 +870,11 @@ function colorToFillStroke(color) {
   };
 }
 
-function templateShapeProps(t, fill, stroke, dash) {
+// `gridSize` is needed for line templates (1ft width = gridSize/5).
+// Callers without grid context can fall back to the default 50 px/cell
+// the host ships with — the line still renders correctly, just at
+// whatever the default cell size implies.
+function templateShapeProps(t, fill, stroke, dash, gridSize = 50) {
   if (!t || !t.points) return null;
   const p = t.points;
   if (t.type === 'circle' && p.length >= 3) {
@@ -882,7 +886,23 @@ function templateShapeProps(t, fill, stroke, dash) {
     return { kind: 'rect', x, y, width: w, height: h, fill, stroke, dash };
   }
   if (t.type === 'line' && p.length >= 4) {
-    return { kind: 'line', points: [p[0], p[1], p[2], p[3]], stroke };
+    // Line templates are rendered as a thin rotated rectangle: 1 ft
+    // wide (gridSize / 5 since one cell = 5 ft in 5e), with the
+    // length being whatever the DM dragged. Plugins (e.g. elemental-
+    // templates) read `ax/ay` as the source point and `bx/by` as the
+    // tip so directional effects can flow along the line.
+    const ax = p[0], ay = p[1], bx = p[2], by = p[3];
+    const dx = bx - ax, dy = by - ay;
+    const length = Math.hypot(dx, dy);
+    const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    const LINE_WIDTH_FT = 1;
+    const widthPx = (LINE_WIDTH_FT / 5) * (gridSize || 50);
+    return {
+      kind: 'line',
+      ax, ay, bx, by, length, angleDeg, widthPx,
+      points: [ax, ay, bx, by],         // legacy callers still expect this
+      fill, stroke, dash,
+    };
   }
   if (t.type === 'cone' && p.length >= 4) {
     const dx = p[2] - p[0], dy = p[3] - p[1];
@@ -893,18 +913,27 @@ function templateShapeProps(t, fill, stroke, dash) {
   return null;
 }
 
-function TemplateShape({ template, isSelected = false }) {
+function TemplateShape({ template, isSelected = false, gridSize = 50 }) {
   const { fill, stroke } = colorToFillStroke(template.color);
   const dash = isSelected ? [3, 2] : [6, 3];
   const sw = isSelected ? 2.5 : 1.5;
-  const props = templateShapeProps(template, fill, stroke, dash);
+  const props = templateShapeProps(template, fill, stroke, dash, gridSize);
   if (!props) return null;
   return (
     <>
       {props.kind === 'circle' && <Circle x={props.x} y={props.y} radius={props.radius} fill={props.fill} stroke={props.stroke} strokeWidth={sw} dash={props.dash} listening={false} />}
       {props.kind === 'rect'   && <Rect x={props.x} y={props.y} width={props.width} height={props.height} fill={props.fill} stroke={props.stroke} strokeWidth={sw} dash={props.dash} listening={false} />}
       {props.kind === 'wedge'  && <Wedge x={props.x} y={props.y} radius={props.radius} angle={props.angle} rotation={props.rotation} fill={props.fill} stroke={props.stroke} strokeWidth={sw} dash={props.dash} listening={false} />}
-      {props.kind === 'line'   && <Line points={props.points} stroke={props.stroke} strokeWidth={4} listening={false} />}
+      {/* Line is now a rotated 1ft-wide rectangle: positioned at the
+          line's start (ax, ay), rotated by angleDeg, with offsetY set
+          to half-width so the rect's vertical centre sits exactly on
+          the dragged line. Length = the user's drag distance. */}
+      {props.kind === 'line'   && <Rect
+        x={props.ax} y={props.ay}
+        width={props.length} height={props.widthPx}
+        offsetY={props.widthPx / 2}
+        rotation={props.angleDeg}
+        fill={props.fill} stroke={props.stroke} strokeWidth={sw} dash={props.dash} listening={false} />}
       {template.label && (
         <Text x={(template.points[0] || 0) + 6} y={(template.points[1] || 0) + 6}
           text={template.label} fill={props.stroke} fontSize={11} fontStyle="bold" listening={false} />
@@ -919,7 +948,7 @@ function TemplateShape({ template, isSelected = false }) {
 // shape inside the same Group, so plugin overlays move with the template
 // and respect the same Layer ordering. Decorators that throw are swallowed
 // so a single bad plugin can't crash the whole map.
-function TemplateShapeWithDecorators({ template, isSelected = false }) {
+function TemplateShapeWithDecorators({ template, isSelected = false, gridSize = 50 }) {
   // Subscribe so live-disabled plugins drop out of the render immediately.
   useRegistryVersion();
   const decorators = pluginRegistries.spellTemplateDecorators;
@@ -927,10 +956,10 @@ function TemplateShapeWithDecorators({ template, isSelected = false }) {
   // decorators can position relative to the underlying geometry without
   // re-deriving it.
   const { fill, stroke } = colorToFillStroke(template.color);
-  const baseProps = templateShapeProps(template, fill, stroke, isSelected ? [3, 2] : [6, 3]);
+  const baseProps = templateShapeProps(template, fill, stroke, isSelected ? [3, 2] : [6, 3], gridSize);
   return (
     <>
-      <TemplateShape template={template} isSelected={isSelected} />
+      <TemplateShape template={template} isSelected={isSelected} gridSize={gridSize} />
       {decorators.size > 0 && Array.from(decorators.entries()).map(([pid, fn]) => {
         try {
           const node = fn(template, baseProps);
@@ -947,7 +976,7 @@ function TemplateShapeWithDecorators({ template, isSelected = false }) {
 function TemplatePreview({ preview, gridSize }) {
   const { previewFill, previewStroke } = colorToFillStroke(preview?.color || '#a855f7');
   if (!preview) return null;
-  const props = templateShapeProps(preview, previewFill, previewStroke, [4, 3]);
+  const props = templateShapeProps(preview, previewFill, previewStroke, [4, 3], gridSize);
   if (!props) return null;
 
   // Live feet readout while dragging — matches the style used by the
@@ -1055,13 +1084,21 @@ function TemplatePreview({ preview, gridSize }) {
       {props.kind === 'circle' && <Circle x={props.x} y={props.y} radius={props.radius} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />}
       {props.kind === 'rect'   && <Rect x={props.x} y={props.y} width={props.width} height={props.height} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />}
       {props.kind === 'wedge'  && <Wedge x={props.x} y={props.y} radius={props.radius} angle={props.angle} rotation={props.rotation} fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={props.dash} listening={false} />}
-      {props.kind === 'line'   && <Line points={props.points} stroke={props.stroke} strokeWidth={3} dash={[6, 4]} listening={false} />}
+      {/* Live preview while drawing — rotated 1ft-wide rectangle so
+          the player sees the actual area-of-effect shape, not a thin
+          line that the final render would replace. */}
+      {props.kind === 'line'   && <Rect
+        x={props.ax} y={props.ay}
+        width={props.length} height={props.widthPx}
+        offsetY={props.widthPx / 2}
+        rotation={props.angleDeg}
+        fill={props.fill} stroke={props.stroke} strokeWidth={1.5} dash={[4, 3]} listening={false} />}
       {readoutNode()}
     </>
   );
 }
 
-function findNearestTemplate(mapX, mapY, templates, threshold) {
+function findNearestTemplate(mapX, mapY, templates, threshold, gridSize = 50) {
   let nearest = null, minDist = threshold;
   for (const t of templates) {
     const p = t.points || [];
@@ -1075,7 +1112,29 @@ function findNearestTemplate(mapX, mapY, templates, threshold) {
       if (mapX >= x1 && mapX <= x2 && mapY >= y1 && mapY <= y2) d = 0;
       else d = Math.min(Math.abs(mapX - x1), Math.abs(mapX - x2), Math.abs(mapY - y1), Math.abs(mapY - y2));
     } else if (t.type === 'line' && p.length >= 4) {
-      d = distToSeg(mapX, mapY, p[0], p[1], p[2], p[3]);
+      // Line templates are now rotated 1ft-wide rectangles. Hit-test
+      // by rotating the click into the rect's local frame, where the
+      // rect spans (0..length, -halfW..halfW). Click "inside" → 0;
+      // click "outside" → distance to the nearest rect edge.
+      const ax = p[0], ay = p[1], bx = p[2], by = p[3];
+      const dx = bx - ax, dy = by - ay;
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-3) {
+        d = Math.hypot(mapX - ax, mapY - ay);
+      } else {
+        const halfW = ((1 / 5) * (gridSize || 50)) / 2;
+        const ux = dx / len, uy = dy / len;
+        const vx = mapX - ax, vy = mapY - ay;
+        const along = vx * ux + vy * uy;
+        const perp  = vx * (-uy) + vy * ux;
+        if (along >= 0 && along <= len && Math.abs(perp) <= halfW) {
+          d = 0;
+        } else {
+          const cAlong = Math.max(0, Math.min(len, along));
+          const cPerp  = Math.max(-halfW, Math.min(halfW, perp));
+          d = Math.hypot(along - cAlong, perp - cPerp);
+        }
+      }
     } else if (t.type === 'cone' && p.length >= 4) {
       // Old version returned `hypot(mapX-p[0], mapY-p[1])` — distance
       // from the cone's apex only. That meant clicking ANY direction
@@ -2329,7 +2388,7 @@ export default function MapStage({
     for (const t of spellTemplates) {
       const tag = tagged.get(t.id);
       if (!tag || tag.kind !== 'water') continue;
-      const ts = templateShapeProps(t);
+      const ts = templateShapeProps(t, undefined, undefined, undefined, gridSize);
       if (!ts) continue;
       const idStr = `tpl-water-${t.id}`;
       if (ts.kind === 'circle') {
@@ -2348,12 +2407,14 @@ export default function MapStage({
           pts.push(ts.x + Math.cos(a) * ts.radius, ts.y + Math.sin(a) * ts.radius);
         }
         out.push({ id: idStr, zone_type: 'water', shape: 'polygon', poly_points: pts, feather_amount: 0 });
-      } else if (ts.kind === 'line' && ts.points?.length >= 4) {
-        // Thicken the line into a thin polygon perpendicular to its axis.
-        const [ax, ay, bx, by] = ts.points;
+      } else if (ts.kind === 'line') {
+        // Use the rotated rect's actual width (1 ft worth of pixels)
+        // so the water-zone polygon matches the visible line template
+        // exactly instead of the previous hard-coded 8 px sliver.
+        const { ax, ay, bx, by, widthPx } = ts;
         const dx = bx - ax, dy = by - ay;
         const len = Math.hypot(dx, dy) || 1;
-        const half = 8; // half-width in map pixels
+        const half = (widthPx || 8) / 2;
         const nx = -dy / len * half, ny = dx / len * half;
         out.push({ id: idStr, zone_type: 'water', shape: 'polygon', poly_points: [ax + nx, ay + ny, bx + nx, by + ny, bx - nx, by - ny, ax - nx, ay - ny], feather_amount: 0 });
       }
@@ -2892,13 +2953,13 @@ export default function MapStage({
       }
       if (tool === 'tpl-erase') {
         const threshold = 30 / scaleRef.current;
-        const hit = findNearestTemplate(mc.x, mc.y, spellTemplatesRef.current, threshold);
+        const hit = findNearestTemplate(mc.x, mc.y, spellTemplatesRef.current, threshold, gridSize);
         if (hit) onTemplateDeleteRef.current?.(hit.template.id);
         return;
       }
       if (tool === 'tpl-edit') {
         const threshold = 30 / scaleRef.current;
-        const hit = findNearestTemplate(mc.x, mc.y, spellTemplatesRef.current, threshold);
+        const hit = findNearestTemplate(mc.x, mc.y, spellTemplatesRef.current, threshold, gridSize);
         if (hit) {
           templateMoveRef.current = {
             id: hit.template.id,
@@ -3598,6 +3659,7 @@ export default function MapStage({
                 // Selection highlight is a DM affordance for editing — players
                 // get the unselected look regardless.
                 isSelected={!isPlayer && selectedTemplateId === t.id}
+                gridSize={gridSize}
               />
             );
           })}

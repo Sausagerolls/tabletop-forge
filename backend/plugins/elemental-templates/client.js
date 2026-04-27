@@ -63,16 +63,54 @@ const ELEMENT_LABELS = {
 
 // Helper — derive bounds for an arbitrary template shape so we can sprinkle
 // effect particles inside it. Falls back to a small bbox at the anchor.
+//
+// v1.1.0 change for lines: cx/cy is now the LINE'S START POINT (not its
+// midpoint), so any element that just uses b.cx/b.cy as its anchor
+// naturally emits from the start of the line — which is what a 5e
+// line spell visually wants (the caster is at the start). Element
+// renderers that benefit from directional info also get a `lineSource`
+// object below alongside the existing `cone` derivation.
 function boundsForBaseProps(p) {
   if (!p) return { cx: 0, cy: 0, rx: 24, ry: 24 };
   if (p.kind === 'circle') return { cx: p.x, cy: p.y, rx: p.radius, ry: p.radius };
   if (p.kind === 'rect')   return { cx: p.x + p.width / 2, cy: p.y + p.height / 2, rx: p.width / 2, ry: p.height / 2 };
   if (p.kind === 'wedge')  return { cx: p.x, cy: p.y, rx: p.radius, ry: p.radius };
   if (p.kind === 'line') {
-    const [x1, y1, x2, y2] = p.points || [0, 0, 0, 0];
-    return { cx: (x1 + x2) / 2, cy: (y1 + y2) / 2, rx: Math.max(8, Math.abs(x2 - x1) / 2), ry: Math.max(8, Math.abs(y2 - y1) / 2) };
+    // Host now ships ax/ay/bx/by/length/widthPx as canonical fields,
+    // with `points` kept for backwards compat with older deploys.
+    const ax = (p.ax != null) ? p.ax : (p.points?.[0] || 0);
+    const ay = (p.ay != null) ? p.ay : (p.points?.[1] || 0);
+    const bx = (p.bx != null) ? p.bx : (p.points?.[2] || 0);
+    const by = (p.by != null) ? p.by : (p.points?.[3] || 0);
+    const length = (p.length != null) ? p.length : Math.hypot(bx - ax, by - ay);
+    const halfWidth = Math.max(4, ((p.widthPx != null) ? p.widthPx : 16) / 2);
+    return { cx: ax, cy: ay, rx: Math.max(length, 8), ry: halfWidth };
   }
   return { cx: 0, cy: 0, rx: 24, ry: 24 };
+}
+
+// Build directional info for a line template — the analogue of `cone`
+// for radial wedges. Element renderers use this to flow effects from
+// the start point (ax, ay) along the line axis, instead of treating
+// the line as a centred bbox.
+function lineSourceFor(baseProps) {
+  if (!baseProps || baseProps.kind !== 'line') return null;
+  const ax = (baseProps.ax != null) ? baseProps.ax : (baseProps.points?.[0] || 0);
+  const ay = (baseProps.ay != null) ? baseProps.ay : (baseProps.points?.[1] || 0);
+  const bx = (baseProps.bx != null) ? baseProps.bx : (baseProps.points?.[2] || 0);
+  const by = (baseProps.by != null) ? baseProps.by : (baseProps.points?.[3] || 0);
+  const dx = bx - ax, dy = by - ay;
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-3) return null;
+  const dirX = dx / length, dirY = dy / length;
+  const halfWidth = Math.max(4, ((baseProps.widthPx != null) ? baseProps.widthPx : 16) / 2);
+  return {
+    startX: ax, startY: ay,
+    endX: bx, endY: by,
+    dirX, dirY,
+    length, halfWidth,
+    angleRad: Math.atan2(dy, dx),
+  };
 }
 
 export default {
@@ -185,6 +223,13 @@ export default {
           }
         : null;
 
+      // Line-source detection (v1.1.0). The host now renders line
+      // templates as a 1ft-wide rotated rectangle; b.cx/b.cy already
+      // points at the line's start, but renderers that want directional
+      // flow (fire travelling along the line, lightning forking from
+      // start to tip, etc.) use lineSource to know which way to push.
+      const lineSource = lineSourceFor(baseProps);
+
       // Element-specific renderings. Each returns an array of Konva nodes
       // already laid out inside the template's bounds.
       const nodes = [];
@@ -196,7 +241,9 @@ export default {
         // embers brighten where they meet instead of looking like discrete
         // dots. Combined with a radial-gradient fill per particle, the
         // mass reads as a single glowing flame instead of a particle field.
-        const minRad = cone ? cone.radius : Math.max(b.rx, b.ry);
+        const minRad = cone ? cone.radius
+                       : lineSource ? lineSource.length
+                       : Math.max(b.rx, b.ry);
         // Twice as many particles as before, scaled by area so big templates
         // don't look sparse.
         const flameCount = Math.max(20, Math.min(60, Math.floor(area / 350)));
@@ -204,9 +251,17 @@ export default {
         // Anchor and base-glow position. For cones, the apex (b.cx/b.cy)
         // is the SOURCE — the warm body sits half-way down the centerline
         // so it visually fills the cone instead of overflowing behind it.
-        const glowCx = cone ? b.cx + Math.cos(cone.startRad + cone.spanRad / 2) * cone.radius * 0.5 : b.cx;
-        const glowCy = cone ? b.cy + Math.sin(cone.startRad + cone.spanRad / 2) * cone.radius * 0.5 : b.cy;
-        const glowR  = cone ? cone.radius * 0.55 : minRad * 0.95;
+        // For lines, the source is the start point and the body extends
+        // along the line axis.
+        const glowCx = cone       ? b.cx + Math.cos(cone.startRad + cone.spanRad / 2) * cone.radius * 0.5
+                       : lineSource ? lineSource.startX + lineSource.dirX * lineSource.length * 0.5
+                       : b.cx;
+        const glowCy = cone       ? b.cy + Math.sin(cone.startRad + cone.spanRad / 2) * cone.radius * 0.5
+                       : lineSource ? lineSource.startY + lineSource.dirY * lineSource.length * 0.5
+                       : b.cy;
+        const glowR  = cone       ? cone.radius * 0.55
+                       : lineSource ? Math.max(lineSource.halfWidth * 4, lineSource.length * 0.18)
+                       : minRad * 0.95;
 
         nodes.push(React.createElement(Circle, {
           key: 'glow-base',
@@ -228,23 +283,34 @@ export default {
         for (let i = 0; i < flameCount; i++) {
           const phase = (i / flameCount);
           const life = ((t * 0.45 + phase) % 1);            // 0..1 each cycle
-          let ang;
+          let px, py;
           if (cone) {
             // Stable angular slot inside the cone arc + small wobble so
             // embers don't form straight radial lines from the apex.
             const slot = ((i * 0.61803398) % 1);              // golden ratio spread
             const wobble = Math.sin(t * 0.7 + i * 1.3) * 0.04;
-            ang = cone.startRad + Math.max(0, Math.min(1, slot + wobble)) * cone.spanRad;
+            const ang = cone.startRad + Math.max(0, Math.min(1, slot + wobble)) * cone.spanRad;
+            const reach = 1.0 * life;
+            px = b.cx + Math.cos(ang) * cone.radius * reach;
+            py = b.cy + Math.sin(ang) * cone.radius * reach;
+          } else if (lineSource) {
+            // Embers travel from the start point along the line, with a
+            // small perpendicular wobble that grows with distance so the
+            // flame visibly widens past the 1ft template silhouette.
+            const along = life * lineSource.length;
+            const wobble = (Math.sin(t * 1.4 + i * 1.7) + Math.sin(t * 0.6 + i * 0.4)) * 0.5;
+            const taper = lineSource.halfWidth + Math.min(lineSource.length * 0.12, 14) * life;
+            const perp = wobble * taper;
+            const nx = -lineSource.dirY, ny = lineSource.dirX;   // perpendicular
+            px = lineSource.startX + lineSource.dirX * along + nx * perp;
+            py = lineSource.startY + lineSource.dirY * along + ny * perp;
           } else {
-            ang = (i * 2.39994) + t * 0.18;
+            const ang = (i * 2.39994) + t * 0.18;
+            const reach = 1.05 * life;
+            const radial = Math.max(b.rx, b.ry);
+            px = b.cx + Math.cos(ang) * radial * reach;
+            py = b.cy + Math.sin(ang) * radial * reach;
           }
-          // For cones, embers must stay within the cone's radius — cap reach
-          // at 1.0 instead of overshooting. For circles/rects we keep the
-          // 1.05 lick-out because there's no hard boundary to respect.
-          const reach = (cone ? 1.0 : 1.05) * life;
-          const radial = cone ? cone.radius : Math.max(b.rx, b.ry);
-          const px = b.cx + Math.cos(ang) * radial * reach;
-          const py = b.cy + Math.sin(ang) * radial * reach;
           // Larger particles overall; biggest at birth, shrinking as they
           // travel outward but staying meaty enough to overlap heavily.
           const size = (1 - life) * (minRad * 0.22) + 6;
@@ -380,20 +446,39 @@ export default {
         function rng(i) { let x = seed * 1000 + i; x ^= x << 13; x ^= x >> 17; x ^= x << 5; return ((x >>> 0) % 1000) / 1000; }
         const forks = 3;
         for (let f = 0; f < forks; f++) {
-          // For cones the bolt must originate at the apex (b.cx/b.cy) and
-          // stay inside the cone arc — so direction lives in the arc and
-          // segment-by-segment wobble is dampened to avoid swinging out.
-          const ang = cone
-            ? cone.startRad + rng(f * 7) * cone.spanRad
-            : rng(f * 7) * Math.PI * 2;
+          // For cones, bolts originate at the apex and spread within the
+          // arc. For lines, every bolt fires from the start point along
+          // the line direction with perpendicular zig-zag wobble — the
+          // classic Lightning-Bolt-spell look. For circles/rects, the
+          // legacy radial pattern stays.
           const segs = 6;
-          const radial = cone ? cone.radius : Math.min(b.rx, b.ry);
-          const wobScale = cone ? 0.18 : 0.6;     // tighter wobble inside a cone
           const pts = [b.cx, b.cy];
-          for (let s = 1; s <= segs; s++) {
-            const r = radial * (s / segs);
-            const wob = (rng(f * 7 + s) - 0.5) * wobScale;
-            pts.push(b.cx + Math.cos(ang + wob) * r, b.cy + Math.sin(ang + wob) * r);
+          if (cone) {
+            const ang = cone.startRad + rng(f * 7) * cone.spanRad;
+            for (let s = 1; s <= segs; s++) {
+              const r = cone.radius * (s / segs);
+              const wob = (rng(f * 7 + s) - 0.5) * 0.18;
+              pts.push(b.cx + Math.cos(ang + wob) * r, b.cy + Math.sin(ang + wob) * r);
+            }
+          } else if (lineSource) {
+            const nx = -lineSource.dirY, ny = lineSource.dirX;
+            const wobAmp = lineSource.halfWidth + 6;
+            for (let s = 1; s <= segs; s++) {
+              const along = lineSource.length * (s / segs);
+              const perp = (rng(f * 7 + s) - 0.5) * wobAmp;
+              pts.push(
+                lineSource.startX + lineSource.dirX * along + nx * perp,
+                lineSource.startY + lineSource.dirY * along + ny * perp
+              );
+            }
+          } else {
+            const ang = rng(f * 7) * Math.PI * 2;
+            const radial = Math.min(b.rx, b.ry);
+            for (let s = 1; s <= segs; s++) {
+              const r = radial * (s / segs);
+              const wob = (rng(f * 7 + s) - 0.5) * 0.6;
+              pts.push(b.cx + Math.cos(ang + wob) * r, b.cy + Math.sin(ang + wob) * r);
+            }
           }
           nodes.push(React.createElement(Line, {
             key: `fk-${f}`, points: pts,

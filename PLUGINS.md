@@ -82,6 +82,38 @@ if (ai.imageEnabled && ai.imageBaseUrl) {
 
 These endpoints aren't part of the plugin contract — they're internal host APIs the plugin manager doesn't version-stabilise. They might rename between releases. Use them sparingly and check the host's `backend/src/routes/*.js` for the current shape if your plugin breaks after an update. The bundled `encounter-builder` plugin uses all four of the above (LLM stat block + SwarmUI portrait + library insert) as a worked example.
 
+#### Bulk import / export (content packs)
+
+For content-pack plugins that ship a curated set of creatures or spells, the host has matching bulk endpoints. They take a multipart `file` form field carrying the JSON payload, the same shape the corresponding `/export` endpoint emits.
+
+```js
+// Export — JSON dump with embedded image_data (creatures) for offline reuse.
+//   /api/creatures/export?ids=1,2,3   (or ids=all for everything)
+//   /api/spell-library/export?ids=u1,u2,u3
+const dump = await fetch('/api/creatures/export?ids=1,2,3').then((r) => r.json());
+
+// Import — POST the JSON back as a `file` upload field.
+const fd = new FormData();
+fd.append('file', new Blob([JSON.stringify(dump)], { type: 'application/json' }), 'creatures.json');
+const imported = await fetch('/api/creatures/import', { method: 'POST', body: fd }).then((r) => r.json());
+// imported = { imported: <count>, creatures: [{ id, name, ... }, ...] }
+```
+
+`/api/creatures/import` returns the inserted rows so a content-pack plugin can stash their `id`s in plugin KV and delete them on `unregister`. `/api/spell-library/import` returns `{ imported, skipped, total }` only — to track ids for cleanup, follow up with `GET /api/spell-library` and match by `name` (the column has a UNIQUE constraint, so name is a stable key).
+
+The full creature column list — including which fields are JSONB and need `JSON.stringify(...)` before they hit `POST /api/creatures` — lives in `backend/src/routes/creatures.js` (`CREATURE_FIELDS` and `JSONB_FIELDS`). The bundled `srd-pack-2024` plugin demonstrates the install-on-enable / delete-on-disable pattern.
+
+#### Languages registry
+
+The host exposes a first-class language table at `/api/languages`. The SRD set (Common, Dwarvish, Draconic, etc.) is seeded on startup; DMs can `POST` custom entries which become available across the creature editor, the AI generator's prompt, and any plugin that reads from this endpoint.
+
+```js
+const langs = await fetch('/api/languages').then((r) => r.json());
+// [{ id, slug, name, category: 'standard'|'exotic'|'rare'|'custom', script, is_custom }, ...]
+```
+
+Creature rows still store their language list as **comma-separated names** in `creatures.languages` (the existing TEXT column). Names match the canonical entries; trailing qualifiers like `" (understands but cannot speak)"` stay attached to whichever language they qualify and are preserved across save/load. Match the `name` field of `/api/languages` rows against parsed entries to know which are canonical vs custom — the bundled `npc-chat` plugin uses this pattern to colour-code language chips and decide which players understand a given line.
+
 ---
 
 ## 2. Filesystem layout
@@ -228,6 +260,30 @@ unregister({ registries })
 
 Optional. The host already removes your contributions from every registry by `pluginId` (and from `templateOverlays` by matching the `pluginId` field in each entry's value), and clears your event subscriptions. Override this only if you need to release resources you allocated outside the registries (e.g., a `setInterval` you started — though if you do, prefer cleaning up via React `useEffect` returns inside your components).
 
+> **`unregister` does NOT receive `context`.** That means no `data`, `socket`, `subscribe`, or `emitEvent` inside this hook — only `registries`. Plugins that need to flush KV state during cleanup (because they own host-DB rows that survive disable, like content packs) should capture the `data` API to a module-level variable during `register()` and reach for it from `unregister()`:
+>
+> ```js
+> let savedDataApi = null;
+> let insertedIds  = [];
+>
+> export default {
+>   async register({ context }) {
+>     savedDataApi = context.data;
+>     // ... insert rows, push their ids into insertedIds, persist via savedDataApi.write
+>   },
+>   async unregister() {
+>     for (const id of insertedIds.splice(0)) {
+>       await fetch(`/api/creatures/${id}`, { method: 'DELETE' }).catch(() => {});
+>     }
+>     if (savedDataApi) await savedDataApi.write('inserted_ids', insertedIds);
+>   },
+> };
+> ```
+>
+> The KV write at the end is important: cleanup fetches are fire-and-forget, so persist whatever ids you couldn't delete on this pass — the next enable will see them in KV and retry. Without that you can leak host-DB rows if the user disables while offline.
+>
+> The host does **not** await your `unregister` — it strips your registry entries immediately and continues, so an `async unregister` is essentially a background job that races against any subsequent re-enable. That's fine for cleanup work (fetches keep running, the worst case is duplicate-ID DELETEs returning 404 on the next enable's retry), but don't expect the disable button to block on you.
+
 ---
 
 ## 5. Extension points (registries)
@@ -272,6 +328,34 @@ registries.dmTabs.set(pluginId, {
 DM-only. Adds a new tab to the right-hand DM panel. The render function is called with `{ sessionId, role, socket }` and should return the full tab content (the host wraps it in a scroll container).
 
 This is **DOM React, not Konva** — return ordinary HTML elements (`<div>`, `<button>`, `<select>` …) created with `React.createElement`. The host's CSS is already loaded into the page, so plugin tabs can use Tailwind utility classes (`text-sm`, `bg-gray-800`, `rounded-lg`, etc.) and the project's branded colour tokens (`text-dnd-gold`, `bg-dnd-panel`) directly. Don't reach for Konva primitives here — those only work inside `mapDecorations` / `spellTemplateDecorators`, which render to the canvas Stage.
+
+#### Player-side DOM UI (no `playerTabs` registry exists)
+
+There is **no** player-side equivalent of `dmTabs`, `panelTabExtensions`, or any other tab registry. The player view has no plugin-supplied UI surface in the panel. If your plugin needs to show DOM UI to players (a chat popup, a notification, a roll result modal, etc.), the supported pattern is to append your own node to `document.body` from `register()` and render into it manually:
+
+```js
+let modalRoot = null;
+
+function ensureModalRoot() {
+  if (modalRoot) return modalRoot;
+  modalRoot = document.createElement('div');
+  modalRoot.id = `plugin-${pluginId}-root`;
+  Object.assign(modalRoot.style, {
+    position: 'fixed', inset: '0', zIndex: '99999',
+    pointerEvents: 'none',          // let it pass clicks through by default
+  });
+  document.body.appendChild(modalRoot);
+  return modalRoot;
+}
+
+context.subscribe(({ type, payload }) => {
+  if (type !== 'show-popup') return;
+  const root = ensureModalRoot();
+  // … render with vanilla DOM, or your own React.createRoot if you want React.
+});
+```
+
+The host doesn't pass `ReactDOM` through `register`, and `React.createRoot` lives on `react-dom/client` — so a plugin can't mount a React tree into its own DOM root without bundling its own `react-dom`. Drive the node with **vanilla DOM** (`element.appendChild`, `style`, `textContent`, `addEventListener`) — that's cheap, ship-friendly, and avoids the duplicate-React hazard. Tear the node back down in `unregister` so a disabled plugin doesn't leave orphan elements behind. The bundled `npc-chat` and `dice-3d` plugins use this pattern.
 
 ### `templateOverlays`
 

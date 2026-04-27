@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import LanguagePicker from './LanguagePicker.jsx';
 
 const XIcon = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="w-3.5 h-3.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>);
 const DragonIcon = () => (<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10 text-gray-500"><path d="M44 12c4-2 8 0 10 4s0 10-4 12l-4 2" /><path d="M20 12c-4-2-8 0-10 4s0 10 4 12l4 2" /><ellipse cx="32" cy="32" rx="14" ry="10" fill="currentColor" stroke="none" opacity="0.15" /><path d="M18 28c0 10 6 18 14 18s14-8 14-18" /><path d="M26 24c0-2 2-4 6-4s6 2 6 4" /><circle cx="27" cy="26" r="1.5" fill="currentColor" stroke="none" /><circle cx="37" cy="26" r="1.5" fill="currentColor" stroke="none" /><path d="M28 36c1 2 3 3 4 3s3-1 4-3" /></svg>);
@@ -1108,7 +1109,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
               </div>
               <div>
                 <label className={labelClass}>Languages</label>
-                <input className={inputClass} placeholder="Common" value={form.languages} onChange={(e) => setField('languages', e.target.value)} />
+                <LanguagePicker value={form.languages} onChange={(v) => setField('languages', v)} />
               </div>
             </div>
 

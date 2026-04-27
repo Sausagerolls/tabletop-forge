@@ -18,6 +18,7 @@ const doorsRouter = require('./routes/doors');
 const lightsRouter = require('./routes/lights');
 const dd2vttRouter = require('./routes/dd2vtt');
 const spellLibraryRouter = require('./routes/spell_library');
+const languagesRouter = require('./routes/languages');
 const { router: pluginsRouter, reconcilePluginsTable } = require('./routes/plugins');
 
 const app = express();
@@ -128,6 +129,7 @@ app.use('/api/doors', doorsRouter);
 app.use('/api/lights', lightsRouter);
 app.use('/api/dd2vtt', dd2vttRouter);
 app.use('/api/spell-library', spellLibraryRouter);
+app.use('/api/languages', languagesRouter);
 app.use('/api/plugins', pluginsRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
@@ -1520,6 +1522,56 @@ server.listen(PORT, async () => {
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS spells JSONB DEFAULT '[]'`);
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS spell_slots JSONB DEFAULT '{}'`);
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS loot JSONB DEFAULT '[]'`);
+
+    // Languages — first-class table seeded with the standard SRD set.
+    // Creatures still store their language list as comma-separated names
+    // in the existing `creatures.languages` TEXT column (no schema break);
+    // the picker UI and AI normaliser match those names against this
+    // table to know which entries are canonical vs custom.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS languages (
+        id SERIAL PRIMARY KEY,
+        slug VARCHAR(64) UNIQUE NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        category VARCHAR(20) NOT NULL DEFAULT 'standard',
+        script VARCHAR(40) DEFAULT '',
+        is_custom BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    // Seed the SRD set if the table is empty. ON CONFLICT keeps a
+    // re-seed harmless even if a row was renamed manually.
+    const SEED_LANGUAGES = [
+      // Standard
+      { slug: 'common',       name: 'Common',       category: 'standard', script: 'Common' },
+      { slug: 'dwarvish',     name: 'Dwarvish',     category: 'standard', script: 'Dwarvish' },
+      { slug: 'elvish',       name: 'Elvish',       category: 'standard', script: 'Elvish' },
+      { slug: 'giant',        name: 'Giant',        category: 'standard', script: 'Dwarvish' },
+      { slug: 'gnomish',      name: 'Gnomish',      category: 'standard', script: 'Dwarvish' },
+      { slug: 'goblin',       name: 'Goblin',       category: 'standard', script: 'Dwarvish' },
+      { slug: 'halfling',     name: 'Halfling',     category: 'standard', script: 'Common' },
+      { slug: 'orc',          name: 'Orc',          category: 'standard', script: 'Dwarvish' },
+      // Exotic
+      { slug: 'abyssal',      name: 'Abyssal',      category: 'exotic',   script: 'Infernal' },
+      { slug: 'celestial',    name: 'Celestial',    category: 'exotic',   script: 'Celestial' },
+      { slug: 'deep-speech',  name: 'Deep Speech',  category: 'exotic',   script: '' },
+      { slug: 'draconic',     name: 'Draconic',     category: 'exotic',   script: 'Draconic' },
+      { slug: 'infernal',     name: 'Infernal',     category: 'exotic',   script: 'Infernal' },
+      { slug: 'primordial',   name: 'Primordial',   category: 'exotic',   script: 'Dwarvish' },
+      { slug: 'sylvan',       name: 'Sylvan',       category: 'exotic',   script: 'Elvish' },
+      { slug: 'undercommon',  name: 'Undercommon',  category: 'exotic',   script: 'Elvish' },
+      // Rare / class-specific
+      { slug: 'druidic',      name: 'Druidic',      category: 'rare',     script: 'Druidic' },
+      { slug: 'thieves-cant', name: "Thieves' Cant", category: 'rare',    script: '' },
+    ];
+    for (const lang of SEED_LANGUAGES) {
+      await db.query(
+        `INSERT INTO languages (slug, name, category, script, is_custom)
+         VALUES ($1, $2, $3, $4, false)
+         ON CONFLICT (slug) DO NOTHING`,
+        [lang.slug, lang.name, lang.category, lang.script]
+      );
+    }
     await db.query(`
       CREATE TABLE IF NOT EXISTS walls (
         id UUID PRIMARY KEY,

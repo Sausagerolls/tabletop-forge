@@ -1,7 +1,33 @@
 const express = require('express');
+const db = require('../db');
 const router = express.Router();
 
-const SYSTEM_PROMPT = `You are a D&D 5e monster designer. Generate a complete, balanced D&D 5e stat block in JSON format.
+// Pull the canonical language list at request time and embed it into
+// the system prompt. The host stores languages in a first-class table
+// (see backend/src/routes/languages.js); this keeps AI output in sync
+// with whatever languages the DM has registered, including custom
+// ones — without burning a token-budget on the entire creature schema
+// repeated per request, we just inject the names.
+async function fetchLanguageNames() {
+  try {
+    const rows = (await db.query('SELECT name FROM languages ORDER BY name')).rows;
+    return rows.map((r) => r.name);
+  } catch (err) {
+    // If the DB blip out (rare — this runs after the migration
+    // succeeded), fall back to the SRD core 16 so the AI still
+    // produces sensible output instead of bailing.
+    console.warn('AI prompt: failed to read languages, falling back to SRD core', err.message);
+    return [
+      'Common','Dwarvish','Elvish','Giant','Gnomish','Goblin','Halfling','Orc',
+      'Abyssal','Celestial','Deep Speech','Draconic','Infernal','Primordial',
+      'Sylvan','Undercommon',
+    ];
+  }
+}
+
+function buildSystemPrompt(languageNames) {
+  const langList = languageNames.join(', ');
+  return `You are a D&D 5e monster designer. Generate a complete, balanced D&D 5e stat block in JSON format.
 
 Return ONLY valid JSON — no markdown, no explanation, no code fences. The JSON must match this exact schema:
 
@@ -55,7 +81,7 @@ Return ONLY valid JSON — no markdown, no explanation, no code fences. The JSON
   "damage_immunities": "string (comma-separated types, or empty)",
   "condition_immunities": "string (comma-separated conditions, or empty)",
   "senses": "string (e.g. Darkvision 60 ft., passive Perception 12)",
-  "languages": "string (e.g. Common, Goblin)",
+  "languages": "string — comma-separated names from the canonical list below",
   "challenge_rating": "one of: 0,1/8,1/4,1/2,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30",
   "xp": number,
   "proficiency_bonus": number,
@@ -76,7 +102,15 @@ Rules:
 - XP must match the standard D&D 5e CR table: CR0=0, CR1/8=25, CR1/4=50, CR1/2=100, CR1=200, CR2=450, CR3=700, CR4=1100, CR5=1800, CR6=2300, CR7=2900, CR8=3900, CR9=5000, CR10=5900, etc.
 - Proficiency bonus: CR0-4=+2, CR5-8=+3, CR9-12=+4, CR13-16=+5, CR17-20=+6, CR21-24=+7, CR25-28=+8, CR29-30=+9.
 - Include at least one action.
-- loot: 2–5 items appropriate to the creature. chance is 0–100 (integer percent). Include coin, equipment, and thematic drops. Common items 75–100%, rare items 10–30%.`;
+- loot: 2–5 items appropriate to the creature. chance is 0–100 (integer percent). Include coin, equipment, and thematic drops. Common items 75–100%, rare items 10–30%.
+- Languages: the value of "languages" MUST be a comma-separated list of names drawn ONLY from this canonical list (case-insensitive match): ${langList}. Do NOT invent new language names. If a creature can understand but not speak a language, append " (understands but cannot speak)" — e.g. "Common, Goblin (understands but cannot speak)". If the creature speaks no language, return "" (empty string).`;
+}
+
+const SYSTEM_PROMPT_FALLBACK = buildSystemPrompt([
+  'Common','Dwarvish','Elvish','Giant','Gnomish','Goblin','Halfling','Orc',
+  'Abyssal','Celestial','Deep Speech','Draconic','Infernal','Primordial',
+  'Sylvan','Undercommon',
+]);
 
 function buildUserPrompt(promptData) {
   const lines = [];
@@ -258,6 +292,27 @@ function normaliseCreature(raw) {
   return raw;
 }
 
+// Match each comma-separated entry in `creature.languages` against the
+// canonical language list and rewrite to the canonical casing. Trailing
+// qualifiers like " (understands but cannot speak)" are preserved.
+// Unknown entries fall through unchanged so a deliberately exotic
+// custom language doesn't get stripped.
+function canonicaliseLanguages(text, languageNames) {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  const canonByLower = new Map(languageNames.map((n) => [n.toLowerCase(), n]));
+  const parts = raw.split(/\s*,\s*/).filter(Boolean);
+  const out = [];
+  for (const part of parts) {
+    const m = part.match(/^([^()]+?)(\s*\(.+\))?$/);
+    const base = (m ? m[1] : part).trim();
+    const tail = (m && m[2]) ? m[2] : '';
+    const canon = canonByLower.get(base.toLowerCase());
+    out.push((canon || base) + tail);
+  }
+  return out.join(', ');
+}
+
 // POST /api/ai/test  — verify the AI connection works
 router.post('/test', async (req, res) => {
   const { provider, baseUrl, apiKey, model } = req.body;
@@ -278,8 +333,17 @@ router.post('/generate', async (req, res) => {
   if (!baseUrl) return res.status(400).json({ error: 'baseUrl is required' });
   if (!promptData?.name) return res.status(400).json({ error: 'promptData.name is required' });
 
+  // Build the system prompt fresh each request so the canonical
+  // language list reflects whatever the DM has registered (including
+  // custom additions). Falls back to the SRD core 16 if the DB read
+  // fails — see buildSystemPrompt() at the top of the file.
+  let languageNames;
+  try { languageNames = await fetchLanguageNames(); }
+  catch { languageNames = null; }
+  const systemPrompt = languageNames ? buildSystemPrompt(languageNames) : SYSTEM_PROMPT_FALLBACK;
+
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: systemPrompt },
     { role: 'user', content: buildUserPrompt(promptData) },
   ];
 
@@ -310,6 +374,13 @@ router.post('/generate', async (req, res) => {
       }
     }
     const creature = normaliseCreature(raw);
+
+    // Map AI-output languages to the canonical casing so the frontend
+    // picker recognises them as known entries instead of treating each
+    // as a custom one-off.
+    if (languageNames && creature.languages) {
+      creature.languages = canonicaliseLanguages(creature.languages, languageNames);
+    }
 
     // Belt-and-braces: even if the model ignored the directive, strip
     // legendary actions when the user didn't ask for them.

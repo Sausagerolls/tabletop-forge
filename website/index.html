@@ -1286,6 +1286,27 @@ cd TabletopForge</div>
           </div>
         </div>
 
+        <!-- ═════ 3D Dice ═════ -->
+        <div class="plugin-card">
+          <div class="plugin-card-head">
+            <div class="plugin-card-icon">🎲</div>
+            <div class="plugin-card-title">
+              <div class="plugin-card-name">3D Dice</div>
+              <div class="plugin-card-meta">v1.0.0 · TableTop Forge</div>
+            </div>
+          </div>
+          <div class="plugin-card-body">
+            Real polyhedra (Tetrahedron, Cube, Octahedron, custom d10 trapezohedron, Dodecahedron, Icosahedron) tumble across every player's screen via three.js. Faces stay blank during the roll; once the dice settle, the rolled value fades in as a textured plane locked to the camera-facing face — rotated to match the die's own orientation, not the world. Drop optional GLB models in the plugin folder (d4.glb / d6.glb / … / d20.glb) to swap the procedural geometry for proper 3D dice. Per-die colour overrides persist per session and sync to all players, and the plugin hijacks the host's built-in dice roller so even quick-rolls from the Session tab and character sheets get the full 3D animation.
+          </div>
+          <div class="plugin-card-foot">
+            <a href="plugins/dice-3d-v1.0.0.zip" class="plugin-download-btn" download>
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download .zip
+            </a>
+            <span class="plugin-meta-text">Loads three.js from a CDN on first roll. GLB models bundled inside the zip.</span>
+          </div>
+        </div>
+
         <!-- ═════ Plugin card template — copy this block to add a new plugin
         <div class="plugin-card">
           <div class="plugin-card-head">

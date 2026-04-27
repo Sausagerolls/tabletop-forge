@@ -392,20 +392,33 @@ export default {
         // A few snowflake-like glyphs scattered around the bounds, slowly
         // rotating individually + twinkling on a per-flake phase. No more
         // ugly full-bounds shimmer rectangle.
-        const flakeCount = Math.max(5, Math.min(10, Math.floor(area / 2200)));
+        const flakeCount = lineSource
+          ? Math.max(5, Math.min(14, Math.floor(lineSource.length / 22)))
+          : Math.max(5, Math.min(10, Math.floor(area / 2200)));
         for (let i = 0; i < flakeCount; i++) {
           // Stable-ish placement — positions don't change frame-to-frame,
           // only the rotation and twinkle do. For cones, place each flake
           // along an angular slot inside the cone arc so they fall within
           // the visible wedge instead of all 360° around the apex.
-          const dist = 0.25 + ((i * 0.37) % 0.65);
           let fx, fy;
           if (cone) {
             const slot = ((i * 0.61803398) % 1);
+            const dist = 0.25 + ((i * 0.37) % 0.65);
             const a = cone.startRad + slot * cone.spanRad;
             fx = b.cx + Math.cos(a) * cone.radius * dist;
             fy = b.cy + Math.sin(a) * cone.radius * dist;
+          } else if (lineSource) {
+            // Distribute flakes evenly along the line direction with a
+            // small perpendicular jitter so they sit on / above the
+            // 1ft template strip rather than in a horizontal ellipse.
+            const slot = (i + 0.5) / flakeCount;
+            const along = slot * lineSource.length;
+            const nx = -lineSource.dirY, ny = lineSource.dirX;
+            const jitter = (Math.sin(i * 1.7) + Math.cos(i * 0.9)) * (lineSource.halfWidth + 6);
+            fx = lineSource.startX + lineSource.dirX * along + nx * jitter;
+            fy = lineSource.startY + lineSource.dirY * along + ny * jitter;
           } else {
+            const dist = 0.25 + ((i * 0.37) % 0.65);
             const a = i * 2.39994;
             fx = b.cx + Math.cos(a) * b.rx * dist;
             fy = b.cy + Math.sin(a) * b.ry * dist;
@@ -484,6 +497,95 @@ export default {
             key: `fk-${f}`, points: pts,
             stroke: palette.stroke, strokeWidth: 1.5,
             opacity: 0.85, listening: false,
+          }));
+        }
+
+      } else if (element === 'void' && lineSource) {
+        // Line variant — the classic black-hole vortex doesn't make
+        // sense as a circle on a 1ft-wide line spell. Instead, render
+        // as a "tear in space" running along the line: a dark band
+        // with travelling pulses converging toward the line's centre
+        // line, plus tiny event-horizon points spaced along it.
+        const nx = -lineSource.dirY, ny = lineSource.dirX;
+        const halfW = Math.max(lineSource.halfWidth, 8) * 2;     // visible band, not the literal 1ft sliver
+        const A = { x: lineSource.startX, y: lineSource.startY };
+        const B = { x: lineSource.endX,   y: lineSource.endY   };
+
+        // ── Dark band along the line ───────────────────────────────
+        // Polygon = (A+nL, B+nL, B-nL, A-nL). Filled with a vertical
+        // (perpendicular-to-line) gradient so the centre is darkest
+        // and the edges fade out, mirroring the radial vignette in
+        // the circular variant.
+        const bandPts = [
+          A.x + nx * halfW, A.y + ny * halfW,
+          B.x + nx * halfW, B.y + ny * halfW,
+          B.x - nx * halfW, B.y - ny * halfW,
+          A.x - nx * halfW, A.y - ny * halfW,
+        ];
+        nodes.push(React.createElement(Line, {
+          key: 'vshade', points: bandPts, closed: true,
+          fillLinearGradientStartPoint: { x: A.x + nx * halfW, y: A.y + ny * halfW },
+          fillLinearGradientEndPoint:   { x: A.x - nx * halfW, y: A.y - ny * halfW },
+          fillLinearGradientColorStops: [
+            0,   'rgba(40,15,55,0)',
+            0.5, 'rgba(0,0,0,0.85)',
+            1,   'rgba(40,15,55,0)',
+          ],
+          listening: false,
+        }));
+
+        // ── Distortion pulses travelling toward the line's midpoint ─
+        // Each pulse has a phase 0..1; born at a random end, arrives
+        // at the midpoint as it ages.
+        const midX = (A.x + B.x) / 2, midY = (A.y + B.y) / 2;
+        const pulseCount = 4;
+        for (let i = 0; i < pulseCount; i++) {
+          const phase = ((t * 0.42 + i / pulseCount) % 1);
+          const fromStart = (i % 2) === 0;
+          const sx = fromStart ? A.x : B.x;
+          const sy = fromStart ? A.y : B.y;
+          const px = sx + (midX - sx) * phase;
+          const py = sy + (midY - sy) * phase;
+          const alpha = Math.sin(phase * Math.PI) * 0.55;
+          // Pulse = small ellipse perpendicular to line, shrinking as it converges.
+          const spanAlong = lineSource.length * 0.05 * (1 - phase * 0.5);
+          const spanPerp  = halfW * 0.7 * (1 - phase * 0.4);
+          // Approximate the rotated ellipse with a polygon along the line normal.
+          const ringSegs = 24;
+          const ringPts = [];
+          for (let s = 0; s <= ringSegs; s++) {
+            const a = (s / ringSegs) * Math.PI * 2;
+            const along = Math.cos(a) * spanAlong;
+            const perp  = Math.sin(a) * spanPerp;
+            ringPts.push(
+              px + lineSource.dirX * along + nx * perp,
+              py + lineSource.dirY * along + ny * perp
+            );
+          }
+          nodes.push(React.createElement(Line, {
+            key: `vw-${i}`, points: ringPts, closed: true,
+            stroke: palette.stroke, strokeWidth: 1.4, opacity: alpha,
+            listening: false,
+          }));
+        }
+
+        // ── Event-horizon dots spaced along the line ───────────────
+        // Three tiny black dots equidistant along the line — visually
+        // suggests a connected tear rather than one big singularity.
+        const horizonCount = 3;
+        for (let i = 0; i < horizonCount; i++) {
+          const slot = (i + 1) / (horizonCount + 1);
+          const hx = A.x + (B.x - A.x) * slot;
+          const hy = A.y + (B.y - A.y) * slot;
+          const r = Math.max(2.5, halfW * 0.18);
+          nodes.push(React.createElement(Circle, {
+            key: `vcore-${i}`, x: hx, y: hy, radius: r,
+            fill: 'rgba(0,0,0,0.97)', listening: false,
+          }));
+          nodes.push(React.createElement(Circle, {
+            key: `vedge-${i}`, x: hx, y: hy, radius: r + 0.6,
+            stroke: palette.stroke, strokeWidth: 1.1, opacity: 0.9,
+            listening: false,
           }));
         }
 
@@ -640,7 +742,9 @@ export default {
         // cycle, with a faint chartreuse base wash so empty templates
         // still read as "acid". Position is deterministic per-bubble so
         // bubbles stay in their slot through their whole life cycle.
-        const bubbleCount = Math.max(10, Math.min(28, Math.floor(area / 600)));
+        const bubbleCount = lineSource
+          ? Math.max(10, Math.min(28, Math.floor(lineSource.length / 14)))
+          : Math.max(10, Math.min(28, Math.floor(area / 600)));
 
         // Faint base wash — shape-aware so the wash matches the template.
         if (cone) {
@@ -648,6 +752,25 @@ export default {
             key: 'wash',
             x: cone.apexX, y: cone.apexY, radius: cone.radius,
             angle: baseProps.angle, rotation: baseProps.rotation,
+            fill: 'rgba(132,204,22,0.18)', listening: false,
+          }));
+        } else if (lineSource) {
+          // Rotated rectangle wash that hugs the line template — a
+          // bit wider than the 1ft strip so the bubbles have a visual
+          // "pool" to sit in, not a flat sliver.
+          const washHalf = Math.max(lineSource.halfWidth, 6) * 2.2;
+          const nx = -lineSource.dirY, ny = lineSource.dirX;
+          const A = { x: lineSource.startX, y: lineSource.startY };
+          const B = { x: lineSource.endX,   y: lineSource.endY   };
+          nodes.push(React.createElement(Line, {
+            key: 'wash',
+            points: [
+              A.x + nx * washHalf, A.y + ny * washHalf,
+              B.x + nx * washHalf, B.y + ny * washHalf,
+              B.x - nx * washHalf, B.y - ny * washHalf,
+              A.x - nx * washHalf, A.y - ny * washHalf,
+            ],
+            closed: true,
             fill: 'rgba(132,204,22,0.18)', listening: false,
           }));
         } else if (baseProps?.kind === 'circle') {
@@ -676,6 +799,15 @@ export default {
             const ang = cone.startRad + slot * cone.spanRad;
             bx = b.cx + Math.cos(ang) * cone.radius * distFrac;
             by = b.cy + Math.sin(ang) * cone.radius * distFrac;
+          } else if (lineSource) {
+            // Bubbles distributed along the line's length with a small
+            // perpendicular offset — they sit within the wash strip.
+            const slot = ((i * 0.61803398) % 1);
+            const along = slot * lineSource.length;
+            const perp  = (((i * 0.541) % 1) - 0.5) * 2 * Math.max(lineSource.halfWidth, 6) * 1.8;
+            const nx = -lineSource.dirY, ny = lineSource.dirX;
+            bx = lineSource.startX + lineSource.dirX * along + nx * perp;
+            by = lineSource.startY + lineSource.dirY * along + ny * perp;
           } else {
             const angI = i * 2.39994;
             const distI = 0.20 + ((i * 0.541) % 0.75);

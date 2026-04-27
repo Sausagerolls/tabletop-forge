@@ -531,11 +531,14 @@ export default {
           listening: false,
         }));
 
-        // ── The beam itself — a solid dark band along the centre ─
-        // Visually the strongest element, but tightened ~1/3 thinner
-        // than the early v1.1.1 width so the surrounding aura and
-        // falling waves have more room to breathe — the seam now
-        // reads as a hungry slit rather than a thick stripe.
+        // ── The beam itself — a dark seam down the centre ────────
+        // Same width as v1.1.3 (1/3 thinner than the original),
+        // but now with the long edges feathered: the perpendicular
+        // gradient is fully transparent at both edges and only fully
+        // black mid-band, so the beam blends into the aura instead
+        // of stamping a hard rectangle outline. We also drop the
+        // outline stroke which used to be the most obvious "this is
+        // a polygon" tell.
         const beamHalf = Math.max(lineSource.halfWidth * 1.2, 2.7);
         const beamPts = [
           A.x + nx * beamHalf, A.y + ny * beamHalf,
@@ -545,8 +548,20 @@ export default {
         ];
         nodes.push(React.createElement(Line, {
           key: 'vbeam', points: beamPts, closed: true,
-          fill: 'rgba(0,0,0,0.97)',
-          stroke: palette.stroke, strokeWidth: 1.1, opacity: 0.95,
+          // Linear gradient runs perpendicular to the line so each
+          // long edge fades to transparent. Stops are tight (0.18 /
+          // 0.82) so most of the band is still solid black — only
+          // the outermost ~1/3 of either side feathers.
+          fillLinearGradientStartPoint: { x: A.x + nx * beamHalf, y: A.y + ny * beamHalf },
+          fillLinearGradientEndPoint:   { x: A.x - nx * beamHalf, y: A.y - ny * beamHalf },
+          fillLinearGradientColorStops: [
+            0,    'rgba(0,0,0,0)',
+            0.18, 'rgba(0,0,0,0.85)',
+            0.5,  'rgba(0,0,0,0.97)',
+            0.82, 'rgba(0,0,0,0.85)',
+            1,    'rgba(0,0,0,0)',
+          ],
+          opacity: 0.95,
           listening: false,
         }));
 

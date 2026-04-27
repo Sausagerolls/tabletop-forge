@@ -532,10 +532,11 @@ export default {
         }));
 
         // ── The beam itself — a solid dark band along the centre ─
-        // Visually the strongest element. Slightly thicker than the
-        // 1ft template silhouette so it reads as the "hungry seam"
-        // rather than a thin scratch.
-        const beamHalf = Math.max(lineSource.halfWidth * 1.8, 4);
+        // Visually the strongest element, but tightened ~1/3 thinner
+        // than the early v1.1.1 width so the surrounding aura and
+        // falling waves have more room to breathe — the seam now
+        // reads as a hungry slit rather than a thick stripe.
+        const beamHalf = Math.max(lineSource.halfWidth * 1.2, 2.7);
         const beamPts = [
           A.x + nx * beamHalf, A.y + ny * beamHalf,
           B.x + nx * beamHalf, B.y + ny * beamHalf,

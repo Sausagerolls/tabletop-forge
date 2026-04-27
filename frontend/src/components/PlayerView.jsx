@@ -433,6 +433,7 @@ const WarningIcon = () => (
   </svg>
 );
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import CharacterSetup from './CharacterSetup.jsx';
 import socket from '../socket.js';
 import { loadPlugins } from '../plugins/pluginRegistry.js';
 import MapStage, { TOKEN_SIZES } from './MapStage.jsx';
@@ -504,10 +505,36 @@ export default function PlayerView() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const code = searchParams.get('code') || '';
-  const name = searchParams.get('name') || 'Adventurer';
-  const hpParam = parseInt(searchParams.get('hp') || '20', 10);
-  const sizeParam = searchParams.get('size') || 'medium';
-  const creatureIdParam = searchParams.get('creatureId') ? parseInt(searchParams.get('creatureId'), 10) : null;
+
+  // Player setup. The legacy deep-link path is "the DM gave you a URL
+  // with ?name=… and ?creatureId=… already filled in" — those skip the
+  // setup screen entirely. Everyone else goes through CharacterSetup
+  // below: pick an existing character owned by their player name, or
+  // build a new one inline. Result lives in `setup`; the socket-connect
+  // effect below only fires once `setup.ready` is true.
+  const SETUP_KEY = code ? `dndvtt_player_setup_${code}` : null;
+  const queryName = searchParams.get('name');
+  const queryCreature = searchParams.get('creatureId') ? parseInt(searchParams.get('creatureId'), 10) : null;
+  const queryHp = parseInt(searchParams.get('hp') || '20', 10);
+  const querySize = searchParams.get('size') || 'medium';
+  const [setup, setSetup] = useState(() => {
+    if (queryName) {
+      return { ready: true, name: queryName, creatureId: queryCreature, maxHp: queryHp, size: querySize };
+    }
+    let remembered = null;
+    try { remembered = SETUP_KEY ? JSON.parse(localStorage.getItem(SETUP_KEY) || 'null') : null; } catch {}
+    return {
+      ready: false,
+      name: remembered?.name || '',
+      creatureId: remembered?.creatureId || null,
+      maxHp: remembered?.maxHp || 20,
+      size: remembered?.size || 'medium',
+    };
+  });
+  const name = setup.name || 'Adventurer';
+  const hpParam = setup.maxHp;
+  const sizeParam = setup.size;
+  const creatureIdParam = setup.creatureId;
 
   const [session, setSession] = useState(null);
   const [tokens, setTokens] = useState([]);
@@ -616,6 +643,11 @@ export default function PlayerView() {
 
   useEffect(() => {
     if (!code) { navigate('/'); return; }
+    // Wait until the player has finished CharacterSetup (or a deep-link
+    // pre-filled the data). Without this gate the socket connects with
+    // a placeholder name and the server creates a 20-HP nameless token
+    // before the player has had a chance to pick their character.
+    if (!setup.ready) return;
 
     socket.connect();
 
@@ -628,6 +660,14 @@ export default function PlayerView() {
     });
     socket.io.on('reconnect_attempt', (n) => setReconnectAttempt(n));
     socket.io.on('reconnect_failed', () => setReconnectAttempt(-1));
+
+    // DM rotated the session code. The server has already disconnected
+    // us; show a notice and bounce to the lobby so the player can rejoin
+    // with whatever new link the DM sends.
+    socket.on('session_code_changed', () => {
+      setError('The DM rotated the session code. Ask them for the new join link.');
+      setTimeout(() => navigate('/'), 2500);
+    });
 
     socket.on('session_joined', ({ state, userColors: uc }) => {
       setSession(state.session);
@@ -983,7 +1023,7 @@ export default function PlayerView() {
       socket.removeAllListeners();
       socket.disconnect();
     };
-  }, [code, name]);
+  }, [code, name, setup.ready]);
 
   useEffect(() => {
     function onKey(e) {
@@ -1126,6 +1166,26 @@ export default function PlayerView() {
           </button>
         </div>
       </div>
+    );
+  }
+
+  // Character setup: shown the FIRST time a player visits the join
+  // link. Once they pick or build a character we stash the result in
+  // localStorage keyed by session code so a refresh skips the form.
+  // The DM can still hand out deep links with ?name= / ?creatureId=
+  // that bypass this entirely (legacy flow).
+  if (!setup.ready) {
+    return (
+      <CharacterSetup
+        sessionCode={code}
+        initial={setup}
+        onComplete={(picked) => {
+          try {
+            if (SETUP_KEY) localStorage.setItem(SETUP_KEY, JSON.stringify(picked));
+          } catch {}
+          setSetup({ ready: true, ...picked });
+        }}
+      />
     );
   }
 

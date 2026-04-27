@@ -1021,6 +1021,16 @@ export default function DMView() {
   const [diceRolls, setDiceRolls] = useState([]);
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
+  const [appVersion, setAppVersion] = useState(null);
+  // Lightweight one-shot fetch — version doesn't change without a
+  // server restart so we don't need to re-poll. Failure is silent so
+  // the Session Info section just hides the version row.
+  useEffect(() => {
+    fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d && d.version) setAppVersion(d.version);
+    }).catch(() => {});
+  }, []);
+
   // `reconnectAttempt` is bumped by socket.io's reconnect_attempt event;
   // 0 means "no reconnect in progress". Drives the dropped-connection
   // banner so the user knows the network blip is being recovered
@@ -1335,6 +1345,17 @@ export default function DMView() {
     });
     socket.io.on('reconnect_attempt', (n) => setReconnectAttempt(n));
     socket.io.on('reconnect_failed', () => setReconnectAttempt(-1));
+
+    // DM's own rotate: navigate to the new ?code= so the effect re-runs
+    // and the socket reconnects on the new session. Also clear the
+    // in-memory session so the spinner shows briefly while the new
+    // session_joined payload arrives — better UX than a flash of stale
+    // tokens before they swap out.
+    socket.on('session_code_changed', ({ newCode }) => {
+      if (!newCode) return;
+      setSession(null);
+      navigate(`/dm?code=${encodeURIComponent(newCode)}&pass=${encodeURIComponent(pass)}`);
+    });
 
     socket.on('session_joined', ({ state, userColors: uc, users: u }) => {
       setSession(state.session);
@@ -3410,8 +3431,29 @@ export default function DMView() {
                         >
                           Copy
                         </button>
+                        <button
+                          onClick={() => {
+                            if (!session) return;
+                            const ok = confirm(
+                              'Rotate the session code?\n\n' +
+                              'This will disconnect every player currently in the session — they will need the new join link to come back. ' +
+                              'Use this to remove a troublesome player you have already kicked, then share the new link only with the players you want.'
+                            );
+                            if (!ok) return;
+                            socket.emit('rotate_session_code', { sessionId: session.id });
+                          }}
+                          className="text-xs bg-red-900/50 hover:bg-red-800/60 border border-red-700/50 text-red-200 px-2 py-1 rounded"
+                          title="Generate a new code and disconnect all current players"
+                        >
+                          Rotate
+                        </button>
                       </div>
                     </div>
+                    {appVersion && (
+                      <div className="text-[10px] text-gray-500 font-mono pt-1 border-t border-gray-700/50">
+                        Server v{appVersion}
+                      </div>
+                    )}
                     <div>
                       <div className="text-xs text-gray-400 mb-1">Player Join Link</div>
                       <div className="flex items-center gap-2">

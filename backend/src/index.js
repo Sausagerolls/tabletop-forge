@@ -141,6 +141,13 @@ app.use('/api/doors', doorsRouter);
 app.use('/api/lights', lightsRouter);
 app.use('/api/dd2vtt', dd2vttRouter);
 app.use('/api/spell-library', spellLibraryRouter);
+
+// Read once at startup — package.json doesn't change at runtime.
+const APP_VERSION = (() => {
+  try { return require('../package.json').version || 'unknown'; }
+  catch { return 'unknown'; }
+})();
+app.get('/api/version', (req, res) => res.json({ version: APP_VERSION }));
 app.use('/api/languages', languagesRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/plugins', pluginsRouter);
@@ -1250,6 +1257,47 @@ io.on('connection', (socket) => {
       io.to(sessionCode).emit('fow_blur_changed', { blur });
     } catch (err) {
       console.error(err);
+    }
+  });
+
+  // ── Rotate session code (DM only — kicks all current players) ────────────
+  // The DM hits "Rotate" when they need to evict a player they've already
+  // told off / banned. Generates a fresh 6-char code, swaps it on the
+  // session row, broadcasts the change to everyone in the old room, then
+  // hard-disconnects every socket so each client decides what to do
+  // (DM auto-rejoins on the new code; players are bounced to the lobby).
+  socket.on('rotate_session_code', async ({ sessionId }) => {
+    if (socket.data.role !== 'dm') return;
+    const oldCode = socket.data.sessionCode;
+    if (!oldCode || !sessionId) return;
+    try {
+      // Generate a unique code; bail after 20 collisions so we don't loop.
+      let newCode = null;
+      for (let i = 0; i < 20; i++) {
+        const candidate = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const exists = await db.query('SELECT id FROM sessions WHERE session_code=$1', [candidate]);
+        if (!exists.rows.length) { newCode = candidate; break; }
+      }
+      if (!newCode) {
+        socket.emit('error', { message: 'Could not generate a unique session code — try again.' });
+        return;
+      }
+      await db.query('UPDATE sessions SET session_code=$1 WHERE id=$2', [newCode, sessionId]);
+      io.to(oldCode).emit('session_code_changed', { oldCode, newCode });
+      // Brief delay so the emit lands before we tear connections — the
+      // emit goes out on the same event loop tick but the socket close
+      // can race the deliver if we disconnect synchronously.
+      setTimeout(() => {
+        const ids = io.sockets.adapter.rooms.get(oldCode);
+        if (ids) {
+          for (const sid of Array.from(ids)) {
+            const s = io.sockets.sockets.get(sid);
+            if (s) s.disconnect(true);
+          }
+        }
+      }, 250);
+    } catch (err) {
+      console.error('rotate_session_code error:', err);
     }
   });
 

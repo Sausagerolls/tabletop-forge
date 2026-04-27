@@ -144,8 +144,82 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
   const [exportSelected, setExportSelected] = useState(new Set());
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [regenStatus, setRegenStatus] = useState(null); // null | 'running' | 'done' | { error: string }
+  const [regenPromptModal, setRegenPromptModal] = useState(null); // null | { creature, prompt }
 
   const aiConfigured = aiSettings?.baseUrl?.trim();
+  const imageGenConfigured = !!(aiSettings?.imageEnabled && aiSettings?.imageBaseUrl?.trim());
+
+  // Mirror of the server's buildImagePrompt — pre-fills the prompt
+  // editor with what the saved template would produce, so the user
+  // can tweak rather than rewrite from scratch.
+  function previewPrompt(creature) {
+    const DEFAULT = 'fantasy portrait of a {name}, detailed digital painting, dramatic lighting, painterly';
+    const tplRaw = aiSettings?.imagePromptTemplate || '';
+    let t = (tplRaw && tplRaw.includes('{name}')) ? tplRaw : (tplRaw ? `${tplRaw}, {name}` : DEFAULT);
+    t = t.replace(/\{name\}/g, creature?.name || '');
+    t = t.replace(/\{appearance\}/g, '');
+    return t.replace(/,\s*,/g, ',').replace(/\s+,/g, ',').replace(/\s{2,}/g, ' ').trim().replace(/^,\s*|,\s*$/g, '');
+  }
+
+  function openRegenPrompt(creature) {
+    if (!creature || !imageGenConfigured) return;
+    setRegenStatus(null);
+    setRegenPromptModal({ creature, prompt: previewPrompt(creature) });
+  }
+
+  async function runRegenerateImage(creature, rawPrompt) {
+    if (!creature || !imageGenConfigured) return;
+    setRegenStatus('running');
+    try {
+      // 1) Ask the host's image-gen proxy for a fresh portrait.
+      const imgRes = await fetch('/api/ai/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider:       aiSettings.imageProvider || 'swarmui',
+          baseUrl:        aiSettings.imageBaseUrl,
+          model:          aiSettings.imageModel || '',
+          name:           creature.name,
+          rawPrompt,                                       // bypass template
+          negativePrompt: aiSettings.imageNegativePrompt || '',
+          allowNsfw:      !!aiSettings.imageAllowNsfw,
+          width:          aiSettings.imageWidth,
+          height:         aiSettings.imageHeight,
+          steps:          aiSettings.imageSteps,
+          cfgScale:       aiSettings.imageCfgScale,
+        }),
+      });
+      if (!imgRes.ok) {
+        const txt = await imgRes.text().catch(() => '');
+        let parsed = null; try { parsed = JSON.parse(txt); } catch {}
+        throw new Error(parsed?.error || `Image gen ${imgRes.status}`);
+      }
+      const { image } = await imgRes.json();
+      const m = (image || '').match(/^data:([^;]+);base64,(.+)$/);
+      if (!m) throw new Error('Image gen returned no image data');
+
+      // 2) PUT the new image onto the existing creature row.
+      const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+      const ext = m[1].split('/')[1] || 'png';
+      const file = new File([bytes], `regen-${Date.now()}.${ext}`, { type: m[1] });
+      const fd = new FormData();
+      fd.append('image', file);
+      const putRes = await fetch(`/api/creatures/${creature.id}`, { method: 'PUT', body: fd });
+      if (!putRes.ok) {
+        const txt = await putRes.text().catch(() => '');
+        throw new Error(`Save ${putRes.status}: ${txt.slice(0, 200)}`);
+      }
+      const updated = await putRes.json();
+      setSelected(updated);
+      loadCreatures(search, typeFilter);
+      setRegenPromptModal(null);
+      setRegenStatus('done');
+      setTimeout(() => setRegenStatus(null), 1500);
+    } catch (err) {
+      setRegenStatus({ error: err?.message || String(err) });
+    }
+  }
 
   async function loadCreatures(q = '', filter = typeFilter) {
     setLoading(true);
@@ -287,13 +361,33 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
 
   if (mode === 'view' && selected) {
     return (
-      <div className="h-full flex flex-col">
+      <div className="relative h-full flex flex-col">
         {/* Header */}
         <div className="px-4 py-3 border-b border-gray-700 shrink-0 flex items-center gap-2">
           <button onClick={() => setMode('list')} className="text-gray-400 hover:text-white">←</button>
           <h3 className="font-semibold text-dnd-gold flex-1 truncate">{selected.name}</h3>
+          {imageGenConfigured && (
+            <button
+              onClick={() => openRegenPrompt(selected)}
+              disabled={regenStatus === 'running'}
+              title="Edit the image prompt and generate a new portrait"
+              className="text-xs text-gray-300 hover:text-white px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-wait"
+            >
+              {regenStatus === 'running' ? 'Generating…' : '🎨 Regenerate Image'}
+            </button>
+          )}
           <button onClick={() => setMode('edit')} className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700 hover:bg-gray-600">Edit</button>
         </div>
+        {regenStatus && typeof regenStatus === 'object' && regenStatus.error && (
+          <div className="mx-4 mt-2 text-xs text-red-300 bg-red-950/40 border border-red-900/40 rounded px-2 py-1.5">
+            Image regen failed: {regenStatus.error}
+          </div>
+        )}
+        {regenStatus === 'done' && (
+          <div className="mx-4 mt-2 text-xs text-emerald-300 bg-emerald-950/40 border border-emerald-900/40 rounded px-2 py-1.5">
+            New portrait saved.
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex border-b border-gray-700 shrink-0">
@@ -498,6 +592,62 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
                 </div>
               );
             })()}
+          </div>
+        )}
+
+        {regenPromptModal && (
+          <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+            <div className="bg-dnd-panel border border-gray-700 rounded-xl w-full max-w-md flex flex-col max-h-[85vh]">
+              <div className="px-5 py-3 border-b border-gray-700 flex items-center justify-between shrink-0">
+                <h4 className="font-semibold text-dnd-gold">Regenerate portrait</h4>
+                <button
+                  onClick={() => setRegenPromptModal(null)}
+                  disabled={regenStatus === 'running'}
+                  className="text-gray-400 hover:text-white disabled:opacity-50"
+                >✕</button>
+              </div>
+              <div className="p-5 space-y-3 overflow-y-auto">
+                <div className="text-xs text-gray-400">
+                  Bypasses the saved prompt template. Negative prompt, model, size and NSFW toggle still come from your AI Integration settings.
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Prompt</label>
+                  <textarea
+                    rows={6}
+                    autoFocus
+                    className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold resize-y"
+                    value={regenPromptModal.prompt}
+                    onChange={(e) => setRegenPromptModal((m) => m && { ...m, prompt: e.target.value })}
+                    disabled={regenStatus === 'running'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setRegenPromptModal((m) => m && { ...m, prompt: previewPrompt(m.creature) })}
+                    disabled={regenStatus === 'running'}
+                    className="mt-1 text-[11px] text-gray-400 hover:text-gray-200 disabled:opacity-50"
+                  >Reset to template default</button>
+                </div>
+                {regenStatus && typeof regenStatus === 'object' && regenStatus.error && (
+                  <div className="text-xs text-red-300 bg-red-950/40 border border-red-900/40 rounded px-2 py-1.5">
+                    {regenStatus.error}
+                  </div>
+                )}
+              </div>
+              <div className="px-5 py-3 border-t border-gray-700 flex gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setRegenPromptModal(null)}
+                  disabled={regenStatus === 'running'}
+                  className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg text-sm disabled:opacity-50"
+                >Cancel</button>
+                <button
+                  type="button"
+                  onClick={() => runRegenerateImage(regenPromptModal.creature, regenPromptModal.prompt)}
+                  disabled={regenStatus === 'running' || !regenPromptModal.prompt.trim()}
+                  className="flex-[2] bg-dnd-gold hover:bg-yellow-500 text-gray-900 py-2 rounded-lg text-sm font-semibold disabled:opacity-50"
+                >{regenStatus === 'running' ? 'Generating…' : 'Generate'}</button>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -541,17 +541,37 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     if (!creature) {
       return { ...defaultForm, senses, movement_actions };
     }
+    // image_data (the AI-prefill data URL) is consumed by the imageFile
+    // hook below; it must NOT live on form state because Object.entries
+    // would re-upload it as a multipart text field, exceeding multer's
+    // default 1MB text-field cap and crashing the save with an HTML error.
+    const { image_data: _imgData, ...creatureWithoutImage } = creature;
     return {
-      ...defaultForm, ...creature, senses, inventory, spells, spell_slots, loot, movement_actions,
+      ...defaultForm, ...creatureWithoutImage, senses, inventory, spells, spell_slots, loot, movement_actions,
       passive_perception: creature.passive_perception ?? 10,
       currency_cp: creature.currency_cp ?? 0,
       currency_sp: creature.currency_sp ?? 0,
       currency_gp: creature.currency_gp ?? 0,
     };
   });
-  const [imageFile, setImageFile] = useState(null);
+  // AI-generated creatures arrive with an `image_data` data URL rather
+  // than an `image_path`; turn it into a File so the multipart save
+  // attaches it like any normal upload.
+  const [imageFile, setImageFile] = useState(() => {
+    const m = (creature?.image_data || '').match(/^data:([^;]+);base64,(.+)$/);
+    if (!m) return null;
+    try {
+      const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+      const ext = m[1].split('/')[1] || 'png';
+      return new File([bytes], `ai-${Date.now()}.${ext}`, { type: m[1] });
+    } catch { return null; }
+  });
   const [imagePreview, setImagePreview] = useState(
-    creature?.image_path ? `/uploads/${creature.image_path}` : isPlayerCharacter ? '/uploads/creatures/default_player.png' : null
+    creature?.image_data
+      ? creature.image_data
+      : creature?.image_path
+        ? `/uploads/${creature.image_path}`
+        : isPlayerCharacter ? '/uploads/creatures/default_player.png' : null
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -829,6 +849,10 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     try {
       const fd = new FormData();
       for (const [k, v] of Object.entries(form)) {
+        // image_data is the AI prefill data URL; it has already been
+        // turned into imageFile and would blow past multer's default
+        // text-field cap if re-uploaded as a string.
+        if (k === 'image_data') continue;
         if (Array.isArray(v) || (typeof v === 'object' && v !== null)) {
           fd.append(k, JSON.stringify(v));
         } else if (v === null || v === undefined) {
@@ -847,8 +871,13 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       const url = creature?.id ? `/api/creatures/${creature.id}` : '/api/creatures';
       const method = creature?.id ? 'PUT' : 'POST';
       const res = await fetch(url, { method, body: fd });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch {
+        throw new Error(`Server returned ${res.status} (${text.slice(0, 200) || 'no body'})`);
+      }
+      if (!res.ok || data.error) throw new Error(data.error || `Save failed: ${res.status}`);
       onSave(data);
     } catch (err) {
       setError(err.message);

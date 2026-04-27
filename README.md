@@ -28,7 +28,8 @@ Per-player instanced fog of war, AI-powered token generation, PDF spell library 
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows / macOS) or Docker Engine + Docker Compose (Linux)
 - A modern browser (Chrome, Firefox, Edge, Safari)
-- Optional: [LM Studio](https://lmstudio.ai/) or [Ollama](https://ollama.com/) for local AI token generation
+- Optional: [LM Studio](https://lmstudio.ai/) or [Ollama](https://ollama.com/) for local AI stat-block generation
+- Optional: [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) for local AI image generation (auto-portraits when creatures are AI-generated)
 
 ---
 
@@ -273,6 +274,34 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 ---
 
 ## Changelog
+
+### v1.3.0 — SwarmUI image generation, Random Encounter Builder, AI generator hardening
+
+**AI image generation (optional, via [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI)):**
+- Configurable from the **Session → AI Integration** panel: SwarmUI base URL, model, dimensions, steps, CFG, prompt template (with `{name}` and `{appearance}` placeholders), negative prompt, and an explicit **Allow NSFW content** toggle (off by default — when off, safe-content terms are appended to the negative prompt).
+- Auto-fires whenever a creature is AI-generated — both the manual **✨ AI Generator** in the Token Library and the new Encounter Builder plugin attach a portrait to the inserted creature.
+- Each saved creature has a **🎨 Regenerate Image** button in its detail view that opens a prompt-edit modal, letting you bypass the session-level template for that one creature.
+- **Test Image Connection** lists every Stable-Diffusion model SwarmUI knows about as clickable chips, so you can pick one with one click.
+- New backend endpoints: `POST /api/ai/test-image`, `POST /api/ai/generate-image` (called by both the host and plugins).
+
+**New bundled plugin — Random Encounter Builder:**
+- Pick a biome (forest / cave / road / city / swamp), party size, and party level → roll → get a random encounter with a flavour line and a creature draw.
+- Matches each rolled creature against the existing creature library; missing ones get a per-row **Generate now** button that fires the LLM (and, if configured, SwarmUI) to insert a fresh creature with a portrait into the library. Generation is opt-in per row so AI tokens aren't burned on encounters you'll never use.
+
+**AI stat-block generator:**
+- Bumped `max_tokens` to 4096 and dropped temperature to 0.3 — fixes the "Expected ',' or '}' at position ~1273" mid-JSON truncation on local servers that defaulted to 1024 tokens.
+- Added a one-shot LLM JSON-repair retry on parse failure.
+- Strengthened the system prompt around skills + saves: most creatures now get 0–4 skill proficiencies and 0–2 save proficiencies instead of every slot filled.
+- Server-side guardrail: if the model still over-assigns (≥10/18 skills or ≥5/6 saves), all skills/saves are reset to null so the DM can hand-pick.
+- New **Legendary creature** checkbox in the AI Generator modal — off by default, with server-side enforcement that strips legendary actions when not requested.
+- New **Appearance** field is now passed into image generation alongside the creature name (substitutes `{appearance}` in the prompt template, or appends if no placeholder).
+
+**Plugin API additions:**
+- `context.getAiSettings()` now also exposes the image-generation fields (`imageEnabled`, `imageProvider`, `imageBaseUrl`, `imageModel`, `imagePromptTemplate`, `imageNegativePrompt`, `imageAllowNsfw`, `imageWidth`, `imageHeight`, `imageSteps`, `imageCfgScale`).
+- See [`PLUGINS.md`](PLUGINS.md) §1 for a worked image-gen example.
+
+**Bug fix:**
+- Saving an AI-generated creature occasionally crashed with "Unexpected token '<'" because the prefilled `image_data` data URL was being re-uploaded as a multipart text field, blowing past multer's default 1MB text-field cap. The form now strips it before submit (the binary file is still attached as a real upload).
 
 ### v1.2.0 — Plugin store + three new plugins, panel-tab extension API
 

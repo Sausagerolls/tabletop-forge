@@ -1174,20 +1174,40 @@ export default function DMView() {
     } catch {}
   }
 
+  const AI_DEFAULTS = {
+    provider: 'lmstudio',
+    baseUrl: 'http://host.docker.internal:1234',
+    apiKey: '',
+    model: '',
+    // ── Image generation (optional) ──
+    imageEnabled: false,
+    imageProvider: 'swarmui',
+    imageBaseUrl: 'http://host.docker.internal:7801',
+    imageModel: '',
+    imageWidth: 768,
+    imageHeight: 768,
+    imageSteps: 25,
+    imageCfgScale: 6,
+    imagePromptTemplate: 'fantasy portrait of a {name}, detailed digital painting, dramatic lighting, painterly',
+    imageNegativePrompt: '',
+    imageAllowNsfw: false,
+  };
+
   const [aiSettings, setAISettings] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('dndvtt_ai_settings') || 'null') || {
-        provider: 'lmstudio',
-        baseUrl: 'http://host.docker.internal:1234',
-        apiKey: '',
-        model: '',
-      };
+      const stored = JSON.parse(localStorage.getItem('dndvtt_ai_settings') || 'null');
+      // Merge so newly-added image fields pick up defaults for users
+      // who saved the older shape.
+      return { ...AI_DEFAULTS, ...(stored || {}) };
     } catch {
-      return { provider: 'lmstudio', baseUrl: 'http://host.docker.internal:1234', apiKey: '', model: '' };
+      return { ...AI_DEFAULTS };
     }
   });
   const [aiTestStatus, setAITestStatus] = useState(null); // null | 'testing' | 'ok' | 'error'
   const [aiTestMessage, setAITestMessage] = useState('');
+  const [aiImageTestStatus, setAIImageTestStatus] = useState(null);
+  const [aiImageTestMessage, setAIImageTestMessage] = useState('');
+  const [aiImageModelList, setAIImageModelList] = useState([]);
 
   function updateAISettings(updates) {
     setAISettings((prev) => {
@@ -1222,6 +1242,31 @@ export default function DMView() {
     } catch (err) {
       setAITestStatus('error');
       setAITestMessage(err.message);
+    }
+  }
+
+  async function handleAIImageTest() {
+    if (!aiSettings.imageBaseUrl) return;
+    setAIImageTestStatus('testing');
+    setAIImageTestMessage('');
+    setAIImageModelList([]);
+    try {
+      const res = await fetch('/api/ai/test-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: aiSettings.imageProvider,
+          baseUrl: aiSettings.imageBaseUrl,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Connection failed');
+      setAIImageTestStatus('ok');
+      setAIImageTestMessage(data.preview || 'Connected');
+      setAIImageModelList(Array.isArray(data.models) ? data.models : []);
+    } catch (err) {
+      setAIImageTestStatus('error');
+      setAIImageTestMessage(err.message);
     }
   }
 
@@ -3422,6 +3467,169 @@ export default function DMView() {
                         {aiTestMessage}
                       </div>
                     )}
+
+                    {/* ── Image Generation (SwarmUI) ── */}
+                    <div className="pt-3 border-t border-gray-700 space-y-3">
+                      <label className="flex items-start gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 accent-dnd-gold"
+                          checked={!!aiSettings.imageEnabled}
+                          onChange={(e) => updateAISettings({ imageEnabled: e.target.checked })}
+                        />
+                        <span>
+                          <span className="text-sm text-gray-200 font-semibold">Generate token images</span>
+                          <span className="block text-xs text-gray-400 leading-snug">
+                            When AI generates a creature, also produce a portrait via SwarmUI and use it as the token avatar.
+                          </span>
+                        </span>
+                      </label>
+
+                      {aiSettings.imageEnabled && (
+                        <>
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">SwarmUI Base URL</label>
+                            <input
+                              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                              placeholder="http://host.docker.internal:7801"
+                              value={aiSettings.imageBaseUrl}
+                              onChange={(e) => updateAISettings({ imageBaseUrl: e.target.value })}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              SwarmUI runs on Windows? From inside Docker use <code className="text-gray-300">host.docker.internal</code>, not <code>localhost</code>.
+                            </p>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">Model (optional)</label>
+                            <input
+                              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                              placeholder="leave blank to use SwarmUI's current model"
+                              value={aiSettings.imageModel}
+                              onChange={(e) => updateAISettings({ imageModel: e.target.value })}
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-2">
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">Width</label>
+                              <input
+                                type="number" min={256} max={2048} step={64}
+                                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                                value={aiSettings.imageWidth}
+                                onChange={(e) => updateAISettings({ imageWidth: Number(e.target.value) || 768 })}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">Height</label>
+                              <input
+                                type="number" min={256} max={2048} step={64}
+                                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                                value={aiSettings.imageHeight}
+                                onChange={(e) => updateAISettings({ imageHeight: Number(e.target.value) || 768 })}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">Steps</label>
+                              <input
+                                type="number" min={1} max={150}
+                                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                                value={aiSettings.imageSteps}
+                                onChange={(e) => updateAISettings({ imageSteps: Number(e.target.value) || 25 })}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">CFG</label>
+                              <input
+                                type="number" min={1} max={30} step={0.5}
+                                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                                value={aiSettings.imageCfgScale}
+                                onChange={(e) => updateAISettings({ imageCfgScale: Number(e.target.value) || 6 })}
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">
+                              Prompt template <span className="text-gray-500">— <code>{'{name}'}</code> and <code>{'{appearance}'}</code> are substituted; appearance is auto-appended if you don't include the placeholder</span>
+                            </label>
+                            <textarea
+                              rows={2}
+                              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold resize-y"
+                              value={aiSettings.imagePromptTemplate}
+                              onChange={(e) => updateAISettings({ imagePromptTemplate: e.target.value })}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">Negative prompt (optional)</label>
+                            <textarea
+                              rows={2}
+                              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold resize-y"
+                              placeholder="things you don't want — e.g. blurry, watermark, extra limbs"
+                              value={aiSettings.imageNegativePrompt}
+                              onChange={(e) => updateAISettings({ imageNegativePrompt: e.target.value })}
+                            />
+                          </div>
+
+                          <label className="flex items-start gap-2 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 accent-red-500"
+                              checked={!!aiSettings.imageAllowNsfw}
+                              onChange={(e) => updateAISettings({ imageAllowNsfw: e.target.checked })}
+                            />
+                            <span>
+                              <span className="text-sm text-red-300 font-semibold">Allow NSFW content</span>
+                              <span className="block text-xs text-gray-400 leading-snug">
+                                When off, safe-content terms are appended to the negative prompt.
+                                When on, only your prompt + your negative prompt are sent — what you actually
+                                get depends on the model loaded in SwarmUI.
+                              </span>
+                            </span>
+                          </label>
+
+                          <button
+                            onClick={handleAIImageTest}
+                            disabled={!aiSettings.imageBaseUrl || aiImageTestStatus === 'testing'}
+                            className="w-full bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white py-2 rounded-lg text-xs font-semibold transition-colors"
+                          >
+                            {aiImageTestStatus === 'testing' ? 'Testing...' : 'Test Image Connection'}
+                          </button>
+
+                          {aiImageTestStatus === 'ok' && (
+                            <div className="text-xs text-green-400 bg-green-900/20 border border-green-800 rounded-lg px-3 py-2 space-y-1">
+                              <div>Connected — {aiImageTestMessage}</div>
+                              {aiImageModelList.length > 0 && (
+                                <div className="text-gray-300 text-[11px] leading-snug">
+                                  <div className="text-gray-400 mb-0.5">Models found ({aiImageModelList.length}) — click to use:</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {aiImageModelList.slice(0, 30).map((m) => (
+                                      <button
+                                        key={m}
+                                        type="button"
+                                        onClick={() => updateAISettings({ imageModel: m })}
+                                        className={`px-1.5 py-0.5 rounded border text-[10px] ${
+                                          aiSettings.imageModel === m
+                                            ? 'bg-dnd-gold/20 border-dnd-gold text-dnd-gold'
+                                            : 'bg-gray-700 border-gray-600 hover:border-dnd-gold text-gray-200'
+                                        }`}
+                                      >{m}</button>
+                                    ))}
+                                  </div>
+                                  <div className="text-gray-500 mt-1">Leave the Model field blank to auto-pick the first one.</div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {aiImageTestStatus === 'error' && (
+                            <div className="text-xs text-red-400 bg-red-900/20 border border-red-800 rounded-lg px-3 py-2">
+                              {aiImageTestMessage}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 

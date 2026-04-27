@@ -711,7 +711,7 @@ footer {
       <div class="feat-card highlight">
         <div class="feat-icon">🤖</div>
         <div class="feat-title">AI Token Generation</div>
-        <div class="feat-desc">Generate full D&amp;D stat blocks and token portraits using a local model (Ollama or LM Studio) or an OpenAI-compatible API. No cloud required — your data stays on your network.</div>
+        <div class="feat-desc">Generate full D&amp;D stat blocks via a local LLM (Ollama or LM Studio) or any OpenAI-compatible API, and auto-generate matching portraits via a local SwarmUI image-gen server (NSFW supported, opt-in). No cloud required — your data stays on your network.</div>
         <span class="feat-badge">Standout Feature</span>
       </div>
 
@@ -1007,6 +1007,31 @@ cd TabletopForge</div>
           </div>
         </div>
 
+        <div class="ai-card">
+          <div class="ai-card-head">
+            <div class="ai-card-name">SwarmUI <span style="font-weight:400;color:var(--text-m);font-size:13px;">(image generation)</span></div>
+            <div class="ai-card-sub">Optional — auto-generate a portrait every time a creature is AI-generated</div>
+          </div>
+          <div class="ai-card-body">
+            <div class="ai-step">
+              <div class="ai-step-num">1</div>
+              <div class="ai-step-text">Download SwarmUI from <a href="https://github.com/mcmonkeyprojects/SwarmUI" target="_blank" rel="noopener">github.com/mcmonkeyprojects/SwarmUI</a>. Run the installer for your OS and load any Stable-Diffusion-style model (SDXL, Flux, Pony, etc.). NSFW-capable models are supported — the app exposes an explicit toggle.</div>
+            </div>
+            <div class="ai-step">
+              <div class="ai-step-num">2</div>
+              <div class="ai-step-text">In SwarmUI's <strong>Server</strong> tab, set <strong>Host</strong> to <code>0.0.0.0</code> (or <code>*</code>) so the app can reach it over LAN/Docker. The default <code>localhost</code> binding only accepts connections from the same machine. Restart SwarmUI after changing it.</div>
+            </div>
+            <div class="ai-step">
+              <div class="ai-step-num">3</div>
+              <div class="ai-step-text">If SwarmUI is on a different machine, allow inbound TCP <code>7801</code> in your firewall. On Windows: <code>New-NetFirewallRule -DisplayName "SwarmUI" -Direction Inbound -Protocol TCP -LocalPort 7801 -Action Allow</code> (admin PowerShell).</div>
+            </div>
+            <div class="ai-step">
+              <div class="ai-step-num">4</div>
+              <div class="ai-step-text">In TableTop Forge's DM view → <strong>Session</strong> tab → <strong>AI Integration</strong>, scroll down and tick <strong>Generate token images</strong>. Enter the SwarmUI URL (e.g. <code>http://host.docker.internal:7801</code> when SwarmUI is on the same machine as Docker, or the LAN IP when remote), then click <strong>Test Image Connection</strong>. The Model field can be left blank to auto-pick the first installed model.</div>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <div class="ai-connect">
@@ -1021,6 +1046,9 @@ cd TabletopForge</div>
           </div>
           <div class="ai-rec" style="margin-top:10px; background: rgba(184,50,50,0.10); border-color: rgba(184,50,50,0.35);">
             <strong style="color: var(--accent-l);">⚠️ AI accuracy disclaimer:</strong> The PDF spell scanner uses an AI model to read your sourcebook, so <strong>mistakes are expected</strong> — misspelled names, wrong damage dice, missing components, or hallucinated entries can all happen. The app mitigates this with multi-pass consensus voting, a canonical 5e name list, and an open5e SRD fallback, plus a post-scan <em>Review names</em> panel that suggests fixes. Always proofread imported spells before relying on them at the table.
+          </div>
+          <div class="ai-rec" style="margin-top:10px;">
+            <strong>Image generation (optional):</strong> when SwarmUI is wired up, the app fires off a portrait every time a creature is AI-generated — both via the manual <strong>✨ AI</strong> button in the Token Library <em>and</em> the Random Encounter Builder plugin. Each saved creature also gets a <strong>🎨 Regenerate Image</strong> button in its detail view, which opens a prompt-edit modal so you can rewrite the prompt for that specific creature without touching the session-level template. The <strong>Allow NSFW content</strong> toggle is off by default; with it off the app appends safe-content terms to the negative prompt, with it on only your prompt + your negative prompt are sent (what you actually get depends on the model loaded in SwarmUI).
           </div>
         </div>
       </div>
@@ -1129,6 +1157,27 @@ cd TabletopForge</div>
               Download .zip
             </a>
             <span class="plugin-meta-text">Upload via DM view → Session tab → Plugins.</span>
+          </div>
+        </div>
+
+        <!-- ═════ Random Encounter Builder ═════ -->
+        <div class="plugin-card">
+          <div class="plugin-card-head">
+            <div class="plugin-card-icon">🎲</div>
+            <div class="plugin-card-title">
+              <div class="plugin-card-name">Random Encounter Builder</div>
+              <div class="plugin-card-meta">v1.0.0 · TableTop Forge</div>
+            </div>
+          </div>
+          <div class="plugin-card-body">
+            Pick a biome (forest / cave / road / city / swamp), party size and party level, then roll for a random encounter with a flavour line and a creature draw. Each rolled creature is matched against your existing Token Library; missing ones get a per-row <strong>Generate now</strong> button that asks the AI for a stat block and (if SwarmUI is hooked up) a portrait, then inserts the result into the library. Recent rolls are saved per session.
+          </div>
+          <div class="plugin-card-foot">
+            <a href="plugins/encounter-builder-v1.0.0.zip" class="plugin-download-btn" download>
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download .zip
+            </a>
+            <span class="plugin-meta-text">Requires AI Integration configured (Session → AI Integration).</span>
           </div>
         </div>
 

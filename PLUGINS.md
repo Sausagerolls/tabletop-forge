@@ -21,6 +21,67 @@ What a plugin cannot do:
 - Persist data outside its own KV namespace.
 - Outlive itself: when disabled or deleted, every registry entry it added is stripped. Its stored data persists by design — re-installing restores everything.
 
+### Before you build
+
+The base app already includes a fair number of features. Check that whatever you're about to build isn't already shipping — building a plugin to recreate something the host does natively is wasted effort. As of this writing the app has built-in: per-player fog of war / line of sight, full creature library with AI generation, spell library with PDF scanner, combat tracker with initiative, walls / doors / lights / magical-darkness / water zones, multi-floor maps, dice roller, sounds (one-shot effects + ambient), DM markers / pins on the map, treasure chest, handouts to players, and PDF export of character sheets. The plugin system is for the things on top of those.
+
+### Calling host endpoints from a plugin
+
+Plugins run as ordinary JavaScript on the same origin as the host, so any same-origin `fetch()` works. Some endpoints worth knowing about:
+
+```js
+// Read the creature library
+const creatures = await fetch('/api/creatures').then((r) => r.json());
+
+// Generate a stat block via the host's AI proxy (uses the AI settings
+// the DM configured in Session → AI Integration; pull them with
+// context.getAiSettings)
+const ai = context.getAiSettings();
+const generated = await fetch('/api/ai/generate', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    provider: ai.provider, baseUrl: ai.baseUrl, apiKey: ai.apiKey, model: ai.model,
+    promptData: { name: 'Goblin' },
+  }),
+}).then((r) => r.json());
+
+// Insert a new creature (multipart form — JSON-stringify objects;
+// optionally attach a binary `image` file under the same field name)
+const fd = new FormData();
+for (const [k, v] of Object.entries(generated)) {
+  if (v == null) continue;
+  fd.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
+}
+// fd.append('image', someBlobOrFile);   // ← optional portrait
+const inserted = await fetch('/api/creatures', { method: 'POST', body: fd }).then((r) => r.json());
+
+// Generate a portrait via SwarmUI (only if the DM has enabled image
+// generation in Session → AI Integration). Returns a data: URL you
+// can decode to a Blob and attach to /api/creatures as `image`.
+if (ai.imageEnabled && ai.imageBaseUrl) {
+  const { image } = await fetch('/api/ai/generate-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider:       ai.imageProvider || 'swarmui',
+      baseUrl:        ai.imageBaseUrl,
+      model:          ai.imageModel || '',         // blank = first installed
+      name:           generated.name,              // substituted into {name}
+      appearance:     '',                          // substituted into {appearance}
+      promptTemplate: ai.imagePromptTemplate || '',// or pass `rawPrompt` to bypass
+      negativePrompt: ai.imageNegativePrompt || '',
+      allowNsfw:      !!ai.imageAllowNsfw,
+      width:          ai.imageWidth,  height: ai.imageHeight,
+      steps:          ai.imageSteps,  cfgScale: ai.imageCfgScale,
+    }),
+  }).then((r) => r.json());
+  // image === 'data:image/png;base64,...' — decode + attach as `image` File
+}
+```
+
+These endpoints aren't part of the plugin contract — they're internal host APIs the plugin manager doesn't version-stabilise. They might rename between releases. Use them sparingly and check the host's `backend/src/routes/*.js` for the current shape if your plugin breaks after an update. The bundled `encounter-builder` plugin uses all four of the above (LLM stat block + SwarmUI portrait + library insert) as a worked example.
+
 ---
 
 ## 2. Filesystem layout
@@ -39,7 +100,27 @@ You can include any other files the plugin needs (images, sounds, additional JS 
 /api/plugins/<your-plugin-id>/asset/<relative-path>
 ```
 
-The backend serves these with sensible MIME types and a path-traversal guard. Symlinks and `..` segments are rejected.
+The backend serves these with sensible MIME types (audio/mpeg for `.mp3`, image/png for `.png`, application/json for `.json`, etc.) and a path-traversal guard. Symlinks and `..` segments are rejected.
+
+#### Loading static assets — concrete patterns
+
+```js
+// Audio (sound effects, music)
+const audio = new Audio(`/api/plugins/${pluginId}/asset/sounds/thunder.mp3`);
+audio.preload = 'auto';
+audio.play();   // see autoplay note below
+
+// Image (decoration sprites, icons)
+const img = new Image();
+img.src = `/api/plugins/${pluginId}/asset/sprites/skull.png`;
+// then pass to a Konva.Image, or use react-konva's <Image image={img} />
+
+// JSON data file (encounter tables, lookup data)
+const data = await fetch(`/api/plugins/${pluginId}/asset/tables/encounters.json`)
+  .then((r) => r.json());
+```
+
+**Browser autoplay policy.** Modern browsers refuse to play audio (or video with sound) until the user has interacted with the page — clicked, tapped, or pressed a key. The DM clicking a button in your plugin counts as interaction, so DM-side audio always works. But on the **player** side, if your audio is triggered by a `subscribe` event the browser may reject `audio.play()` with `NotAllowedError` until the player has clicked anywhere on their tab. Catch the rejection and either log a one-time warning or surface a "Click to enable audio" prompt in your plugin's UI.
 
 ### Distribution
 
@@ -137,6 +218,7 @@ Runtime environment for your plugin. Fields:
 | `emitEvent` | `(type, payload) => void` | Broadcast a custom event to every other client in the session. See §6. |
 | `setPanelTab` | `(tabId: string) => void` | DM only. Programmatically switch the active panel tab. Works for built-in tab ids (`'map'`, `'session'`, etc.), plugin-supplied tab ids (`'plugin:<pluginId>'`), and tabs currently hidden via `panelTabHidden`. |
 | `subscribeRegistry` | `(handler) => unsubscribe` | Subscribe to *every* registry version bump in the host. Use this when your plugin's UI needs to react to OTHER plugins' contributions changing (e.g. a tab manager listing every plugin's `dmTabs` — when a new plugin loads its tab should show up live without a page refresh). Don't use this for re-rendering on your own state changes — call your local notify pump for that. |
+| `getAiSettings` | `() => (object \| null)` | DM only. Returns the host's currently-configured AI settings (the same object the Session tab's AI Integration panel writes). Reads fresh on every call so a config change mid-session is picked up without reloading the plugin. Returns `null` when AI hasn't been configured yet. Stat-block fields: `provider`, `baseUrl`, `apiKey`, `model`. Image-generation fields (only meaningful when the DM has enabled image gen): `imageEnabled`, `imageProvider`, `imageBaseUrl`, `imageModel`, `imagePromptTemplate`, `imageNegativePrompt`, `imageAllowNsfw`, `imageWidth`, `imageHeight`, `imageSteps`, `imageCfgScale`. Use it together with `fetch('/api/ai/generate', {...})` and `fetch('/api/ai/generate-image', {...})` to ask the host's AI proxies for content. |
 
 ### What `unregister` receives
 
@@ -216,6 +298,10 @@ General-purpose "draw stuff on the map". Your function is called every render wi
 Returned nodes are drawn in a single non-interactive Konva Layer **above the token layer**, so you can occlude tokens. The Layer has `listening: false` — players cannot click your decorations. If you need clicks (e.g. DM-side editing), use `mapClickHandlers` to do your own hit-testing.
 
 If you want different content for the DM and players, branch on `ctx.isPlayer` and return different nodes (or `null`).
+
+#### Decorations follow tokens automatically
+
+Your function is called every render with a fresh `ctx.tokens` snapshot. If the host updates a token's `grid_col` / `grid_row` (because the DM dragged it, or a player-owned token moved), your next call gets the new coordinates and the decoration re-renders at the new position. You don't need to subscribe to anything or maintain your own copy of token positions — just compute from `ctx.tokens` each time and the host re-renders for you.
 
 #### Map-spanning effects
 

@@ -70,8 +70,9 @@ Return ONLY valid JSON — no markdown, no explanation, no code fences. The JSON
 
 Rules:
 - All numeric stats must be actual numbers, never strings.
-- Save throws and skills: null if not proficient, or the total bonus (ability modifier + proficiency bonus) if proficient.
-- legendary_action_count is 0 if no legendary actions.
+- Save throws: MUST be null for saves the creature isn't proficient in. Most creatures have 0–2 proficient saves; never assign every save. Common patterns: a fighter-type might be proficient in STR + CON; a mage in INT + WIS; a rogue in DEX + INT. Set every other save_* field to null. Assigning all six saves is WRONG and forbidden.
+- Skills: MUST be null for skills the creature isn't trained in. A typical creature has only 1–4 skill proficiencies — never assign every skill. Pick skills that fit the creature's flavor (e.g. wolves: Perception + Stealth; sages: Arcana + History; brutes: Athletics + Intimidation). Set every other skill_* field to null.
+- Legendary actions: by default a creature has NONE. Set legendary_actions to [] and legendary_action_count to 0 unless explicitly told this is a legendary creature. Only iconic boss-tier monsters (ancient dragons, liches, archdevils, etc.) should have legendary actions, and only when the user requests them.
 - XP must match the standard D&D 5e CR table: CR0=0, CR1/8=25, CR1/4=50, CR1/2=100, CR1=200, CR2=450, CR3=700, CR4=1100, CR5=1800, CR6=2300, CR7=2900, CR8=3900, CR9=5000, CR10=5900, etc.
 - Proficiency bonus: CR0-4=+2, CR5-8=+3, CR9-12=+4, CR13-16=+5, CR17-20=+6, CR21-24=+7, CR25-28=+8, CR29-30=+9.
 - Include at least one action.
@@ -87,6 +88,13 @@ function buildUserPrompt(promptData) {
   if (promptData.personality) lines.push(`Personality / Behaviour: ${promptData.personality}`);
   if (promptData.environment) lines.push(`Environment / Habitat: ${promptData.environment}`);
   if (promptData.special_notes) lines.push(`Special Notes: ${promptData.special_notes}`);
+
+  // Hard directives that override the system prompt's defaults.
+  if (promptData.has_legendary_actions) {
+    lines.push('Legendary creature: provide 3–4 legendary action entries and set legendary_action_count to 3.');
+  } else {
+    lines.push('NOT a legendary creature: legendary_actions MUST be [] and legendary_action_count MUST be 0.');
+  }
   return `Generate a complete D&D 5e stat block for the following creature. Return only JSON.\n\n${lines.join('\n')}`;
 }
 
@@ -114,15 +122,30 @@ async function fetchWithDetail(url, opts) {
   }
 }
 
-async function callOpenAICompat(baseUrl, apiKey, model, messages) {
+// A full 5e stat block in JSON regularly runs 2–4k tokens. Many local
+// servers (LM Studio, vLLM) default to 512 or 1024 max-tokens, which
+// truncates the JSON mid-property and we get a parse error around that
+// position. Generation calls override the cap; the test ping doesn't
+// need it.
+const STATBLOCK_MAX_TOKENS = 4096;
+
+async function callOpenAICompat(baseUrl, apiKey, model, messages, opts = {}) {
   const url = `${normaliseBaseUrl(baseUrl)}/v1/chat/completions`;
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
+  const body = {
+    model: model || 'local-model',
+    messages,
+    temperature: opts.temperature ?? 0.3,
+    stream: false,
+  };
+  if (opts.maxTokens) body.max_tokens = opts.maxTokens;
+
   const res = await fetchWithDetail(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ model: model || 'local-model', messages, temperature: 0.7, stream: false }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -136,12 +159,21 @@ async function callOpenAICompat(baseUrl, apiKey, model, messages) {
   return content;
 }
 
-async function callOllama(baseUrl, model, messages) {
+async function callOllama(baseUrl, model, messages, opts = {}) {
   const url = `${normaliseBaseUrl(baseUrl)}/api/chat`;
+  const body = {
+    model: model || 'llama3',
+    messages,
+    stream: false,
+    options: {
+      temperature: opts.temperature ?? 0.3,
+      ...(opts.maxTokens ? { num_predict: opts.maxTokens } : {}),
+    },
+  };
   const res = await fetchWithDetail(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: model || 'llama3', messages, stream: false }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -155,9 +187,23 @@ async function callOllama(baseUrl, model, messages) {
   return content;
 }
 
-async function callLLM(provider, baseUrl, apiKey, model, messages) {
-  if (provider === 'ollama') return callOllama(baseUrl, model, messages);
-  return callOpenAICompat(baseUrl, apiKey, model, messages);
+async function callLLM(provider, baseUrl, apiKey, model, messages, opts) {
+  if (provider === 'ollama') return callOllama(baseUrl, model, messages, opts);
+  return callOpenAICompat(baseUrl, apiKey, model, messages, opts);
+}
+
+// Cheap structural fixes for the JSON forms LLMs most often emit
+// incorrectly. Trailing commas + smart-quotes are the usual culprits;
+// the missing-comma cases ("Expected ',' or '}' after property value")
+// can't be regex-fixed reliably, so those fall through to the LLM
+// repair retry in /generate.
+function repairJsonText(text) {
+  return text
+    // Smart quotes → straight quotes
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    // Trailing commas before } or ]
+    .replace(/,(\s*[}\]])/g, '$1');
 }
 
 function extractJSON(text) {
@@ -170,7 +216,12 @@ function extractJSON(text) {
   const end = cleaned.lastIndexOf('}');
   if (start === -1 || end === -1) throw new Error('No JSON object found in model response');
 
-  return JSON.parse(cleaned.slice(start, end + 1));
+  const slice = cleaned.slice(start, end + 1);
+  try { return JSON.parse(slice); }
+  catch (firstErr) {
+    try { return JSON.parse(repairJsonText(slice)); }
+    catch { throw firstErr; }
+  }
 }
 
 function normaliseCreature(raw) {
@@ -233,12 +284,291 @@ router.post('/generate', async (req, res) => {
   ];
 
   try {
-    const content = await callLLM(provider, baseUrl, apiKey, model, messages);
-    const raw = extractJSON(content);
+    const content = await callLLM(provider, baseUrl, apiKey, model, messages, {
+      maxTokens: STATBLOCK_MAX_TOKENS,
+      temperature: 0.3,
+    });
+    let raw;
+    try {
+      raw = extractJSON(content);
+    } catch (parseErr) {
+      // Ask the LLM to repair its own JSON. This is cheap and rescues
+      // most truncations / missing-comma errors that regex can't fix.
+      console.warn('AI generate: first parse failed, attempting repair:', parseErr.message);
+      const repairMessages = [
+        { role: 'system', content: 'You are a JSON repair tool. The user will give you a possibly broken JSON object. Output ONLY the corrected, complete JSON object — no markdown, no explanation, no code fences. Preserve all field values. If the input is truncated, complete it sensibly.' },
+        { role: 'user', content: `The parser said: ${parseErr.message}\n\nFix this JSON:\n\n${content}` },
+      ];
+      const repaired = await callLLM(provider, baseUrl, apiKey, model, repairMessages, {
+        maxTokens: STATBLOCK_MAX_TOKENS,
+        temperature: 0,
+      });
+      try {
+        raw = extractJSON(repaired);
+      } catch (repairErr) {
+        throw new Error(`Model returned invalid JSON and repair failed: ${parseErr.message}`);
+      }
+    }
     const creature = normaliseCreature(raw);
+
+    // Belt-and-braces: even if the model ignored the directive, strip
+    // legendary actions when the user didn't ask for them.
+    if (!promptData.has_legendary_actions) {
+      creature.legendary_actions = [];
+      creature.legendary_action_count = 0;
+    }
+
+    // Sanity nets for over-eager save / skill assignment. When the
+    // model fills nearly every slot it's almost always the lazy
+    // "everything proficient" failure mode rather than an
+    // intentionally specialised creature, so we reset the lot and let
+    // the DM hand-pick.
+    const SAVE_FIELDS = ['save_str','save_dex','save_con','save_int','save_wis','save_cha'];
+    const proficientSaves = SAVE_FIELDS.filter((f) => creature[f] != null).length;
+    if (proficientSaves >= 5) {
+      console.warn(`AI generate: model assigned ${proficientSaves}/6 saves — clearing as lazy fill`);
+      for (const f of SAVE_FIELDS) creature[f] = null;
+    }
+    const SKILL_FIELDS = [
+      'skill_acrobatics','skill_animal_handling','skill_arcana','skill_athletics',
+      'skill_deception','skill_history','skill_insight','skill_intimidation',
+      'skill_investigation','skill_medicine','skill_nature','skill_perception',
+      'skill_performance','skill_persuasion','skill_religion','skill_sleight_of_hand',
+      'skill_stealth','skill_survival',
+    ];
+    const proficientSkills = SKILL_FIELDS.filter((f) => creature[f] != null).length;
+    if (proficientSkills >= 10) {
+      console.warn(`AI generate: model assigned ${proficientSkills}/18 skills — clearing as lazy fill`);
+      for (const f of SKILL_FIELDS) creature[f] = null;
+    }
+
     res.json(creature);
   } catch (err) {
     console.error('AI generate error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────
+// Image generation (SwarmUI)
+// ───────────────────────────────────────────────────────────────────
+// SwarmUI exposes its API at <base>/API/<Command>. The two we use:
+//   POST /API/GetNewSession           → { session_id }
+//   POST /API/GenerateText2Image      → { images: [<url-or-base64>], ... }
+// Sessions are cheap; we acquire a fresh one per call to avoid stale
+// state when the user restarts SwarmUI.
+
+const SWARMUI_DEFAULT_PROMPT = 'fantasy portrait of a {name}, detailed digital painting, dramatic lighting, painterly';
+const SWARMUI_DEFAULT_NEG_SFW = 'low quality, blurry, distorted, watermark, text, signature, nsfw, nude, explicit, sexual, gore';
+const SWARMUI_DEFAULT_NEG_NSFW = 'low quality, blurry, distorted, watermark, text, signature';
+
+async function swarmuiGetSession(baseUrl) {
+  const url = `${normaliseBaseUrl(baseUrl)}/API/GetNewSession`;
+  const res = await fetchWithDetail(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`SwarmUI session ${res.status}: ${txt.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  if (!data.session_id) throw new Error('SwarmUI did not return a session_id');
+  return data.session_id;
+}
+
+// SwarmUI API: list models in the Stable-Diffusion folder. Returns
+// names without the path prefix or extension — the form SwarmUI's
+// generate endpoint actually expects.
+async function swarmuiListModels(baseUrl, sessionId) {
+  const url = `${normaliseBaseUrl(baseUrl)}/API/ListModels`;
+  const res = await fetchWithDetail(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId, path: '', depth: 4, subtype: 'Stable-Diffusion' }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`SwarmUI list models ${res.status}: ${txt.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  if (data.error) throw new Error(`SwarmUI: ${data.error}`);
+  // Response shape: { folders: [...], files: [{ name, title, ... }, ...] }
+  const files = Array.isArray(data.files) ? data.files : [];
+  return files.map((f) => f.name || f.title).filter(Boolean);
+}
+
+// SwarmUI returns images either as relative paths under /Output/... or
+// as raw base64. Normalise both into a data: URI so the caller doesn't
+// have to care.
+async function swarmuiResolveImage(baseUrl, item) {
+  if (!item) throw new Error('Empty image entry from SwarmUI');
+  if (typeof item === 'string') {
+    if (item.startsWith('data:')) return item;
+    // Treat anything else as a path on the SwarmUI server.
+    const url = item.startsWith('http')
+      ? item
+      : `${normaliseBaseUrl(baseUrl)}${item.startsWith('/') ? '' : '/'}${item}`;
+    console.log(`SwarmUI: fetching image at ${url}`);
+    const res = await fetchWithDetail(url, { method: 'GET' });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Image fetch ${res.status} for ${url} — ${body.slice(0, 200)}`);
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length) throw new Error(`Image fetch returned 0 bytes for ${url}`);
+    const ct = res.headers.get('content-type') || 'image/png';
+    return `data:${ct};base64,${buf.toString('base64')}`;
+  }
+  if (typeof item === 'object') {
+    // SwarmUI variants: { image: 'path' }, { url: 'path' }, { src: 'path' }
+    const candidate = item.image || item.url || item.src || item.path;
+    if (candidate) return swarmuiResolveImage(baseUrl, candidate);
+  }
+  throw new Error(`Unrecognised image entry shape from SwarmUI: ${JSON.stringify(item).slice(0, 200)}`);
+}
+
+async function swarmuiGenerate({ baseUrl, model, prompt, negativePrompt, width, height, steps, cfgScale, seed }) {
+  const sessionId = await swarmuiGetSession(baseUrl);
+
+  // SwarmUI requires an explicit model — there's no "use whatever's
+  // loaded" mode in the API. If the caller didn't supply one, list
+  // the available models and pick the first.
+  let resolvedModel = model;
+  if (!resolvedModel) {
+    const list = await swarmuiListModels(baseUrl, sessionId);
+    if (!list.length) throw new Error('SwarmUI has no Stable-Diffusion models installed');
+    resolvedModel = list[0];
+  }
+
+  const url = `${normaliseBaseUrl(baseUrl)}/API/GenerateText2Image`;
+  const payload = {
+    session_id: sessionId,
+    images: 1,
+    prompt,
+    negativeprompt: negativePrompt || '',
+    width: width || 768,
+    height: height || 768,
+    steps: steps || 25,
+    cfgscale: cfgScale || 6,
+    seed: seed != null ? seed : -1,
+    model: resolvedModel,
+  };
+
+  const res = await fetchWithDetail(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`SwarmUI generate ${res.status}: ${txt.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  // Dump the full response shape so we can see exactly what SwarmUI
+  // sent — invaluable when versions diverge.
+  console.log('SwarmUI generate response keys:', Object.keys(data));
+  console.log('SwarmUI generate response (truncated):', JSON.stringify(data).slice(0, 800));
+
+  if (data.error) throw new Error(`SwarmUI: ${data.error}`);
+  // Try several known response shapes.
+  let list = [];
+  if (Array.isArray(data.images)) list = data.images;
+  else if (Array.isArray(data.image)) list = data.image;
+  else if (typeof data.image === 'string') list = [data.image];
+  else if (Array.isArray(data.results)) list = data.results;
+  else if (Array.isArray(data.outputs)) list = data.outputs;
+
+  if (!list.length) {
+    throw new Error(`SwarmUI returned no images. Response keys: ${Object.keys(data).join(',')} — body: ${JSON.stringify(data).slice(0, 300)}`);
+  }
+  return swarmuiResolveImage(baseUrl, list[0]);
+}
+
+function buildImagePrompt(template, name, appearance) {
+  let t = (template && template.includes('{name}'))
+    ? template
+    : (template ? `${template}, {name}` : SWARMUI_DEFAULT_PROMPT);
+  // Substitute placeholders. If {appearance} isn't in the template
+  // but we have an appearance string, append it so the user benefits
+  // from extra detail without having to update their template.
+  const hasAppearancePlaceholder = t.includes('{appearance}');
+  t = t.replace(/\{name\}/g, name || '');
+  t = t.replace(/\{appearance\}/g, appearance ? appearance.trim() : '');
+  if (!hasAppearancePlaceholder && appearance && appearance.trim()) {
+    t = `${t}, ${appearance.trim()}`;
+  }
+  // Tidy up: collapse runs of whitespace/commas left behind by empty
+  // substitutions.
+  return t.replace(/,\s*,/g, ',').replace(/\s+,/g, ',').replace(/\s{2,}/g, ' ').trim().replace(/^,\s*|,\s*$/g, '');
+}
+
+// POST /api/ai/test-image — verify SwarmUI is reachable + return the
+// list of installed models so the user can pick one for the Model field.
+router.post('/test-image', async (req, res) => {
+  const { provider, baseUrl } = req.body;
+  if (!baseUrl) return res.status(400).json({ error: 'baseUrl is required' });
+  if (provider && provider !== 'swarmui') {
+    return res.status(400).json({ error: `Unsupported image provider: ${provider}` });
+  }
+  try {
+    const sid = await swarmuiGetSession(baseUrl);
+    let models = [];
+    try { models = await swarmuiListModels(baseUrl, sid); } catch { /* model list failure is non-fatal for the test */ }
+    res.json({ ok: true, preview: `Session ${sid.slice(0, 8)}…`, models });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// POST /api/ai/generate-image — generate one image
+// Body: { provider, baseUrl, model, name, promptTemplate, negativePrompt,
+//         allowNsfw, width, height, steps, cfgScale, seed }
+// Response: { image: 'data:image/...;base64,...' }
+router.post('/generate-image', async (req, res) => {
+  const {
+    provider = 'swarmui',
+    baseUrl,
+    model,
+    name,
+    appearance,
+    promptTemplate,
+    rawPrompt,
+    negativePrompt,
+    allowNsfw = false,
+    width, height, steps, cfgScale, seed,
+  } = req.body;
+
+  if (!baseUrl) return res.status(400).json({ error: 'baseUrl is required' });
+  if (!rawPrompt && !name) return res.status(400).json({ error: 'name or rawPrompt is required' });
+  if (provider !== 'swarmui') {
+    return res.status(400).json({ error: `Unsupported image provider: ${provider}` });
+  }
+
+  // rawPrompt skips template substitution entirely — used by the
+  // "edit prompt before regenerating" flow. Otherwise build from the
+  // saved template + creature name + appearance.
+  const prompt = (rawPrompt && rawPrompt.trim())
+    ? rawPrompt.trim()
+    : buildImagePrompt(promptTemplate, name, appearance);
+  // The negative prompt is the safety lever. When NSFW is disallowed
+  // we *append* the safety terms so the user's own negative additions
+  // are preserved. When NSFW is allowed we just use the user's
+  // negative prompt verbatim (or a quality-only default).
+  const finalNeg = allowNsfw
+    ? (negativePrompt || SWARMUI_DEFAULT_NEG_NSFW)
+    : `${negativePrompt ? negativePrompt + ', ' : ''}${SWARMUI_DEFAULT_NEG_SFW}`;
+
+  try {
+    const image = await swarmuiGenerate({
+      baseUrl, model, prompt,
+      negativePrompt: finalNeg,
+      width, height, steps, cfgScale, seed,
+    });
+    res.json({ image, prompt });
+  } catch (err) {
+    console.error('AI generate-image error:', err);
     res.status(500).json({ error: err.message });
   }
 });

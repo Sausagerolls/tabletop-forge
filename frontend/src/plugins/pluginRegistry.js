@@ -235,6 +235,13 @@ export async function loadPlugins({ context = {} } = {}) {
         if (!context.socket) return;
         try { context.socket.emit('plugin_event', { pluginId: row.id, type, payload }); } catch {}
       };
+      // Read the host's AI configuration fresh on every call so a plugin
+      // picks up settings the DM saves AFTER the plugin loaded. Returns
+      // null when AI hasn't been configured yet.
+      const getAiSettings = () => {
+        try { return JSON.parse(localStorage.getItem('dndvtt_ai_settings') || 'null'); }
+        catch { return null; }
+      };
       reg.register({
         React,
         ReactKonva,
@@ -259,6 +266,7 @@ export async function loadPlugins({ context = {} } = {}) {
           subscribe,
           emitEvent,
           subscribeRegistry,
+          getAiSettings,
         },
       });
       loaded.set(row.id, { mod: reg, manifest: row.manifest });
@@ -321,12 +329,16 @@ export async function reloadPlugin(pluginId, ctx = {}) {
       if (!ctx.socket) return;
       try { ctx.socket.emit('plugin_event', { pluginId: row.id, type, payload }); } catch {}
     };
+    const getAiSettings = () => {
+      try { return JSON.parse(localStorage.getItem('dndvtt_ai_settings') || 'null'); }
+      catch { return null; }
+    };
     if (ctx.socket) setupPluginEventBus(ctx.socket);
     reg.register({
       React,
       ReactKonva,
       registries,
-      context: { ...ctx, manifest: row.manifest, pluginId: row.id, data, notifyChange: bumpRegistry, subscribe, emitEvent, subscribeRegistry },
+      context: { ...ctx, manifest: row.manifest, pluginId: row.id, data, notifyChange: bumpRegistry, subscribe, emitEvent, subscribeRegistry, getAiSettings },
     });
     loaded.set(row.id, { mod: reg, manifest: row.manifest });
     bumpRegistry();

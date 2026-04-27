@@ -28,9 +28,12 @@ export default function AIGeneratorModal({ aiSettings, onGenerated, onCancel }) 
     personality: '',
     environment: '',
     special_notes: '',
+    has_legendary_actions: false,
   });
   const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState(''); // '' | 'statblock' | 'image'
   const [error, setError] = useState('');
+  const [imageWarning, setImageWarning] = useState('');
 
   function setField(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -40,7 +43,9 @@ export default function AIGeneratorModal({ aiSettings, onGenerated, onCancel }) 
     e.preventDefault();
     if (!form.name.trim()) { setError('Name is required'); return; }
     setLoading(true);
+    setPhase('statblock');
     setError('');
+    setImageWarning('');
 
     try {
       const res = await fetch('/api/ai/generate', {
@@ -62,11 +67,50 @@ export default function AIGeneratorModal({ aiSettings, onGenerated, onCancel }) 
         throw new Error(res.status === 504 ? 'Request timed out — the model is taking too long. Try a simpler prompt or a faster model.' : `Server error ${res.status}: unexpected response`);
       }
       if (!res.ok) throw new Error(data.error || 'Generation failed');
+
+      // Optional second pass: portrait via SwarmUI. Failure here is
+      // soft — we still hand back the stat block so the user can edit
+      // and save without the image.
+      if (aiSettings.imageEnabled && aiSettings.imageBaseUrl) {
+        setPhase('image');
+        try {
+          const imgRes = await fetch('/api/ai/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider:       aiSettings.imageProvider || 'swarmui',
+              baseUrl:        aiSettings.imageBaseUrl,
+              model:          aiSettings.imageModel || '',
+              name:           data.name || form.name,
+              appearance:     form.appearance || '',
+              promptTemplate: aiSettings.imagePromptTemplate || '',
+              negativePrompt: aiSettings.imageNegativePrompt || '',
+              allowNsfw:      !!aiSettings.imageAllowNsfw,
+              width:          aiSettings.imageWidth,
+              height:         aiSettings.imageHeight,
+              steps:          aiSettings.imageSteps,
+              cfgScale:       aiSettings.imageCfgScale,
+            }),
+          });
+          if (!imgRes.ok) {
+            const errText = await imgRes.text().catch(() => '');
+            let parsed = null; try { parsed = JSON.parse(errText); } catch {}
+            setImageWarning(parsed?.error || `Image generation failed (${imgRes.status})`);
+          } else {
+            const imgData = await imgRes.json();
+            if (imgData.image) data.image_data = imgData.image;
+          }
+        } catch (imgErr) {
+          setImageWarning(imgErr?.message || String(imgErr));
+        }
+      }
+
       onGenerated(data);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setPhase('');
     }
   }
 
@@ -96,6 +140,12 @@ export default function AIGeneratorModal({ aiSettings, onGenerated, onCancel }) 
           {error && (
             <div className="text-red-400 text-sm bg-red-900/30 rounded-lg p-3 border border-red-800">
               {error}
+            </div>
+          )}
+          {imageWarning && (
+            <div className="text-amber-300 text-xs bg-amber-900/20 rounded-lg p-3 border border-amber-700/40 leading-snug">
+              <span className="font-semibold">Image gen failed:</span> {imageWarning}
+              <div className="text-amber-200/70 mt-1">Stat block was generated successfully — you can save without an image or upload one manually.</div>
             </div>
           )}
 
@@ -173,6 +223,21 @@ export default function AIGeneratorModal({ aiSettings, onGenerated, onCancel }) 
               onChange={(e) => setField('special_notes', e.target.value)}
             />
           </div>
+
+          <label className="flex items-start gap-2 cursor-pointer select-none pt-1">
+            <input
+              type="checkbox"
+              className="mt-0.5 accent-dnd-gold"
+              checked={!!form.has_legendary_actions}
+              onChange={(e) => setField('has_legendary_actions', e.target.checked)}
+            />
+            <span>
+              <span className="text-sm text-gray-200 font-semibold">Legendary creature</span>
+              <span className="block text-xs text-gray-400 leading-snug">
+                Tick for boss-tier monsters (ancient dragons, liches, etc.) that should have legendary actions. Off by default.
+              </span>
+            </span>
+          </label>
         </form>
 
         {/* Footer */}
@@ -194,7 +259,7 @@ export default function AIGeneratorModal({ aiSettings, onGenerated, onCancel }) 
             {loading ? (
               <>
                 <SpinnerIcon />
-                Generating...
+                {phase === 'image' ? 'Generating portrait...' : 'Generating...'}
               </>
             ) : (
               <><SparkleIcon /> Generate Stat Block</>

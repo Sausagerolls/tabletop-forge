@@ -1,61 +1,48 @@
 import React, { useState, useEffect } from 'react';
+import CreatureForm from './CreatureForm.jsx';
 
 // CharacterSetup — the first screen a player sees when they follow the
-// join link. Replaces the old "thrown into the session as 'Adventurer'
-// with no token" experience.
+// join link. Mirrors the player flow on the Landing page (steps 1-2 of
+// the "Join as Player" tab) so a deep-linked join is the same UX as
+// entering through the front door:
+//   1. Player name (deep links skip Landing's name+code form so we
+//      need to collect this ourselves).
+//   2. Pick from existing characters owned by that name, or
+//   3. Open the full CreatureForm to build a brand-new character with
+//      every stat block field the host supports.
 //
-// Two paths:
-//   1. The player has previously played in this game (or someone else
-//      using the same name has) — their existing character creatures
-//      show up as picker chips and they can hop straight in.
-//   2. New player — fill out a minimal stat block (name, class, level,
-//      HP/AC, six ability scores). We POST it to /api/creatures with
-//      `is_player_character=true` and `player_owner=<player name>` so
-//      the DM can find and edit it later in the Library.
-//
-// The `is_player_character` + `player_owner` fields are how the host
-// already filters "characters" vs "monsters" in the library.
+// We use the same `CreatureForm` component the Library + Landing use
+// — the user explicitly asked for the regular character creator to
+// show up here too, instead of a minimal stub.
 
-const CLASSES = [
-  'Barbarian', 'Bard', 'Cleric', 'Druid', 'Fighter', 'Monk',
-  'Paladin', 'Ranger', 'Rogue', 'Sorcerer', 'Warlock', 'Wizard',
-];
-
-const SIZES = [
-  { value: 'small',  label: 'Small'  },
-  { value: 'medium', label: 'Medium' },
-  { value: 'large',  label: 'Large'  },
-];
+const PersonIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 inline">
+    <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+  </svg>
+);
 
 export default function CharacterSetup({ sessionCode, initial, onComplete }) {
   const [playerName, setPlayerName] = useState(initial.name || '');
-  const [step, setStep] = useState('name');     // 'name' | 'pick' | 'create'
+  const [step, setStep] = useState('name');     // 'name' | 'pick'
   const [characters, setCharacters] = useState([]);
-  const [loadingChars, setLoadingChars] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    name: '',
-    char_class: 'Fighter',
-    char_level: 1,
-    armor_class: 12,
-    max_hp: 10,
-    size: 'medium',
-    strength: 10, dexterity: 10, constitution: 10,
-    intelligence: 10, wisdom: 10, charisma: 10,
-  });
-  const [submitting, setSubmitting] = useState(false);
+  const [charsLoading, setCharsLoading] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [error, setError] = useState(null);
 
-  // Once the player commits a name, fetch every character they've
-  // already created (matched by player_owner). The host's
-  // GET /api/creatures supports filter=characters + player_owner.
+  // Match Landing's step-2 effect: load every character owned by this
+  // player name. Empty list jumps straight to the creation form.
   useEffect(() => {
     if (step !== 'pick') return;
-    setLoadingChars(true);
-    fetch(`/api/creatures?filter=characters&player_owner=${encodeURIComponent(playerName)}`)
+    setCharsLoading(true);
+    setShowCreateForm(false);
+    fetch(`/api/creatures?filter=characters&player_owner=${encodeURIComponent(playerName.trim())}`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((rows) => setCharacters(Array.isArray(rows) ? rows : []))
-      .catch(() => setCharacters([]))
-      .finally(() => setLoadingChars(false));
+      .then((data) => {
+        setCharacters(Array.isArray(data) ? data : []);
+        if (!Array.isArray(data) || data.length === 0) setShowCreateForm(true);
+      })
+      .catch(() => { setCharacters([]); setShowCreateForm(true); })
+      .finally(() => setCharsLoading(false));
   }, [step, playerName]);
 
   function commitName(e) {
@@ -76,246 +63,141 @@ export default function CharacterSetup({ sessionCode, initial, onComplete }) {
     });
   }
 
-  async function createAndJoin() {
-    const f = createForm;
-    if (!f.name.trim()) { setError('Character name is required.'); return; }
-    setSubmitting(true); setError(null);
-    try {
-      // The creatures endpoint expects multipart form-data and JSONB
-      // fields stringified — same shape the SRD packs and encounter
-      // builder use. Player-character flag + owner are how the DM's
-      // library filters this row in the Characters tab.
-      const fd = new FormData();
-      fd.append('name', f.name.trim());
-      fd.append('size', f.size);
-      fd.append('creature_type', 'Humanoid');
-      fd.append('alignment', 'True Neutral');
-      fd.append('armor_class', String(f.armor_class));
-      fd.append('hit_points', String(f.max_hp));
-      fd.append('speed_walk', '30');
-      fd.append('strength',     String(f.strength));
-      fd.append('dexterity',    String(f.dexterity));
-      fd.append('constitution', String(f.constitution));
-      fd.append('intelligence', String(f.intelligence));
-      fd.append('wisdom',       String(f.wisdom));
-      fd.append('charisma',     String(f.charisma));
-      fd.append('challenge_rating', '0');
-      fd.append('proficiency_bonus', String(2 + Math.floor((Math.max(1, f.char_level) - 1) / 4)));
-      fd.append('is_player_character', 'true');
-      fd.append('player_owner', playerName);
-      fd.append('char_class', f.char_class);
-      fd.append('char_level', String(f.char_level));
-      const res = await fetch('/api/creatures', { method: 'POST', body: fd });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status} — ${text.slice(0, 200)}`);
-      }
-      const inserted = await res.json();
-      onComplete({
-        name: playerName,
-        creatureId: inserted.id,
-        maxHp: f.max_hp,
-        size: f.size,
-      });
-    } catch (err) {
-      setError(`Could not save character: ${err.message || err}`);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  function ScoreRow({ field, label }) {
-    return (
-      <div className="flex items-center gap-2">
-        <label className="text-xs text-gray-400 w-24 shrink-0">{label}</label>
-        <input
-          type="number" min={1} max={30}
-          value={createForm[field]}
-          onChange={(e) => setCreateForm({ ...createForm, [field]: Number(e.target.value) || 10 })}
-          className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
-        />
-        <span className="text-[10px] text-gray-500">
-          mod {Math.floor((createForm[field] - 10) / 2) >= 0 ? '+' : ''}{Math.floor((createForm[field] - 10) / 2)}
-        </span>
-      </div>
-    );
+  // CreatureForm calls onSave with the full saved row — pull out the
+  // fields create_player_token cares about and let the connection
+  // effect take it from there.
+  function handleCharacterSaved(creature) {
+    onComplete({
+      name: playerName,
+      creatureId: creature.id,
+      maxHp: creature.hit_points || 20,
+      size: creature.size || 'medium',
+    });
   }
 
   return (
     <div className="min-h-screen bg-dnd-dark flex items-center justify-center p-4">
-      <div className="w-full max-w-lg bg-dnd-panel border border-gray-700 rounded-2xl shadow-2xl p-6">
-        <div className="text-center mb-5">
+      <div className={step === 'pick' && showCreateForm ? 'w-full max-w-3xl' : 'w-full max-w-md'}>
+        <div className="text-center mb-6">
           <div className="text-xs text-gray-500 uppercase tracking-widest">Joining session</div>
           <div className="text-xl font-bold font-mono text-dnd-gold tracking-widest mt-0.5">{sessionCode}</div>
         </div>
 
-        {step === 'name' && (
-          <form onSubmit={commitName} className="space-y-3">
-            <h2 className="text-lg text-parchment text-center font-semibold">Who's playing?</h2>
-            <p className="text-xs text-gray-400 text-center leading-snug">
-              Use the same name every session — your characters are saved against this name so you can pick them up next time.
-            </p>
-            <input
-              autoFocus
-              type="text"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              placeholder="Your name"
-              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-center text-lg"
-            />
-            {error && <div className="text-xs text-red-300 text-center">{error}</div>}
-            <button
-              type="submit"
-              className="w-full bg-dnd-gold hover:bg-yellow-500 text-gray-900 font-semibold py-2 rounded-lg"
-            >Continue</button>
-          </form>
-        )}
-
-        {step === 'pick' && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg text-parchment font-semibold">Choose your character</h2>
+        <div className="bg-dnd-panel rounded-xl shadow-2xl border border-gray-700 p-6">
+          {step === 'name' && (
+            <form onSubmit={commitName} className="space-y-4">
+              <h2 className="text-lg text-parchment text-center font-semibold">Who's playing?</h2>
+              <p className="text-xs text-gray-400 text-center leading-snug">
+                Use the same name every session — your characters are saved against this name so you can pick one up again next time.
+              </p>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Your Name</label>
+                <input
+                  autoFocus
+                  type="text"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  placeholder="Thorin Oakenshield"
+                  className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-dnd-gold"
+                  required
+                />
+              </div>
+              {error && (
+                <div className="p-3 bg-red-900/50 border border-red-500 rounded-lg text-red-200 text-sm">
+                  {error}
+                </div>
+              )}
               <button
-                onClick={() => setStep('name')}
-                className="text-[11px] text-gray-500 hover:text-gray-300"
-              >← Change name</button>
-            </div>
-            <p className="text-xs text-gray-400 leading-snug">
-              Hi <span className="text-dnd-gold">{playerName}</span>. Pick an existing character below, or build a new one from scratch.
-            </p>
+                type="submit"
+                className="w-full bg-dnd-red hover:bg-red-700 text-white py-3 rounded-lg font-semibold transition-colors"
+              >Next →</button>
+            </form>
+          )}
 
-            {loadingChars && (
-              <div className="text-xs text-gray-500 italic text-center py-3">Loading your characters…</div>
-            )}
+          {step === 'pick' && (
+            <div className="space-y-4">
+              <div className="text-center">
+                <div className="mb-1 flex justify-center text-dnd-gold"><PersonIcon /></div>
+                <h2 className="text-dnd-gold font-semibold">Choose Your Character</h2>
+                <p className="text-xs text-gray-400 mt-1">{playerName}</p>
+              </div>
 
-            {!loadingChars && characters.length > 0 && (
-              <div className="space-y-1.5">
-                {characters.map((c) => (
+              {charsLoading && (
+                <div className="text-center text-gray-500 py-4">Loading characters...</div>
+              )}
+
+              {/* Existing characters list — matches the Landing layout */}
+              {!charsLoading && !showCreateForm && characters.length > 0 && (
+                <div className="space-y-3">
+                  {characters.map((c) => {
+                    const imgUrl = c.image_path ? `/uploads/${c.image_path}` : '/uploads/creatures/default_player.png';
+                    return (
+                      <div
+                        key={c.id}
+                        className="flex items-center gap-3 bg-gray-800 rounded-xl p-3 border border-gray-700 hover:border-dnd-gold/50 cursor-pointer transition-colors"
+                        onClick={() => pickCharacter(c)}
+                      >
+                        <div className="w-12 h-12 rounded-full bg-gray-700 overflow-hidden shrink-0 flex items-center justify-center">
+                          {imgUrl
+                            ? <img src={imgUrl} alt={c.name} className="w-full h-full object-cover" />
+                            : <span className="text-2xl">🧙</span>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-white text-sm truncate">{c.name}</div>
+                          <div className="text-xs text-gray-400">
+                            {c.creature_type || 'Humanoid'} • HP {c.hit_points} • AC {c.armor_class}
+                          </div>
+                        </div>
+                        <div className="text-dnd-gold text-sm shrink-0">Play →</div>
+                      </div>
+                    );
+                  })}
                   <button
-                    key={c.id}
-                    onClick={() => pickCharacter(c)}
-                    className="w-full text-left bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg px-3 py-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-white font-semibold truncate">{c.name}</span>
-                      <span className="text-[10px] text-dnd-gold uppercase tracking-wider shrink-0">
-                        {c.char_class || 'class?'} {c.char_level ? `· lvl ${c.char_level}` : ''}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-gray-400 mt-0.5">
-                      AC {c.armor_class || '?'} · HP {c.hit_points || '?'} · {c.size || 'medium'}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
+                    onClick={() => setShowCreateForm(true)}
+                    className="w-full py-2 text-sm text-dnd-gold border border-dnd-gold/40 rounded-lg hover:bg-dnd-gold/10 transition-colors"
+                  >+ Create New Character</button>
+                  <button
+                    type="button"
+                    onClick={() => setStep('name')}
+                    className="w-full text-sm text-gray-400 hover:text-gray-200 py-1"
+                  >← Change name</button>
+                </div>
+              )}
 
-            {!loadingChars && characters.length === 0 && (
-              <div className="text-xs text-gray-500 italic text-center py-3">
-                No characters saved under this name yet — build one below.
-              </div>
-            )}
-
-            <button
-              onClick={() => { setStep('create'); setCreateForm((f) => ({ ...f, name: f.name || '' })); }}
-              className="w-full bg-emerald-800/60 hover:bg-emerald-700/70 border border-emerald-700/60 text-emerald-100 font-semibold py-2 rounded-lg"
-            >+ Build a new character</button>
-          </div>
-        )}
-
-        {step === 'create' && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg text-parchment font-semibold">New character</h2>
-              <button
-                onClick={() => setStep('pick')}
-                className="text-[11px] text-gray-500 hover:text-gray-300"
-              >← Back</button>
+              {/* Full creator — same component the DM Library and the
+                  Landing page's player flow use, so the experience is
+                  identical regardless of how the player got here. */}
+              {!charsLoading && showCreateForm && (
+                <div className="space-y-3">
+                  <div className="border border-gray-700 rounded-xl overflow-hidden" style={{ height: '460px' }}>
+                    <CreatureForm
+                      creature={null}
+                      onSave={handleCharacterSaved}
+                      onCancel={characters.length > 0 ? () => setShowCreateForm(false) : () => setStep('name')}
+                      extraFields={{ is_player_character: 'true', player_owner: playerName.trim() }}
+                      submitLabel="Enter the Adventure"
+                      isPlayerCharacter
+                    />
+                  </div>
+                  {characters.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateForm(false)}
+                      className="w-full text-sm text-gray-400 hover:text-gray-200 py-1"
+                    >← Back to Characters</button>
+                  )}
+                  {characters.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setStep('name')}
+                      className="w-full text-sm text-gray-400 hover:text-gray-200 py-1"
+                    >← Change name</button>
+                  )}
+                </div>
+              )}
             </div>
-
-            <input
-              autoFocus
-              type="text"
-              value={createForm.name}
-              onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-              placeholder="Character name"
-              className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white"
-            />
-
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={createForm.char_class}
-                onChange={(e) => setCreateForm({ ...createForm, char_class: e.target.value })}
-                className="bg-gray-800 border border-gray-700 rounded px-2 py-2 text-sm text-white"
-              >
-                {CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <input
-                type="number" min={1} max={20}
-                value={createForm.char_level}
-                onChange={(e) => setCreateForm({ ...createForm, char_level: Number(e.target.value) || 1 })}
-                placeholder="Level"
-                className="bg-gray-800 border border-gray-700 rounded px-2 py-2 text-sm text-white"
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="text-[10px] text-gray-500 uppercase tracking-wider">AC</label>
-                <input
-                  type="number" min={5} max={30}
-                  value={createForm.armor_class}
-                  onChange={(e) => setCreateForm({ ...createForm, armor_class: Number(e.target.value) || 10 })}
-                  className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-500 uppercase tracking-wider">Max HP</label>
-                <input
-                  type="number" min={1} max={999}
-                  value={createForm.max_hp}
-                  onChange={(e) => setCreateForm({ ...createForm, max_hp: Number(e.target.value) || 1 })}
-                  className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-500 uppercase tracking-wider">Size</label>
-                <select
-                  value={createForm.size}
-                  onChange={(e) => setCreateForm({ ...createForm, size: e.target.value })}
-                  className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
-                >
-                  {SIZES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-1.5 bg-gray-800/40 border border-gray-700 rounded-lg p-3">
-              <div className="text-[10px] text-gray-500 uppercase tracking-wider">Ability scores</div>
-              <ScoreRow field="strength"     label="Strength" />
-              <ScoreRow field="dexterity"    label="Dexterity" />
-              <ScoreRow field="constitution" label="Constitution" />
-              <ScoreRow field="intelligence" label="Intelligence" />
-              <ScoreRow field="wisdom"       label="Wisdom" />
-              <ScoreRow field="charisma"     label="Charisma" />
-            </div>
-
-            {error && (
-              <div className="text-[11px] text-red-300 bg-red-950/40 border border-red-900/40 rounded px-2 py-1">
-                {error}
-              </div>
-            )}
-
-            <button
-              onClick={createAndJoin}
-              disabled={submitting || !createForm.name.trim()}
-              className="w-full bg-dnd-gold hover:bg-yellow-500 text-gray-900 font-semibold py-2 rounded-lg disabled:opacity-50"
-            >{submitting ? 'Saving…' : 'Save & enter session'}</button>
-            <p className="text-[10px] text-gray-500 leading-snug text-center">
-              The DM can flesh this out later in the Library — name and the basic numbers are all you need to start.
-            </p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

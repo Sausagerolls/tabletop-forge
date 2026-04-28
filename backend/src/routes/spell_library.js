@@ -1209,6 +1209,9 @@ router.post('/', async (req, res) => {
   try {
     const s = normaliseSpell(req.body);
     if (!s) return res.status(400).json({ error: 'Invalid spell' });
+    // xmax = 0 distinguishes a fresh insert from an UPSERT-driven update,
+    // so the client can show "added" vs "overwrote existing" without an
+    // extra round-trip.
     const row = (await db.query(
       `INSERT INTO spell_library (id, name, level, type, school, casting_time, range_area, duration,
        comp_v, comp_s, comp_m, comp_m_text, attack_save, save_ability, damage_entries, extra_effects, description, source, allowed_classes)
@@ -1220,7 +1223,7 @@ router.post('/', async (req, res) => {
          attack_save=EXCLUDED.attack_save, save_ability=EXCLUDED.save_ability,
          damage_entries=EXCLUDED.damage_entries, extra_effects=EXCLUDED.extra_effects, description=EXCLUDED.description,
          allowed_classes=EXCLUDED.allowed_classes
-       RETURNING *`,
+       RETURNING *, (xmax = 0) AS _created`,
       [
         uuidv4(), s.name, s.level, s.type, s.school, s.casting_time, s.range_area, s.duration,
         s.comp_v, s.comp_s, s.comp_m, s.comp_m_text, s.attack_save, s.save_ability,
@@ -1229,7 +1232,7 @@ router.post('/', async (req, res) => {
         JSON.stringify(s.allowed_classes),
       ]
     )).rows[0];
-    res.status(201).json(row);
+    res.status(row._created ? 201 : 200).json(row);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -17,6 +17,8 @@ export default function SpellLibrary({ aiSettings }) {
   const [scanResult, setScanResult] = useState(null);
   const [scanError, setScanError] = useState('');
   const [editing, setEditing] = useState(null); // spell row being edited or null
+  const [creating, setCreating] = useState(null); // blank-spell draft when adding manually, or null
+  const [createError, setCreateError] = useState('');
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewItems, setReviewItems] = useState([]);
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -364,6 +366,44 @@ export default function SpellLibrary({ aiSettings }) {
     }
   }
 
+  function startCreate() {
+    setCreateError('');
+    setCreating({
+      name: '', level: 0, type: 'utility', school: '',
+      casting_time: '', range_area: '', duration: '',
+      comp_v: false, comp_s: false, comp_m: false, comp_m_text: '',
+      attack_save: '', save_ability: '',
+      damage_entries: [], extra_effects: '', description: '',
+      allowed_classes: [],
+    });
+  }
+
+  async function handleSaveNew(draft) {
+    setCreateError('');
+    if (!draft.name?.trim()) {
+      setCreateError('Name is required.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/spell-library', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...draft, source: 'manual' }),
+      });
+      const row = await res.json();
+      if (!res.ok || row.error) throw new Error(row.error || `HTTP ${res.status}`);
+      // POST upserts on name conflict — _created (from xmax=0) tells us
+      // whether this was a fresh row or an overwrite of an existing entry.
+      setImportStatus(row._created
+        ? `Added "${row.name}" to the library.`
+        : `"${row.name}" already existed — overwrote it with the new fields.`);
+      setCreating(null);
+      await load();
+    } catch (err) {
+      setCreateError(err.message);
+    }
+  }
+
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4">
       {/* Open5e ruleset toggle — controls which SRD scans + refreshes pull from. */}
@@ -525,6 +565,14 @@ export default function SpellLibrary({ aiSettings }) {
         <div className="flex items-center justify-between">
           <h4 className="text-sm font-semibold text-dnd-gold">Library {spells.length > 0 && <span className="text-xs text-gray-500 font-normal">({spells.length})</span>}</h4>
           <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={startCreate}
+              disabled={!!creating}
+              className="text-xs bg-dnd-gold hover:bg-yellow-500 disabled:opacity-50 text-gray-900 font-semibold px-2 py-1 rounded"
+              title="Manually add a spell to the shared library"
+            >
+              + New spell
+            </button>
             {spells.length > 0 && (
               <button
                 onClick={openExport}
@@ -628,6 +676,18 @@ export default function SpellLibrary({ aiSettings }) {
             <button onClick={() => setBulkRefreshState(null)} className="text-[11px] text-gray-400 hover:text-white underline">
               dismiss
             </button>
+          </div>
+        )}
+        {creating && (
+          <div className="bg-gray-800 border border-dnd-gold/60 rounded-lg p-2">
+            <div className="text-xs text-dnd-gold font-semibold mb-1">New spell</div>
+            {createError && <div className="text-[11px] text-red-400 mb-1">{createError}</div>}
+            <SpellEditor
+              initial={creating}
+              ruleset={ruleset}
+              onCancel={() => { setCreating(null); setCreateError(''); }}
+              onSave={handleSaveNew}
+            />
           </div>
         )}
         {loading && <p className="text-xs text-gray-500 italic">Loading…</p>}
@@ -1036,19 +1096,23 @@ function SpellEditor({ initial, ruleset = '2014', onCancel, onSave }) {
       <textarea className={`${inp} resize-none`} rows={2} placeholder="Extra Effects" value={s.extra_effects || ''} onChange={e => field('extra_effects', e.target.value)} />
       <textarea className={`${inp} resize-none`} rows={4} placeholder="Description" value={s.description || ''} onChange={e => field('description', e.target.value)} />
       <div className="flex flex-wrap items-center gap-2 pt-1">
-        <button
-          type="button"
-          onClick={handleRefreshFromOpen5e}
-          disabled={refreshState === 'loading'}
-          className="bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 text-white py-1 px-2 rounded text-xs"
-          title="Overwrite body fields with canonical data from open5e (SRD)"
-        >
-          {refreshState === 'loading' ? 'Fetching…' : 'Refresh from open5e'}
-        </button>
-        <span className="text-[10px] text-gray-500">SRD {ruleset}</span>
-        {refreshState === 'ok' && <span className="text-[10px] text-green-400">Refreshed.</span>}
-        {refreshState === 'missing' && <span className="text-[10px] text-amber-400" title={refreshErr}>Not in open5e</span>}
-        {refreshState === 'error' && <span className="text-[10px] text-red-400" title={refreshErr}>Error: {refreshErr}</span>}
+        {initial.id && (
+          <>
+            <button
+              type="button"
+              onClick={handleRefreshFromOpen5e}
+              disabled={refreshState === 'loading'}
+              className="bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 text-white py-1 px-2 rounded text-xs"
+              title="Overwrite body fields with canonical data from open5e (SRD)"
+            >
+              {refreshState === 'loading' ? 'Fetching…' : 'Refresh from open5e'}
+            </button>
+            <span className="text-[10px] text-gray-500">SRD {ruleset}</span>
+            {refreshState === 'ok' && <span className="text-[10px] text-green-400">Refreshed.</span>}
+            {refreshState === 'missing' && <span className="text-[10px] text-amber-400" title={refreshErr}>Not in open5e</span>}
+            {refreshState === 'error' && <span className="text-[10px] text-red-400" title={refreshErr}>Error: {refreshErr}</span>}
+          </>
+        )}
         <div className="flex-1" />
         <button onClick={() => onSave(s)} className="bg-dnd-gold hover:bg-yellow-500 text-gray-900 py-1 px-3 rounded text-xs font-semibold">Save</button>
         <button onClick={onCancel} className="bg-gray-700 hover:bg-gray-600 text-white py-1 px-3 rounded text-xs">Cancel</button>

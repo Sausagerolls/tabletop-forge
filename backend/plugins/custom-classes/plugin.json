@@ -1,0 +1,10 @@
+{
+  "id": "custom-classes",
+  "name": "Custom Classes",
+  "version": "1.1.1",
+  "description": "Adds custom character class names AND custom subclasses (scoped per class) to the host's class lists. New classes/subclasses appear in every class dropdown the host renders — Spell Library filters, Allowed-classes checkboxes on individual spells, the Spell Library picker on character sheets, the export modal, and the player character sheet's Class + Subclass dropdowns. Lists sync live across DM and players in the same session.",
+  "author": "TableTop Forge",
+  "requires": [],
+  "frontend_entry": "client.js",
+  "extension_points": ["custom_classes", "custom_subclasses", "panel_tab_extension"]
+}

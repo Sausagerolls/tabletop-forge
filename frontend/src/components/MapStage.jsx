@@ -195,12 +195,29 @@ function canSeeInvisible(token, visOrigins, offsetX, offsetY, gridSize) {
   });
 }
 
+// HP-bar fill colour by remaining-HP fraction. Thresholds:
+//   ≥ 50%  → green   (#22c55e)
+//   ≥ 25%  → orange  (#f59e0b)
+//   > 0%   → red     (#ef4444)
+//   dead   → black   (handled by caller — see Token render)
 function hpColor(cur, max) {
-  if (!max) return '#4ade80';
+  if (!max) return '#22c55e';
   const p = cur / max;
-  if (p > 0.6) return '#4ade80';
-  if (p > 0.3) return '#fbbf24';
+  if (p >= 0.5) return '#22c55e';
+  if (p >= 0.25) return '#f59e0b';
   return '#ef4444';
+}
+
+// Text colour that contrasts with `bgHex`. Uses standard luminance from sRGB
+// — white for dark backgrounds, near-black for bright ones. Used to keep
+// the HP text readable over both the bar fill and the dark track.
+function contrastTextColor(bgHex) {
+  const m = /^#([0-9a-f]{6})$/i.exec(bgHex || '');
+  if (!m) return '#fff';
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff, g = (n >> 8) & 0xff, b = n & 0xff;
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 150 ? '#0a0a0a' : '#ffffff';
 }
 
 function dist(a, b) {
@@ -416,13 +433,18 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
       {/* ── Label card ──────────────────────────────────────────────────────── */}
       {showLabel && (() => {
         const dmgTaken = Math.max(0, token.max_hp - token.current_hp);
-        const hpText = !isPlayer
-          ? `${token.current_hp}/${token.max_hp}`
-          : token.is_player
-          ? `${token.current_hp}/${token.max_hp} hp`
-          : dmgTaken > 0
-          ? `${dmgTaken} dmg`
-          : null;
+        // HP text is now rendered INSIDE the bar. When dead the bar reads
+        // "Dead" regardless of whether DM/player visibility would otherwise
+        // hide HP numbers — death is public information.
+        const hpText = isDead
+          ? 'Dead'
+          : !isPlayer
+            ? `${token.current_hp}/${token.max_hp}`
+            : token.is_player
+              ? `${token.current_hp}/${token.max_hp} hp`
+              : dmgTaken > 0
+                ? `${dmgTaken} dmg`
+                : null;
 
         const displayName = token.nickname || token.name;
         const estTextW = displayName.length * fontSize * 0.62;
@@ -434,10 +456,16 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
         const nameH    = fontSize + 2;
         const barOff   = nameH + 5;
         const barH     = Math.max(4, Math.round(fontSize / 2));
-        const cardH    = hpText
-          ? barOff + barH + hpFontSize + 6
-          : barOff + barH + 5;
-        const hpColor_ = hpColor(token.current_hp, token.max_hp);
+        const cardH    = barOff + barH + 5;
+        // Filled-portion colour (green/orange/red) and the matching text
+        // colour for letters that fall over it. Empty track (#1e293b) and
+        // dead-bar (#000) are dark, so their text stays white.
+        const fillHex     = hpColor(token.current_hp, token.max_hp);
+        const filledTextC = isDead ? '#fff' : contrastTextColor(fillHex);
+        const trackTextC  = '#fff';
+        const fillW       = isDead ? bW : bW * hpPct;
+        const barX        = cardX + bPad;
+        const barY        = cardY + barOff;
 
         return (
           <>
@@ -451,7 +479,7 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
               cornerRadius={5}
               listening={false}
             />
-            {/* Name — rendered first, always above HP bar */}
+            {/* Name */}
             <Text
               text={displayName}
               x={cardX + 3} y={cardY + 4}
@@ -463,46 +491,78 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
               wrap="word"
               listening={false}
             />
-            {/* HP bar track — below name */}
+            {/* HP bar track. When dead this is the full black bar — no
+                green/orange/red fill is layered on top. */}
             <Rect
-              x={cardX + bPad} y={cardY + barOff}
+              x={barX} y={barY}
               width={bW} height={barH}
-              fill="#1e293b"
+              fill={isDead ? '#000' : '#1e293b'}
               cornerRadius={2}
               listening={false}
             />
-            {/* HP bar fill */}
-            <Rect
-              x={cardX + bPad} y={cardY + barOff}
-              width={bW * hpPct} height={barH}
-              fill={hpColor_}
-              cornerRadius={2}
-              listening={false}
-            />
-            {/* Temp HP extension */}
-            {tempHp > 0 && (
+            {/* HP bar fill — only when alive. */}
+            {!isDead && fillW > 0 && (
               <Rect
-                x={cardX + bPad + bW * hpPct}
-                y={cardY + barOff}
-                width={Math.min(bW * (1 - hpPct), (tempHp / Math.max(1, token.max_hp)) * bW)}
+                x={barX} y={barY}
+                width={fillW} height={barH}
+                fill={fillHex}
+                cornerRadius={2}
+                listening={false}
+              />
+            )}
+            {/* Temp HP extension — only when alive and there's empty space. */}
+            {!isDead && tempHp > 0 && (
+              <Rect
+                x={barX + fillW}
+                y={barY}
+                width={Math.min(bW - fillW, (tempHp / Math.max(1, token.max_hp)) * bW)}
                 height={barH}
                 fill="#22d3ee"
                 cornerRadius={[0, 2, 2, 0]}
                 listening={false}
               />
             )}
-            {/* HP text */}
-            {hpText && (
-              <Text
-                text={hpText}
-                x={cardX + 3} y={cardY + barOff + barH + 3}
-                width={cardW - 6}
-                align="center"
-                fill={hpColor_}
-                fontSize={hpFontSize}
-                listening={false}
-              />
-            )}
+            {/* HP text inside the bar. To keep contrast across the
+                fill/track boundary we render the text twice — once
+                clipped to the filled portion (with a colour that
+                contrasts against the fill) and once clipped to the empty
+                portion (always white over the dark track). When the
+                boundary crosses a glyph, each half picks up the right
+                colour automatically. */}
+            {hpText && (() => {
+              const tProps = {
+                text: hpText,
+                x: barX, y: barY,
+                width: bW, height: barH,
+                align: 'center',
+                verticalAlign: 'middle',
+                fontSize: hpFontSize,
+                fontStyle: 'bold',
+                listening: false,
+              };
+              if (isDead) {
+                // Solid black bar — single render, white text.
+                return <Text {...tProps} fill={trackTextC} />;
+              }
+              return (
+                <>
+                  <Group
+                    clipX={barX} clipY={barY}
+                    clipWidth={fillW} clipHeight={barH}
+                    listening={false}
+                  >
+                    <Text {...tProps} fill={filledTextC} />
+                  </Group>
+                  <Group
+                    clipX={barX + fillW} clipY={barY}
+                    clipWidth={Math.max(0, bW - fillW)} clipHeight={barH}
+                    listening={false}
+                  >
+                    <Text {...tProps} fill={trackTextC} />
+                  </Group>
+                </>
+              );
+            })()}
           </>
         );
       })()}

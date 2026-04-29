@@ -83,6 +83,32 @@ export const registries = {
   // One extension per plugin per tab — return a Fragment if you need
   // multiple chunks.
   panelTabExtensions: new Map(),
+  // Map<pluginId, string[]>
+  // Plugins can append custom character class names to the host's class
+  // list. The host's `getAllClasses()` helper returns BASE_CLASSES merged
+  // with the union of every plugin's contribution (de-duped, base order
+  // preserved, plugin classes appended in registration order). Re-render
+  // happens via bumpRegistry — components that read classes via
+  // `useAllClasses()` will pick up additions/removals live.
+  customClasses: new Map(),
+  // Map<pluginId, { [className]: string[] }>
+  // Plugins can append subclass names per class. Keys are class names —
+  // either base SRD classes ("Wizard") or plugin-added classes from
+  // customClasses ("Blood Hunter"). The host's `getAllSubclasses(cls)`
+  // merges BASE_SUBCLASSES[cls] with every plugin's entry for that class,
+  // de-duped case-insensitively. Components that render the subclass
+  // dropdown read via `useAllSubclasses(cls)` and re-render when any
+  // plugin updates the registry.
+  customSubclasses: new Map(),
+  // Map<pluginId, Set<sectionId>>
+  // Plugins can hide individual collapsible sub-sections inside the
+  // Session tab (e.g. 'session_info', 'connected_players',
+  // 'dice_reference', 'ai_integration'). The host's CollapsibleSection
+  // component checks the UNION of every plugin's set and returns null
+  // when its id is in there — completely removing the section, not
+  // just collapsing it. Lets a tab-management plugin declutter the
+  // Session tab the same way it declutters the tab bar.
+  sessionSectionHidden: new Map(),
 };
 
 // Snapshot helpers — components subscribe via React state to a snapshot

@@ -472,6 +472,58 @@ Hiding only removes the BUTTON. The corresponding tab body is still rendered whe
 
 Registry value is a `Set<string>` of tab ids. Built-in tab ids are `'map' | 'library' | 'spells' | 'tokens' | 'markers' | 'treasure' | 'handouts' | 'session'`. **Plugin-supplied tabs (added via `dmTabs`) are also hideable** — use the id `'plugin:<pluginId>'` to refer to them. The host filters both the built-in tab bar and the plugin tab buttons by the same set, so a tab-management plugin can hide either kind uniformly.
 
+### `customClasses`
+
+```js
+registries.customClasses.set(pluginId, ['Blood Hunter', 'Mystic'])
+```
+
+Adds character class names to the host's class list. The host's `getAllClasses()` (in `frontend/src/utils/classes.js`) merges every plugin's contribution with the SRD base list, de-duplicates case-insensitively, and components consume it via the `useAllClasses()` hook so additions/removals show up live.
+
+The classes appear in every dropdown the host renders for class choice:
+
+- Spell Library — top class filter
+- Spell Library — Allowed-classes checkboxes inside the spell editor
+- Spell Library — Export modal class filter
+- Character sheet — Class field on player characters
+- Character sheet — Spell Library picker (Learn From Library)
+
+Update the registry whenever your plugin's stored class list changes, then call `notifyChange()` so existing renders pick up the new entries. The bundled `custom-classes` plugin shows the full pattern (KV persistence + cross-client `subscribe()` sync).
+
+This registry only affects rendering — the host still stores `char_class` as a free-text column in the database, so plugin-added classes survive even if the plugin is later disabled (the value sticks; the dropdown just shows it as a `(custom)` option until re-enabled).
+
+### `customSubclasses`
+
+```js
+registries.customSubclasses.set(pluginId, {
+  Wizard:        ['Bladesinger', 'Order of Scribes'],
+  'Blood Hunter': ['Order of the Mutant', 'Order of the Lycan'],
+})
+```
+
+Adds subclass names per class. Keys can be base SRD classes (`'Wizard'`, `'Cleric'`) or plugin-supplied classes from `customClasses` (`'Blood Hunter'`). Lookups in the host (`getAllSubclasses(charClass)`) match keys case-insensitively, so capitalisation drift between your plugin's stored data and the host's class list won't drop entries.
+
+The subclass dropdown on the player character sheet pulls from this registry plus the host's `BASE_SUBCLASSES` map (curated SRD 2014/2024 set, no edition suffixes — duplicates dropped). The dropdown re-renders whenever any plugin updates the registry, so DM-side additions reflect on every player's sheet without a reload.
+
+Same persistence rules as `customClasses`: only affects rendering. Existing `char_subclass` values in the database stay even if your plugin is later disabled — the dropdown shows them as a `(custom)` fallback option.
+
+### `sessionSectionHidden`
+
+```js
+registries.sessionSectionHidden.set(pluginId, new Set(['ai_integration', 'connected_players']))
+```
+
+Plugins can completely hide built-in collapsible sub-sections inside the Session tab. The host's `<CollapsibleSection id=… />` checks the union of every plugin's set and short-circuits to `null` if its id is in there — the section is removed from the layout, not just collapsed.
+
+Built-in section ids:
+
+- `'session_info'` — Session Info (name, code, join link)
+- `'connected_players'` — Connected Players list
+- `'dice_reference'` — Quick Dice Reference
+- `'ai_integration'` — AI Integration settings
+
+Plugins / Plugin Manager / Leave Session render outside the collapsible wrappers, so hiding sections never locks the DM out of plugin management. Use this together with `panelTabHidden` (whole-tab hide) for a tab-management plugin that gives the DM coarse + fine declutter controls.
+
 ### `panelTabExtensions`
 
 ```js

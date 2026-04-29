@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useAllClasses } from '../utils/classes.js';
 
 const LEVEL_LABELS = ['Cantrip', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'];
-const CLASSES = ['Artificer','Barbarian','Bard','Cleric','Druid','Fighter','Monk','Paladin','Ranger','Rogue','Sorcerer','Warlock','Wizard'];
 
 export default function SpellLibrary({ aiSettings }) {
+  const CLASSES = useAllClasses();
   const [spells, setSpells] = useState([]);
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
@@ -778,6 +779,7 @@ export default function SpellLibrary({ aiSettings }) {
 
 function ExportModal({ rows, selected, search, level, klass, loading, submitting,
   onSearch, onLevel, onKlass, onToggle, onSelectAll, onSelectNone, onClose, onExport }) {
+  const CLASSES = useAllClasses();
   return (
     <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4">
       <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
@@ -974,6 +976,7 @@ const SCHOOLS = ['Abjuration','Conjuration','Divination','Enchantment','Evocatio
 const SAVE_ABILITIES = ['STR','DEX','CON','INT','WIS','CHA'];
 
 function SpellEditor({ initial, ruleset = '2014', onCancel, onSave }) {
+  const CLASSES = useAllClasses();
   const [s, setS] = useState({
     ...initial,
     damage_entries: Array.isArray(initial.damage_entries) ? initial.damage_entries : [],

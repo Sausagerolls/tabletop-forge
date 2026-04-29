@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import LanguagePicker from './LanguagePicker.jsx';
+import { useAllClasses, useAllSubclasses } from '../utils/classes.js';
 
 const XIcon = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="w-3.5 h-3.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>);
 const DragonIcon = () => (<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10 text-gray-500"><path d="M44 12c4-2 8 0 10 4s0 10-4 12l-4 2" /><path d="M20 12c-4-2-8 0-10 4s0 10 4 12l4 2" /><ellipse cx="32" cy="32" rx="14" ry="10" fill="currentColor" stroke="none" opacity="0.15" /><path d="M18 28c0 10 6 18 14 18s14-8 14-18" /><path d="M26 24c0-2 2-4 6-4s6 2 6 4" /><circle cx="27" cy="26" r="1.5" fill="currentColor" stroke="none" /><circle cx="37" cy="26" r="1.5" fill="currentColor" stroke="none" /><path d="M28 36c1 2 3 3 4 3s3-1 4-3" /></svg>);
@@ -354,9 +355,8 @@ function SpellEditor({
   );
 }
 
-const CLASSES = ['Artificer','Barbarian','Bard','Cleric','Druid','Fighter','Monk','Paladin','Ranger','Rogue','Sorcerer','Warlock','Wizard'];
-
 function SpellLibraryPicker({ onLearn, charClass }) {
+  const CLASSES = useAllClasses();
   const [open, setOpen] = useState(false);
   const [spells, setSpells] = useState([]);
   const [search, setSearch] = useState('');
@@ -497,6 +497,10 @@ function AbilityList({ label, items, onAdd, onRemove, onChange }) {
 }
 
 export default function CreatureForm({ creature, onSave, onCancel, extraFields, submitLabel, isPlayerCharacter = false }) {
+  const allClasses = useAllClasses();
+  // Subclass list re-derives whenever the selected class changes.
+  // form.char_class is captured below — pull it indirectly via the form
+  // state once it's defined.
   const [form, setForm] = useState(() => {
     let senses = [];
     if (creature) {
@@ -617,6 +621,9 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('basic');
+  // Subclass options track the selected class — derived after `form` exists
+  // so the hook always has the latest char_class on every render.
+  const allSubclasses = useAllSubclasses(form.char_class);
 
   const tabs = isPlayerCharacter
     ? ['basic', 'combat', 'abilities', 'skills', 'traits', 'spells', 'inventory', 'weapons']
@@ -1032,11 +1039,46 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelClass}>Class</label>
-                    <input className={inputClass} placeholder="Fighter" value={form.char_class || ''} onChange={(e) => setField('char_class', e.target.value)} />
+                    <select
+                      className={inputClass}
+                      value={form.char_class || ''}
+                      onChange={(e) => setField('char_class', e.target.value)}
+                    >
+                      <option value="">— Select class —</option>
+                      {allClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                      {/* Legacy free-text values not in the current class
+                          list (e.g. an old plugin that's been disabled) are
+                          preserved as a separate option so the field never
+                          silently changes when the user opens the sheet. */}
+                      {form.char_class && !allClasses.some(c => c.toLowerCase() === String(form.char_class).toLowerCase()) && (
+                        <option value={form.char_class}>{form.char_class} (custom)</option>
+                      )}
+                    </select>
                   </div>
                   <div>
                     <label className={labelClass}>Subclass</label>
-                    <input className={inputClass} placeholder="Battle Master" value={form.char_subclass || ''} onChange={(e) => setField('char_subclass', e.target.value)} />
+                    <select
+                      className={inputClass}
+                      value={form.char_subclass || ''}
+                      onChange={(e) => setField('char_subclass', e.target.value)}
+                      disabled={!form.char_class || allSubclasses.length === 0}
+                    >
+                      <option value="">
+                        {!form.char_class
+                          ? '— Pick a class first —'
+                          : allSubclasses.length === 0
+                            ? '— No subclasses defined —'
+                            : '— Select subclass —'}
+                      </option>
+                      {allSubclasses.map(s => <option key={s} value={s}>{s}</option>)}
+                      {/* Preserve any existing subclass value not in the
+                          current list (legacy free-text data, or one set
+                          while a now-disabled plugin was active) so the
+                          field never silently changes on open. */}
+                      {form.char_subclass && !allSubclasses.some(s => s.toLowerCase() === String(form.char_subclass).toLowerCase()) && (
+                        <option value={form.char_subclass}>{form.char_subclass} (custom)</option>
+                      )}
+                    </select>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

@@ -788,8 +788,22 @@ function PluginTemplateEditorExtensions({ template }) {
 // Collapsible wrapper used by the Session tab so each subsection can be folded
 // away when the panel gets crowded. State persists per-id in localStorage so a
 // DM's collapsed/expanded preference survives reloads.
+//
+// Plugins can completely HIDE a section by adding its id to
+// `pluginRegistries.sessionSectionHidden[pluginId]`. The component subscribes
+// to the registry version so a hide/unhide propagates without remounting
+// anything else.
 const SESSION_COLLAPSED_KEY = 'dndvtt_session_section_collapsed_v1';
 function CollapsibleSection({ id, title, children, defaultOpen = true }) {
+  useRegistryVersion();
+  // Plugin-driven hide check first — if any plugin marks this id as hidden,
+  // skip rendering entirely.
+  const hiddenByPlugin = (() => {
+    for (const set of pluginRegistries.sessionSectionHidden.values()) {
+      if (set && set.has && set.has(id)) return true;
+    }
+    return false;
+  })();
   const [open, setOpen] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(SESSION_COLLAPSED_KEY) || '{}');
@@ -808,6 +822,7 @@ function CollapsibleSection({ id, title, children, defaultOpen = true }) {
       return next;
     });
   }
+  if (hiddenByPlugin) return null;
   return (
     <div>
       <button

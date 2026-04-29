@@ -1369,6 +1369,44 @@ export default function MapStage({
   const [featherZoneId, setFeatherZoneId] = useState(null);
   const [featherValue,  setFeatherValue]  = useState(0);
   useEffect(() => { if (activeTool !== 'zone-feather') setFeatherZoneId(null); }, [activeTool]);
+
+  // Track which tokens were most recently moved so we can render them last
+  // (i.e. on top) — keeps the moved token's HP card visible above neighbours
+  // when several stack up. Bumps come from any source: local drag, socket
+  // updates from another client. tokenZBumps is a stable Map of id → epoch
+  // ms; the renderer sorts ascending so the freshest move ends up on top.
+  const [tokenZBumps, setTokenZBumps] = useState(() => new Map());
+  const prevTokenPosRef = useRef(new Map());
+  useEffect(() => {
+    const prev = prevTokenPosRef.current;
+    const next = new Map();
+    const bumps = [];
+    for (const t of tokens) {
+      const key = `${t.grid_col},${t.grid_row}`;
+      next.set(t.id, key);
+      const old = prev.get(t.id);
+      if (old !== undefined && old !== key) bumps.push(t.id);
+    }
+    prevTokenPosRef.current = next;
+    if (bumps.length > 0) {
+      setTokenZBumps(prev => {
+        const m = new Map(prev);
+        const now = Date.now();
+        for (const id of bumps) m.set(id, now + bumps.indexOf(id));
+        return m;
+      });
+    }
+  }, [tokens]);
+  function sortByZBump(list) {
+    return [...list].sort((a, b) => {
+      const ab = tokenZBumps.get(a.id);
+      const bb = tokenZBumps.get(b.id);
+      if (ab == null && bb == null) return 0;
+      if (ab == null) return -1;
+      if (bb == null) return 1;
+      return ab - bb;
+    });
+  }
   const [stageSize, setStageSize] = useState({ w: 800, h: 600 });
 
   // Force fog/glow canvases to redraw when the browser tab becomes visible again.
@@ -3732,7 +3770,7 @@ export default function MapStage({
         {/* Submerged tokens — below the water canvas so they get distorted.
             DM sees them at reduced opacity to signal they are hidden from players. */}
         <Layer listening={false} ref={submergedTokensLayerRef} perfectDrawEnabled={false}>
-          {tokens.map(t => {
+          {sortByZBump(tokens).map(t => {
             const isSubmerged = Array.isArray(t.conditions) && t.conditions.includes('submerged');
             if (!isSubmerged) return null;
             const overrideOpacity = !isPlayer ? 0.55 : null;
@@ -3759,7 +3797,7 @@ export default function MapStage({
         {/* Non-submerged tokens — composited above the water canvas so they
             appear on the surface undistorted. */}
         <Layer listening={false} ref={aboveWaterTokensLayerRef} perfectDrawEnabled={false}>
-          {tokens.map(t => {
+          {sortByZBump(tokens).map(t => {
             const isSubmerged = Array.isArray(t.conditions) && t.conditions.includes('submerged');
             if (isSubmerged) return null;
 

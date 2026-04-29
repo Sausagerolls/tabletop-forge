@@ -2839,7 +2839,7 @@ export default function DMView() {
                         <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform shadow ${fowEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
                       </button>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <label className="text-xs text-gray-400 shrink-0 w-24">Edge feather</label>
                       <input
                         type="range"
@@ -2847,29 +2847,22 @@ export default function DMView() {
                         max={40}
                         value={fowBlur}
                         onChange={e => handleFowBlurChange(Number(e.target.value))}
-                        className="flex-1 accent-orange-500"
+                        className="flex-1 min-w-0 accent-orange-500"
                       />
-                      <span className="text-xs text-gray-300 w-6 text-right">{fowBlur}</span>
+                      <span className="text-xs text-gray-300 shrink-0 w-6 text-right">{fowBlur}</span>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <label className="text-xs text-gray-400 shrink-0 w-24">Fog colour</label>
                       <input
                         type="color"
                         value={/^#[0-9a-fA-F]{6}$/.test(fowColor) ? fowColor : '#000000'}
                         onChange={(e) => handleFowColorChange(e.target.value)}
-                        className="w-9 h-7 rounded cursor-pointer bg-transparent border border-gray-700"
+                        className="w-12 h-10 rounded cursor-pointer bg-transparent border border-gray-700 shrink-0 p-0"
                         title="Visible only when Fog of War is on"
-                      />
-                      <input
-                        type="text"
-                        value={fowColor}
-                        onChange={(e) => handleFowColorChange(e.target.value)}
-                        className="w-24 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white font-mono"
-                        placeholder="#000000"
                       />
                       <button
                         onClick={() => handleFowColorChange('#000000')}
-                        className="text-[10px] text-gray-500 hover:text-gray-300"
+                        className="text-[10px] text-gray-500 hover:text-gray-300 shrink-0"
                         title="Reset to default black"
                       >Reset</button>
                     </div>

@@ -611,6 +611,33 @@ export default function PlayerView() {
   const [sheetTab, setSheetTab] = useState('edit');
   const [showQuickRef, setShowQuickRef] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const QUICK_CTRL_ORDER_KEY = 'dndvtt_player_quick_ctrl_order_v1';
+  const [quickCtrlOrder, setQuickCtrlOrder] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(QUICK_CTRL_ORDER_KEY) || 'null');
+      if (Array.isArray(stored)) return stored;
+    } catch {}
+    return [];
+  });
+  function reorderQuickCtrl(fromId, toId, available) {
+    setQuickCtrlOrder((prev) => {
+      const orderIdx = new Map(prev.map((id, i) => [id, i]));
+      const sorted = [...available].sort((a, b) => {
+        const ai = orderIdx.has(a) ? orderIdx.get(a) : Infinity;
+        const bi = orderIdx.has(b) ? orderIdx.get(b) : Infinity;
+        if (ai !== bi) return ai - bi;
+        return available.indexOf(a) - available.indexOf(b);
+      });
+      const fromIdx = sorted.indexOf(fromId);
+      const toIdx = sorted.indexOf(toId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      sorted.splice(fromIdx, 1);
+      const newToIdx = sorted.indexOf(toId);
+      sorted.splice(newToIdx, 0, fromId);
+      try { localStorage.setItem(QUICK_CTRL_ORDER_KEY, JSON.stringify(sorted)); } catch {}
+      return sorted;
+    });
+  }
   const [concentrationPrompt, setConcentrationPrompt] = useState(null); // { dc, damage, spellName, conSaveBonus }
   const [handout, setHandout] = useState(null); // { title, body, imageUrl, sentAt }
   const [walls, setWalls] = useState([]);
@@ -1376,99 +1403,157 @@ export default function PlayerView() {
           <DiceIcon />
         </button>
 
-        {/* Actions reference button */}
-        <button
-          onClick={() => setShowActionsRef(true)}
-          className="absolute bottom-32 left-4 z-40 bg-gray-800/90 hover:bg-gray-700 text-white rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center"
-          title="Actions Reference"
-        >
-          <BookIcon />
-        </button>
-
-        {/* Character sheet button */}
-        {myCreature && (
-          <button
-            onClick={() => setShowCharacterEdit(true)}
-            className="absolute bottom-20 left-4 z-40 bg-gray-800/90 hover:bg-gray-700 text-white rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center"
-            title="My Character"
-          >
-            <CharacterIcon />
-          </button>
-        )}
-
-        {/* Quick reference popup button */}
-        {myCreature && (
-          <button
-            onClick={() => setShowQuickRef(v => !v)}
-            className="absolute bottom-20 left-16 z-40 bg-gray-800/90 hover:bg-gray-700 text-dnd-gold rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center"
-            title="Quick Reference (HP, spells, hit dice, death saves)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-              <circle cx="12" cy="12" r="3"/>
-            </svg>
-          </button>
-        )}
-
-        {/* Notes / journal button */}
-        {myCreature && (
-          <button
-            onClick={() => setShowNotes(true)}
-            className="absolute bottom-20 left-28 z-40 bg-gray-800/90 hover:bg-gray-700 text-amber-300 rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center"
-            title="Notes / journal"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-              <path d="M11 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-          </button>
-        )}
-
-        {/* Light source flyout — only shown when the player has at least one
-            light item in their inventory (or no character is linked yet) */}
-        {playerTokenId && availablePresets.length > 1 && (
-          <div className="absolute bottom-32 left-4 z-40">
-            {/* Flyout options — appear above the button */}
-            {showLightMenu && (
-              <div className="absolute bottom-12 left-0 flex flex-col gap-1 items-start">
-                {availablePresets.map((preset) => {
-                  const globalIdx = TORCH_PRESETS.indexOf(preset);
-                  return (
-                    <button
-                      key={globalIdx}
-                      onClick={() => { setTorchPreset(globalIdx); setShowLightMenu(false); }}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm shadow-lg whitespace-nowrap transition-colors ${
-                        torchPreset === globalIdx
-                          ? 'bg-yellow-600 text-yellow-100'
-                          : 'bg-gray-800/95 hover:bg-gray-700 text-gray-200'
-                      }`}
-                    >
-                      {preset.Icon && <preset.Icon />}
-                      <span>{preset.label}</span>
-                      {preset.brightFt > 0 || preset.dimFt > 0 ? (
-                        <span className="text-xs text-gray-400 ml-1">
-                          {preset.brightFt > 0 ? `${preset.brightFt}ft bright / ` : ''}{preset.dimFt}ft dim
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {/* Main button */}
-            <button
-              onClick={() => setShowLightMenu(m => !m)}
-              title="Light source"
-              className={`rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center transition-colors ${
-                torchPreset === 0
-                  ? 'bg-gray-800/90 hover:bg-gray-700 text-gray-400'
-                  : 'bg-yellow-600/90 hover:bg-yellow-500 text-yellow-100'
-              }`}
-            >
-              {(() => { const p = TORCH_PRESETS[torchPreset] || TORCH_PRESETS[0]; return p.Icon ? <p.Icon /> : null; })()}
-            </button>
-          </div>
-        )}
+        {/* Quick-access controls — drag any button onto another to reorder.
+            Order persists per-browser in localStorage so each player can lay
+            them out however they like. */}
+        {(() => {
+          const controls = [
+            {
+              id: 'actions',
+              available: true,
+              render: () => (
+                <button
+                  onClick={() => setShowActionsRef(true)}
+                  className="bg-gray-800/90 hover:bg-gray-700 text-white rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center"
+                  title="Actions Reference"
+                >
+                  <BookIcon />
+                </button>
+              ),
+            },
+            {
+              id: 'character',
+              available: !!myCreature,
+              render: () => (
+                <button
+                  onClick={() => setShowCharacterEdit(true)}
+                  className="bg-gray-800/90 hover:bg-gray-700 text-white rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center"
+                  title="My Character"
+                >
+                  <CharacterIcon />
+                </button>
+              ),
+            },
+            {
+              id: 'quickref',
+              available: !!myCreature,
+              render: () => (
+                <button
+                  onClick={() => setShowQuickRef(v => !v)}
+                  className="bg-gray-800/90 hover:bg-gray-700 text-dnd-gold rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center"
+                  title="Quick Reference (HP, spells, hit dice, death saves)"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </button>
+              ),
+            },
+            {
+              id: 'notes',
+              available: !!myCreature,
+              render: () => (
+                <button
+                  onClick={() => setShowNotes(true)}
+                  className="bg-gray-800/90 hover:bg-gray-700 text-amber-300 rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center"
+                  title="Notes / journal"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M11 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+              ),
+            },
+            {
+              id: 'light',
+              available: !!playerTokenId && availablePresets.length > 1,
+              render: () => (
+                <div className="relative">
+                  {showLightMenu && (
+                    <div className="absolute bottom-12 left-0 flex flex-col gap-1 items-start">
+                      {availablePresets.map((preset) => {
+                        const globalIdx = TORCH_PRESETS.indexOf(preset);
+                        return (
+                          <button
+                            key={globalIdx}
+                            onClick={() => { setTorchPreset(globalIdx); setShowLightMenu(false); }}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm shadow-lg whitespace-nowrap transition-colors ${
+                              torchPreset === globalIdx
+                                ? 'bg-yellow-600 text-yellow-100'
+                                : 'bg-gray-800/95 hover:bg-gray-700 text-gray-200'
+                            }`}
+                          >
+                            {preset.Icon && <preset.Icon />}
+                            <span>{preset.label}</span>
+                            {preset.brightFt > 0 || preset.dimFt > 0 ? (
+                              <span className="text-xs text-gray-400 ml-1">
+                                {preset.brightFt > 0 ? `${preset.brightFt}ft bright / ` : ''}{preset.dimFt}ft dim
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setShowLightMenu(m => !m)}
+                    title="Light source"
+                    className={`rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center transition-colors ${
+                      torchPreset === 0
+                        ? 'bg-gray-800/90 hover:bg-gray-700 text-gray-400'
+                        : 'bg-yellow-600/90 hover:bg-yellow-500 text-yellow-100'
+                    }`}
+                  >
+                    {(() => { const p = TORCH_PRESETS[torchPreset] || TORCH_PRESETS[0]; return p.Icon ? <p.Icon /> : null; })()}
+                  </button>
+                </div>
+              ),
+            },
+          ];
+          const availableIds = controls.filter(c => c.available).map(c => c.id);
+          if (availableIds.length === 0) return null;
+          const orderIdx = new Map(quickCtrlOrder.map((id, i) => [id, i]));
+          const sortedIds = [...availableIds].sort((a, b) => {
+            const ai = orderIdx.has(a) ? orderIdx.get(a) : Infinity;
+            const bi = orderIdx.has(b) ? orderIdx.get(b) : Infinity;
+            if (ai !== bi) return ai - bi;
+            return availableIds.indexOf(a) - availableIds.indexOf(b);
+          });
+          const byId = new Map(controls.map(c => [c.id, c]));
+          return (
+            <div className="absolute bottom-20 left-4 z-40 flex gap-2 items-end">
+              {sortedIds.map((id) => {
+                const c = byId.get(id);
+                if (!c) return null;
+                return (
+                  <div
+                    key={id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/x-quick-ctrl', id);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e) => {
+                      if (e.dataTransfer.types.includes('application/x-quick-ctrl')) e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      const from = e.dataTransfer.getData('application/x-quick-ctrl');
+                      if (!from || from === id) return;
+                      e.preventDefault();
+                      reorderQuickCtrl(from, id, availableIds);
+                    }}
+                    className="cursor-grab active:cursor-grabbing"
+                    title="Drag to reorder"
+                  >
+                    {c.render()}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* Fullscreen button */}
         <button

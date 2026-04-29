@@ -22,7 +22,7 @@
 //
 // Versioning: bump CACHE_NAME on any breaking change to this file.
 // Old caches are evicted on activate.
-const CACHE_NAME = 'forge-shell-v1';
+const CACHE_NAME = 'forge-shell-v2';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon.svg', '/icons/maskable.svg'];
 
 self.addEventListener('install', (event) => {

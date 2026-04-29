@@ -1,28 +1,49 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TableTop Forge PWA icon — crossed hammers, the same emblem the
+  marketing site uses (the ⚒ glyph). Drawn as vector paths so it
+  renders sharp at any density and isn't dependent on the device's
+  emoji font.
+-->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Background — dark parchment with the brand red ring. -->
+  <!-- Background: dark parchment medallion with the brand-red ring. -->
   <rect width="512" height="512" fill="#0d1018"/>
   <circle cx="256" cy="256" r="232" fill="#1a1f2e" stroke="#7c2828" stroke-width="14"/>
 
-  <!-- Anvil (forge core). -->
-  <g transform="translate(256,288)">
-    <path d="M -120 0 L -90 -34 L 90 -34 L 120 0 L 110 18 L -110 18 Z"
-          fill="#3a3f4e" stroke="#0a0d14" stroke-width="6"/>
-    <rect x="-46" y="18" width="92" height="50" fill="#2c303d" stroke="#0a0d14" stroke-width="6"/>
-    <rect x="-78" y="68" width="156" height="22" fill="#202430" stroke="#0a0d14" stroke-width="6"/>
-  </g>
+  <!-- Re-usable hammer mark, tip pointing UP. Rotated into place
+       below. Handle is the warm wood tone, head is steel. The keys
+       that make it read as a hammer at small sizes are: thick handle,
+       wide flat head, tiny darker stripe across the head. -->
+  <defs>
+    <g id="hammer">
+      <!-- Handle. -->
+      <rect x="-16" y="-50" width="32" height="260" rx="6"
+            fill="#b08646" stroke="#3a2a14" stroke-width="6"/>
+      <!-- Head. -->
+      <rect x="-72" y="-94" width="144" height="62" rx="8"
+            fill="#cfd4dc" stroke="#0a0d14" stroke-width="6"/>
+      <!-- Head highlight + dark stripe for legibility at small sizes. -->
+      <rect x="-72" y="-94" width="144" height="14" rx="8"
+            fill="#ffffff" opacity="0.18"/>
+      <rect x="-72" y="-50" width="144" height="14" rx="2"
+            fill="#0a0d14" opacity="0.55"/>
+    </g>
+  </defs>
 
-  <!-- Hammer struck onto the anvil. -->
-  <g transform="translate(180,170) rotate(-32)">
-    <rect x="-12" y="-110" width="24" height="180" rx="4" fill="#b08646" stroke="#3a2a14" stroke-width="6"/>
-    <rect x="-50" y="-150" width="100" height="50" rx="6" fill="#5a6273" stroke="#0a0d14" stroke-width="6"/>
+  <!-- Two hammers crossed at the medallion centre, ~35° apart. The
+       order matters — the second one sits visually on top of the first. -->
+  <g transform="translate(256,256) rotate(-32)">
+    <use href="#hammer"/>
+  </g>
+  <g transform="translate(256,256) rotate(32)">
+    <use href="#hammer"/>
   </g>
 
   <!-- Sparks. -->
   <g fill="#f5b04a">
-    <circle cx="312" cy="232" r="6"/>
-    <circle cx="338" cy="218" r="4"/>
-    <circle cx="296" cy="208" r="3"/>
-    <circle cx="356" cy="248" r="5"/>
+    <circle cx="256" cy="142" r="6"/>
+    <circle cx="226" cy="124" r="3"/>
+    <circle cx="290" cy="124" r="4"/>
+    <circle cx="256" cy="106" r="3"/>
   </g>
 </svg>

@@ -659,6 +659,10 @@ export default function PlayerView() {
   // map we're currently viewing as our override and we need its
   // creature-image join from the server.
   const [overrideRefetchKey, setOverrideRefetchKey] = useState(0);
+  // DM-set map override for this player by name (Split the Party,
+  // native). Pinned by the DM via the Session-tab UI. Wins over the
+  // auto-follow-token rule below; cleared by the DM, sent as null.
+  const [dmAssignedMapId, setDmAssignedMapId] = useState(null);
   const registryVersion = useRegistryVersion();
   // ── Override snapshot patchers ─────────────────────────────────────
   // Each socket-event handler below mirrors changes into the override
@@ -837,6 +841,11 @@ export default function PlayerView() {
       // plugin manager UI; the DM resolves any issues from their side.
       loadPlugins({ context: { sessionId: state.session.id, role: 'player', socket } });
       setTokens(state.tokens.filter((t) => !t.is_hidden));
+      // Pick up our own DM-set override on join. The server keys these
+      // by player name, so a reconnect with the same name re-applies
+      // automatically.
+      const overrides = state.playerMapOverrides || {};
+      setDmAssignedMapId(overrides[name] != null ? Number(overrides[name]) : null);
       setWalls(state.walls || []);
       setDoors(state.doors || []);
       setLights(state.lights || []);
@@ -883,6 +892,16 @@ export default function PlayerView() {
         prev.map((t) => (t.id === tokenId ? { ...t, grid_col: gridCol, grid_row: gridRow } : t))
       );
       patchOverrideToken(tokenId, (t) => ({ ...t, grid_col: gridCol, grid_row: gridRow }));
+    });
+
+    // DM pinned us (or someone else) to a specific map. Only react
+    // when our own name matches; ignore broadcasts for other players.
+    socket.on('player_map_override_changed', ({ playerName, mapId }) => {
+      if (playerName !== name) return;
+      setDmAssignedMapId(mapId == null ? null : Number(mapId));
+    });
+    socket.on('player_map_overrides_cleared', () => {
+      setDmAssignedMapId(null);
     });
 
     // Token relocated to a different map. We update our local tokens
@@ -1476,11 +1495,14 @@ export default function PlayerView() {
   }
 
   // ── Per-player map override resolution ────────────────────────────
-  // Priority: (1) any plugin in the playerMapOverride registry, then
-  // (2) auto-follow our own token's map_id if it differs from the
-  // session's current map. Phase-1 plugins (split-the-party dropdown)
-  // win over the auto-follow so the DM can manually pin a player to
-  // a map even if their token is elsewhere.
+  // Priority order:
+  //   (1) any plugin that sets the playerMapOverride registry — kept
+  //       as a public extension point for third-party plugins;
+  //   (2) the DM's native Split-the-Party assignment for this player;
+  //   (3) auto-follow our own token's map_id if it differs from the
+  //       session's current map.
+  // Plugins still win so a third-party plugin can override the DM's
+  // pin if it really wants to.
   const desiredOverrideMapId = (() => {
     if (!session) return null;
     const ctx = { sessionId: session.id, playerTokenId, defaultMapId: session.map_id };
@@ -1492,6 +1514,9 @@ export default function PlayerView() {
           if (Number.isFinite(n) && n !== session.map_id) return n;
         }
       } catch { /* plugin error — skip */ }
+    }
+    if (dmAssignedMapId != null && dmAssignedMapId !== session.map_id) {
+      return dmAssignedMapId;
     }
     // Auto-follow: if our own token sits on a different map, route
     // our view there. The token list is filtered to non-hidden tokens

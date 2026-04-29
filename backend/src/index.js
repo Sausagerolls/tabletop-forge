@@ -190,6 +190,20 @@ db.query(`
   )
 `).catch(err => console.error('map_spawn_points migration error:', err));
 
+// ─── DM-set per-player map overrides (Split the Party, native) ───────────────
+// One row per (session, player_name). When set, that player's view is pinned
+// to map_id regardless of which map the DM is currently viewing. Replaces
+// the `assignment_*` KV rows the bundled split-the-party plugin used.
+db.query(`
+  CREATE TABLE IF NOT EXISTS player_map_overrides (
+    session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
+    player_name VARCHAR(255) NOT NULL,
+    map_id INTEGER REFERENCES maps(id) ON DELETE CASCADE,
+    updated_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (session_id, player_name)
+  )
+`).catch(err => console.error('player_map_overrides migration error:', err));
+
 // ─── Socket.io ───────────────────────────────────────────────────────────────
 
 // Track connected users per session
@@ -286,7 +300,23 @@ async function getSessionState(sessionCode) {
     dmMarkers: dmMarkersRows,
     spawnPoints: typeof spawnPointsRows !== 'undefined' ? spawnPointsRows : [],
     spawnPoint: { col: session.map_spawn_col ?? 0, row: session.map_spawn_row ?? 0 },
+    playerMapOverrides: await loadPlayerMapOverrides(session.id),
   };
+}
+
+// Read every DM-set per-player override for a session as a flat
+// { [playerName]: mapId } map — easier for clients to consume than
+// raw rows. Returns {} when the table is empty.
+async function loadPlayerMapOverrides(sessionId) {
+  const r = await db.query(
+    'SELECT player_name, map_id FROM player_map_overrides WHERE session_id=$1',
+    [sessionId]
+  );
+  const out = {};
+  for (const row of r.rows) {
+    if (row.player_name && row.map_id != null) out[row.player_name] = row.map_id;
+  }
+  return out;
 }
 
 io.on('connection', (socket) => {
@@ -1510,6 +1540,48 @@ io.on('connection', (socket) => {
       const value = mapId == null ? null : Number(mapId);
       await db.query('UPDATE sessions SET spawn_map_id=$1 WHERE id=$2', [value, sessionId]);
       io.to(sessionCode).emit('spawn_map_changed', { spawnMapId: value });
+    } catch (err) { console.error(err); }
+  });
+
+  // ── DM-set per-player map overrides (Split the Party, native) ────────
+  // mapId === null clears the override. Stored as upsert on
+  // (session_id, player_name) so re-routing the same player just
+  // overwrites their current row. Broadcast lets every other client
+  // (DM tabs, the player themselves) react without polling.
+  socket.on('set_player_map_override', async ({ sessionId, playerName, mapId }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    if (!playerName) return;
+    try {
+      if (mapId == null) {
+        await db.query(
+          'DELETE FROM player_map_overrides WHERE session_id=$1 AND player_name=$2',
+          [sessionId, playerName]
+        );
+      } else {
+        await db.query(
+          `INSERT INTO player_map_overrides (session_id, player_name, map_id, updated_at)
+                VALUES ($1,$2,$3,NOW())
+           ON CONFLICT (session_id, player_name)
+           DO UPDATE SET map_id=EXCLUDED.map_id, updated_at=NOW()`,
+          [sessionId, playerName, Number(mapId)]
+        );
+      }
+      io.to(sessionCode).emit('player_map_override_changed', {
+        playerName,
+        mapId: mapId == null ? null : Number(mapId),
+      });
+    } catch (err) { console.error(err); }
+  });
+
+  socket.on('clear_player_map_overrides', async ({ sessionId }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      await db.query('DELETE FROM player_map_overrides WHERE session_id=$1', [sessionId]);
+      io.to(sessionCode).emit('player_map_overrides_cleared', {});
     } catch (err) { console.error(err); }
   });
 

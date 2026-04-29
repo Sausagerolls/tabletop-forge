@@ -1619,6 +1619,10 @@ export default function DMView() {
   // viewing. Glyphs for the current map are derived from this via
   // `currentMapSpawnPoints` below.
   const [allSpawnPoints, setAllSpawnPoints] = useState({});
+  // DM-set per-player map overrides (native Split the Party). Keyed
+  // by player name → mapId. Mirrored from the server on session_joined
+  // and kept in sync via player_map_override_changed broadcasts.
+  const [playerMapOverrides, setPlayerMapOverrides] = useState({});
   // After clicking the canvas with the spawn-named tool we hold the
   // pending coords here while the label modal is open. Submit creates
   // the row; cancel discards it.
@@ -1866,6 +1870,7 @@ export default function DMView() {
       setMagicalDarkness(state.magicalDarkness || []);
       setSpellTemplates(state.spellTemplates || []);
       setDmMarkers(state.dmMarkers || []);
+      setPlayerMapOverrides(state.playerMapOverrides || {});
       // Seed the current map's spawn points immediately, then pull
       // every other map's points in one shot so the right-click submenu
       // can list them without firing a fetch per map.
@@ -2012,6 +2017,17 @@ export default function DMView() {
         [m]: (prev[m] || []).map(s => s.id === spawnPoint.id ? spawnPoint : s),
       }));
     });
+    // DM-set player map overrides (native Split the Party).
+    socket.on('player_map_override_changed', ({ playerName, mapId }) => {
+      setPlayerMapOverrides(prev => {
+        const next = { ...prev };
+        if (mapId == null) delete next[playerName];
+        else next[playerName] = Number(mapId);
+        return next;
+      });
+    });
+    socket.on('player_map_overrides_cleared', () => setPlayerMapOverrides({}));
+
     socket.on('spawn_point_removed', ({ id, mapId }) => {
       if (mapId == null) {
         // Defensive: if the broadcast omitted mapId, sweep every bucket.
@@ -4221,6 +4237,73 @@ export default function DMView() {
                     </div>
                   </CollapsibleSection>
                 )}
+
+                {(() => {
+                  const playersOnly = users.filter(u => u.role !== 'dm');
+                  if (playersOnly.length === 0) return null;
+                  const assignedCount = Object.values(playerMapOverrides).filter(v => v != null).length;
+                  return (
+                    <CollapsibleSection
+                      id="split_the_party"
+                      title={
+                        assignedCount > 0
+                          ? `Split the Party — ${assignedCount} routed`
+                          : 'Split the Party'
+                      }
+                      defaultOpen={false}
+                    >
+                      <div className="bg-gray-800 rounded-xl p-3 space-y-2">
+                        <p className="text-[11px] text-gray-400 leading-snug">
+                          Pin a player to a specific map regardless of which map you're viewing or
+                          where their token is. "Follow DM" reverts them to the session's current
+                          map.
+                        </p>
+                        {playersOnly.map((u) => {
+                          const current = playerMapOverrides[u.name];
+                          return (
+                            <div key={u.name} className="flex items-center gap-2">
+                              <span
+                                className="text-xs flex-1 truncate"
+                                style={{ color: userColors[u.name] || 'white' }}
+                                title={u.name}
+                              >
+                                {u.name}
+                              </span>
+                              <select
+                                className="flex-1 min-w-0 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-dnd-gold"
+                                value={current == null ? '' : String(current)}
+                                onChange={(e) => {
+                                  const v = e.target.value === '' ? null : Number(e.target.value);
+                                  socket.emit('set_player_map_override', {
+                                    sessionId: session.id,
+                                    playerName: u.name,
+                                    mapId: v,
+                                  });
+                                }}
+                              >
+                                <option value="">— Follow DM —</option>
+                                {maps.map((m) => (
+                                  <option key={m.id} value={String(m.id)}>
+                                    {(m.name || `Map #${m.id}`) + (m.id === session.map_id ? '  (DM viewing)' : '')}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          );
+                        })}
+                        {assignedCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => socket.emit('clear_player_map_overrides', { sessionId: session.id })}
+                            className="w-full text-[11px] bg-gray-700 hover:bg-gray-600 text-gray-200 py-1 rounded mt-1"
+                          >
+                            Clear all ({assignedCount})
+                          </button>
+                        )}
+                      </div>
+                    </CollapsibleSection>
+                  );
+                })()}
 
                 <CollapsibleSection id="dice_reference" title="Quick Dice Reference">
                   <DiceRoller rolls={diceRolls} />

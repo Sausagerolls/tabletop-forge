@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Background — dark parchment with the brand red ring. -->
+  <rect width="512" height="512" fill="#0d1018"/>
+  <circle cx="256" cy="256" r="232" fill="#1a1f2e" stroke="#7c2828" stroke-width="14"/>
+
+  <!-- Anvil (forge core). -->
+  <g transform="translate(256,288)">
+    <path d="M -120 0 L -90 -34 L 90 -34 L 120 0 L 110 18 L -110 18 Z"
+          fill="#3a3f4e" stroke="#0a0d14" stroke-width="6"/>
+    <rect x="-46" y="18" width="92" height="50" fill="#2c303d" stroke="#0a0d14" stroke-width="6"/>
+    <rect x="-78" y="68" width="156" height="22" fill="#202430" stroke="#0a0d14" stroke-width="6"/>
+  </g>
+
+  <!-- Hammer struck onto the anvil. -->
+  <g transform="translate(180,170) rotate(-32)">
+    <rect x="-12" y="-110" width="24" height="180" rx="4" fill="#b08646" stroke="#3a2a14" stroke-width="6"/>
+    <rect x="-50" y="-150" width="100" height="50" rx="6" fill="#5a6273" stroke="#0a0d14" stroke-width="6"/>
+  </g>
+
+  <!-- Sparks. -->
+  <g fill="#f5b04a">
+    <circle cx="312" cy="232" r="6"/>
+    <circle cx="338" cy="218" r="4"/>
+    <circle cx="296" cy="208" r="3"/>
+    <circle cx="356" cy="248" r="5"/>
+  </g>
+</svg>

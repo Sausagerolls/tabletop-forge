@@ -1,0 +1,26 @@
+{
+  "name": "TableTop Forge",
+  "short_name": "Forge",
+  "description": "D&D 5e VTT — maps, tokens, fog of war, spell library, plugins.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d1018",
+  "theme_color": "#7c2828",
+  "categories": ["entertainment", "games", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

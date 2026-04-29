@@ -152,6 +152,11 @@ Or set up SSH keys (recommended) and remove DEPLOY_PASSWORD from $ENV_FILE:
 EOF
     exit 1
   fi
+  # Force password auth and disable pubkey attempts. Without this, ssh
+  # will offer every key in ~/.ssh/ before falling back to the password,
+  # and OpenSSH's MaxAuthTries (default 6) cuts the connection before
+  # sshpass gets a turn — surfacing as "Too many authentication failures".
+  SSH_OPTS="$SSH_OPTS -o PubkeyAuthentication=no -o PreferredAuthentications=password"
   export SSHPASS="$DEPLOY_PASSWORD"
   SSH_CMD="sshpass -e ssh $SSH_OPTS"
 else

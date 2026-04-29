@@ -631,7 +631,12 @@ function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
   }
 
   async function deletePlugin(id) {
-    if (!confirm(`Delete plugin "${id}"? Its files are removed but plugin_data rows are KEPT — re-installing later restores everything.`)) return;
+    if (!confirm(
+      `Delete plugin "${id}"?\n\n` +
+      `• Files removed from disk.\n` +
+      `• Library content the plugin imported (creatures, spells) is removed too.\n` +
+      `• DM-side preferences for the plugin (its plugin_data) are KEPT so re-installing restores per-DM state.`
+    )) return;
     setBusy(id); setActionErr('');
     try {
       const res = await fetch(`/api/plugins/${id}`, { method: 'DELETE' });
@@ -640,6 +645,36 @@ function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
       unloadPlugin(id);
       await refresh();
       onPluginsChanged && onPluginsChanged();
+      const cleaned = (data.creatures || 0) + (data.spells || 0);
+      if (cleaned > 0) {
+        setActionErr(`Removed ${data.creatures || 0} creature(s) and ${data.spells || 0} spell(s) imported by this plugin.`);
+      }
+    } catch (err) { setActionErr(err.message); }
+    finally { setBusy(null); }
+  }
+
+  // Server-side cleanup for tracking rows whose plugin is gone. Useful
+  // for libraries left behind by plugins removed before this version
+  // shipped (DELETE didn't clean tracked content automatically until
+  // v1.4.9). Surfaces the count so the DM can see what got tidied.
+  async function cleanupOrphans() {
+    if (!confirm(
+      'Scan for orphaned plugin content and remove it?\n\n' +
+      'Looks for tracking rows in plugin_data whose plugin is no longer installed, ' +
+      'then deletes the listed creatures and spells. Safe to run at any time — does ' +
+      'nothing if there are no orphans.'
+    )) return;
+    setBusy('__orphans'); setActionErr('');
+    try {
+      const res = await fetch('/api/plugins/cleanup-orphans', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const c = data.creaturesRemoved || 0;
+      const s = data.spellsRemoved || 0;
+      const p = data.orphanPlugins || 0;
+      setActionErr(p === 0
+        ? 'No orphaned plugin content found.'
+        : `Cleaned ${c} creature(s) and ${s} spell(s) from ${p} orphaned plugin tracking row(s).`);
     } catch (err) { setActionErr(err.message); }
     finally { setBusy(null); }
   }
@@ -682,10 +717,12 @@ function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
           host sections. */}
       <div className="bg-gray-800 rounded-xl p-3 space-y-3">
         <p className="text-[11px] text-gray-400 leading-snug">
-          Plugins extend the app with new tools, tabs and overlays. Disabling a plugin
-          hides its features but <strong>keeps its data</strong>; deleting removes the
-          plugin's files but still keeps its data so re-installing restores everything.
-          If a plugin breaks the app, exit the app and delete <code className="text-amber-300">backend/plugins/&lt;id&gt;</code> on
+          Plugins extend the app with new tools, tabs and overlays. <strong>Disable</strong> hides
+          a plugin's features and asks it to clean up any library content it imported.
+          <strong> Delete</strong> additionally removes the plugin's files; library content
+          (creatures, spells) imported by the plugin is removed too, but per-DM
+          preferences are preserved so re-installing restores them. If a plugin breaks
+          the app, exit and delete <code className="text-amber-300">backend/plugins/&lt;id&gt;</code> on
           disk — the manager picks up the change on next start.
         </p>
 
@@ -701,6 +738,16 @@ function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
         </label>
         {uploadErr && <div className="text-[11px] text-red-300 bg-red-900/30 border border-red-800 rounded px-2 py-1">{uploadErr}</div>}
         {actionErr && <div className="text-[11px] text-red-300 bg-red-900/30 border border-red-800 rounded px-2 py-1">{actionErr}</div>}
+
+        <button
+          type="button"
+          onClick={cleanupOrphans}
+          disabled={busy === '__orphans'}
+          className="w-full text-[11px] bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-200 py-1.5 rounded"
+          title="Find tracking rows whose plugin is gone and delete the leftover creatures + spells they imported."
+        >
+          {busy === '__orphans' ? 'Cleaning…' : 'Clean up orphaned plugin content'}
+        </button>
 
         {loading && <p className="text-[11px] text-gray-500 italic">Loading…</p>}
         {!loading && list.length === 0 && (

@@ -260,8 +260,77 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// DELETE /api/plugins/:id — remove the plugin's directory and DB row, but
-// leave its plugin_data rows in place per the no-data-loss rule.
+// Clean up library content a plugin imported via the content-exporter
+// runtime pattern (creatureIds + spellIds tracked under well-known KV
+// keys). Runs server-side so a frontend that's never been opened with
+// the plugin enabled still gets a tidy disable. Returns counts so
+// callers can surface what was removed. Safe to call when the keys
+// are missing or empty — no-ops cleanly.
+async function cleanupTrackedContent(pluginId) {
+  const out = { creatures: 0, spells: 0 };
+  try {
+    const cRow = await db.query(
+      'SELECT value FROM plugin_data WHERE plugin_id=$1 AND key=$2',
+      [pluginId, 'inserted_creature_ids']
+    );
+    const cIds = (cRow.rows[0]?.value || []).filter((n) => Number.isFinite(Number(n))).map(Number);
+    if (cIds.length) {
+      const r = await db.query('DELETE FROM creatures WHERE id = ANY($1::int[])', [cIds]);
+      out.creatures = r.rowCount || 0;
+    }
+  } catch (err) { console.warn(`cleanupTrackedContent (${pluginId}) creatures:`, err.message); }
+  try {
+    const sRow = await db.query(
+      'SELECT value FROM plugin_data WHERE plugin_id=$1 AND key=$2',
+      [pluginId, 'inserted_spell_ids']
+    );
+    const sIds = (sRow.rows[0]?.value || []).filter((n) => Number.isFinite(Number(n))).map(Number);
+    if (sIds.length) {
+      const r = await db.query('DELETE FROM spell_library WHERE id = ANY($1::int[])', [sIds]);
+      out.spells = r.rowCount || 0;
+    }
+  } catch (err) { console.warn(`cleanupTrackedContent (${pluginId}) spells:`, err.message); }
+  return out;
+}
+
+// POST /api/plugins/cleanup-orphans — find plugin_data tracking rows
+// whose plugin_id is no longer installed, delete the listed library
+// content, and drop the orphan KV rows. Surfaces what was cleaned so
+// the caller can confirm. Safe to call repeatedly — second run finds
+// nothing.
+router.post('/cleanup-orphans', async (req, res) => {
+  try {
+    const ids = (await db.query(
+      `SELECT DISTINCT plugin_id FROM plugin_data
+        WHERE key IN ('inserted_creature_ids','inserted_spell_ids','content_loaded_v1','treasure_loaded_v1','install_status')
+          AND plugin_id NOT IN (SELECT id FROM plugins)`
+    )).rows.map(r => r.plugin_id);
+    let totalCreatures = 0, totalSpells = 0;
+    for (const pid of ids) {
+      const out = await cleanupTrackedContent(pid);
+      totalCreatures += out.creatures;
+      totalSpells += out.spells;
+      await db.query(
+        `DELETE FROM plugin_data WHERE plugin_id=$1
+            AND key IN ('inserted_creature_ids','inserted_spell_ids','content_loaded_v1','treasure_loaded_v1','install_status')`,
+        [pid]
+      );
+    }
+    res.json({ orphanPlugins: ids.length, creaturesRemoved: totalCreatures, spellsRemoved: totalSpells });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/plugins/:id — remove the plugin's directory and DB row.
+// Tracked library content (creatures + spells imported via the content-
+// exporter runtime pattern) is removed alongside the plugin so a
+// "Delete" from the manager actually fulfils the user's expectation
+// of "this plugin and its content are gone". The plugin_data KV that
+// drove that tracking is also removed in the same transaction; if the
+// DM re-installs later the runtime sees an empty slate and re-imports.
+// Other plugin_data keys (per-DM preferences, etc.) are still kept
+// because the no-data-loss rule applies to non-tracking state.
 router.delete('/:id', async (req, res) => {
   try {
     const row = await fetchPluginRow(req.params.id);
@@ -276,9 +345,15 @@ router.delete('/:id', async (req, res) => {
         error: `Cannot delete — required by: ${dependents.join(', ')}. Disable/delete those first.`,
       });
     }
+    const cleanup = await cleanupTrackedContent(req.params.id);
+    await db.query(
+      `DELETE FROM plugin_data WHERE plugin_id=$1
+          AND key IN ('inserted_creature_ids','inserted_spell_ids','content_loaded_v1','treasure_loaded_v1','install_status')`,
+      [req.params.id]
+    );
     rmDirSafe(path.join(PLUGINS_DIR, req.params.id));
     await db.query('DELETE FROM plugins WHERE id=$1', [req.params.id]);
-    res.json({ ok: true });
+    res.json({ ok: true, ...cleanup });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -51,6 +51,7 @@ const PLUGIN_ID = __PLUGIN_ID__;
 const KEY_CREATURE_IDS = 'inserted_creature_ids';
 const KEY_SPELL_IDS    = 'inserted_spell_ids';
 const KEY_TREASURE_LOADED = 'treasure_loaded_v1';
+const KEY_CONTENT_LOADED  = 'content_loaded_v1';
 const KEY_STATUS       = 'install_status';
 
 const tabSubs = new Set();
@@ -152,11 +153,26 @@ export default {
       if (Array.isArray(ss)) spellIds = ss.filter((s) => typeof s === 'string');
     } catch { /* network blip */ }
 
+    // Content packs must NOT re-import on every plugin load. The plugin
+    // module loads fresh on every page reload while enabled, so without
+    // this guard each refresh would POST the bundled creatures+spells
+    // again, accumulating duplicates with new ids the previous run had
+    // no way to track. The KV flag is set after first successful import
+    // and survives plugin disable→enable cycles (KV is preserved by
+    // host design); it's only cleared when the plugin's unregister
+    // tears the rows back out, so a subsequent re-enable correctly
+    // re-imports.
+    let alreadyLoaded = false;
+    try { alreadyLoaded = !!(await data.read(KEY_CONTENT_LOADED)); } catch {}
+
     (async () => {
       installState = 'installing'; installError = null; pingTab();
       try {
-        await importCreatures();
-        await importSpells();
+        if (!alreadyLoaded) {
+          await importCreatures();
+          await importSpells();
+          try { await data.write(KEY_CONTENT_LOADED, true); } catch {}
+        }
         // Treasure last — it's DM-only and best-effort. A failure here
         // shouldn't roll back the library imports.
         try { await importTreasure(data); } catch { /* DM-only, non-fatal */ }
@@ -166,8 +182,10 @@ export default {
         installState = 'failed';
       }
       try {
-        await data.write(KEY_CREATURE_IDS, creatureIds);
-        await data.write(KEY_SPELL_IDS, spellIds);
+        if (!alreadyLoaded) {
+          await data.write(KEY_CREATURE_IDS, creatureIds);
+          await data.write(KEY_SPELL_IDS, spellIds);
+        }
         await data.write(KEY_STATUS, { state: installState, error: installError });
       } catch {}
       pingTab();
@@ -214,7 +232,13 @@ export default {
       if (savedDataApi) {
         await savedDataApi.write(KEY_CREATURE_IDS, creatureIds);
         await savedDataApi.write(KEY_SPELL_IDS, spellIds);
+        // Clear the once-flag so a re-enable knows to re-import. We only
+        // do this if everything cleaned up — partial failures keep the
+        // tracking arrays populated so a retry on next disable can
+        // finish them off.
         if (creatureIds.length === 0 && spellIds.length === 0) {
+          try { await savedDataApi.delete(KEY_CONTENT_LOADED); } catch {}
+          try { await savedDataApi.delete(KEY_TREASURE_LOADED); } catch {}
           await savedDataApi.delete(KEY_STATUS);
         }
       }

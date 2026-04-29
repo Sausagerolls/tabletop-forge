@@ -95,6 +95,42 @@ if [ "$SKIP_GIT" = "0" ]; then
   fi
   git push origin main
   git push origin "v${VERSION}" 2>/dev/null || true
+
+  # ── GitHub Release ──────────────────────────────────────────────────
+  # Pushing a tag does NOT create a Release entry on github.com — the
+  # /releases page stays empty unless you explicitly create one. Use the
+  # gh CLI to publish a Release for this tag with auto-generated notes
+  # (commit log since the previous tag, minus housekeeping commits) and
+  # the downloadable zip attached as an asset.
+  if command -v gh >/dev/null 2>&1; then
+    if gh release view "v${VERSION}" >/dev/null 2>&1; then
+      echo "  (gh release v${VERSION} already exists — skipping)"
+    else
+      # Find the immediately previous tag for the release-notes diff.
+      # Falls back to the empty tree if this is the very first tag.
+      prev_tag=$(git tag --sort=-v:refname | grep -v "^v${VERSION}\$" | head -1 || true)
+      if [ -n "$prev_tag" ]; then
+        # Filter out website-only commits — they're noise in user-facing notes.
+        notes=$(git log --pretty=format:"- %s" "${prev_tag}..v${VERSION}" \
+          | grep -v '^- website:' || true)
+      fi
+      [ -z "${notes:-}" ] && notes="- See commit log for changes."
+      zip_path="website/releases/dnd-vtt-v${VERSION}.zip"
+      if [ -f "$zip_path" ]; then
+        gh release create "v${VERSION}" "$zip_path" \
+          --title "v${VERSION}" --notes "$notes" \
+          && echo "  GitHub Release created with $zip_path attached"
+      else
+        gh release create "v${VERSION}" \
+          --title "v${VERSION}" --notes "$notes" \
+          && echo "  GitHub Release created (no zip found at $zip_path)"
+      fi
+    fi
+  else
+    echo "  (gh CLI not installed — skipping GitHub Release creation)"
+    echo "  Install it from https://cli.github.com or run:"
+    echo "    gh release create v${VERSION} website/releases/dnd-vtt-v${VERSION}.zip"
+  fi
   echo ""
 fi
 

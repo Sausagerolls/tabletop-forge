@@ -92,6 +92,13 @@ function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHp
   }
   const levels = Array.from(preparedByLevel.keys()).sort((a, b) => a - b);
 
+  // Per-ability spellcasting summary (mod / attack / save DC).
+  const profBonus = creature.proficiency_bonus ?? 2;
+  const abilityKeyMap = { STR: 'strength', DEX: 'dexterity', CON: 'constitution', INT: 'intelligence', WIS: 'wisdom', CHA: 'charisma' };
+  const usedAbilities = Array.from(new Set(
+    spells.map(s => (s.casting_ability || '').toUpperCase()).filter(a => abilityKeyMap[a])
+  ));
+
   return (
     <div className="absolute bottom-36 left-4 z-50 w-80 bg-dnd-panel border border-dnd-gold/40 rounded-xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: '70vh' }}>
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700">
@@ -252,6 +259,28 @@ function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHp
                 </div>
               );
             })}
+          </div>
+        )}
+        {/* Spellcasting summary */}
+        {usedAbilities.length > 0 && (
+          <div className="space-y-1">
+            <div className="text-xs text-gray-400">Spellcasting</div>
+            <div className="bg-gray-800/60 border border-gray-700 rounded p-2 space-y-1 text-[11px]">
+              {usedAbilities.map(ab => {
+                const score = creature[abilityKeyMap[ab]] ?? 10;
+                const m = Math.floor((score - 10) / 2);
+                const saveDC = 8 + profBonus + m;
+                const atkBonus = m + profBonus;
+                return (
+                  <div key={ab} className="flex flex-wrap gap-x-3 gap-y-0.5">
+                    <span className="font-semibold text-dnd-gold">{ab}</span>
+                    <span><span className="text-gray-500">Mod:</span> <span className="font-mono">{m >= 0 ? '+' : ''}{m}</span></span>
+                    <span><span className="text-gray-500">Atk:</span> <span className="font-mono">{atkBonus >= 0 ? '+' : ''}{atkBonus}</span></span>
+                    <span><span className="text-gray-500">Save DC:</span> <span className="font-mono">{saveDC}</span></span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
         {/* Prepared spells */}
@@ -568,6 +597,7 @@ export default function PlayerView() {
   const [activeTool, setActiveTool] = useState('move');
   const [gridColor, setGridColor] = useState('rgba(0,0,0,0.35)');
   const [gridThickness, setGridThickness] = useState(0.7);
+  const [tokenNameFontSize, setTokenNameFontSize] = useState(45);
   const [combatActive, setCombatActive] = useState(false);
   const [combatTurn, setCombatTurn] = useState(0);
   const [userColors, setUserColors] = useState({});
@@ -704,6 +734,7 @@ export default function PlayerView() {
       setAmbientLight(state.session.ambient_light || 'bright');
       if (state.session.grid_color) setGridColor(state.session.grid_color);
       if (state.session.grid_thickness != null) setGridThickness(state.session.grid_thickness);
+      if (state.session.token_name_font_size != null) setTokenNameFontSize(state.session.token_name_font_size);
       setCombatActive(state.session.combat_active || false);
       setCombatTurn(state.session.combat_turn || 0);
       if (uc) setUserColors(uc);
@@ -976,6 +1007,10 @@ export default function PlayerView() {
     socket.on('grid_style_changed', ({ gridColor: gc, gridThickness: gt }) => {
       if (gc) setGridColor(gc);
       if (gt != null) setGridThickness(gt);
+    });
+
+    socket.on('token_name_font_size_changed', ({ tokenNameFontSize: ts }) => {
+      if (Number.isFinite(ts)) setTokenNameFontSize(ts);
     });
 
     socket.on('combat_changed', ({ active, currentTurn, tokenIds }) => {
@@ -1298,6 +1333,7 @@ export default function PlayerView() {
           activeTool={activeTool}
           gridColor={gridColor}
           gridThickness={gridThickness}
+          tokenNameFontSize={tokenNameFontSize}
           playerTokenId={playerTokenId}
           walls={walls}
           doors={doors}

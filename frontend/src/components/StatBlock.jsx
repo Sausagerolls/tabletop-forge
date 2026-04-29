@@ -295,6 +295,7 @@ export function SpellBox({ spell, typeLabel, typeColor, darkTheme = false }) {
         </div>
       </div>
       <div className="mt-1 space-y-0.5 text-xs">
+        {s.casting_ability && <div><span className={palette.label}>Casting Ability:</span> {String(s.casting_ability).toUpperCase()}</div>}
         {s.casting_time && <div><span className={palette.label}>Casting Time:</span> {s.casting_time}</div>}
         {s.range_area && <div><span className={palette.label}>Range/Area:</span> {s.range_area}</div>}
         {compsStr && <div><span className={palette.label}>Components:</span> {compsStr}</div>}
@@ -364,7 +365,7 @@ function SpellsSection({ creature, onRoll }) {
           {usedAbilities.map(ab => {
             const score = creature[abilityLabels[ab]] ?? 10;
             const m = abilityMod(score);
-            const saveDC = 10 + m;
+            const saveDC = 8 + profBonus + m;
             const atkBonus = m + profBonus;
             return (
               <div key={ab} className="flex flex-wrap gap-3">

@@ -113,8 +113,9 @@ function hexOpacityToRgba(hex, opacity) {
   return `rgba(${r},${g},${b},${Number(opacity).toFixed(2)})`;
 }
 
-const PANEL_TABS = ['map', 'library', 'spells', 'tokens', 'markers', 'treasure', 'handouts', 'session'];
+const DEFAULT_PANEL_TABS = ['map', 'library', 'spells', 'tokens', 'markers', 'treasure', 'handouts', 'session'];
 const PANEL_LABELS = { map: 'Map', library: 'Library', spells: 'Spells', tokens: 'Tokens', markers: 'Markers', treasure: 'Treasure', handouts: 'Handouts', session: 'Session' };
+const PANEL_TAB_ORDER_KEY = 'dndvtt_dm_panel_tab_order';
 
 const DM_MARKER_TYPES = [
   { type: 'text_label',  Icon: MarkerIcons.text_label, label: 'Text Label'    },
@@ -784,12 +785,51 @@ function PluginTemplateEditorExtensions({ template }) {
   );
 }
 
+// Collapsible wrapper used by the Session tab so each subsection can be folded
+// away when the panel gets crowded. State persists per-id in localStorage so a
+// DM's collapsed/expanded preference survives reloads.
+const SESSION_COLLAPSED_KEY = 'dndvtt_session_section_collapsed_v1';
+function CollapsibleSection({ id, title, children, defaultOpen = true }) {
+  const [open, setOpen] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(SESSION_COLLAPSED_KEY) || '{}');
+      if (id in stored) return !stored[id];
+    } catch {}
+    return defaultOpen;
+  });
+  function toggle() {
+    setOpen((prev) => {
+      const next = !prev;
+      try {
+        const stored = JSON.parse(localStorage.getItem(SESSION_COLLAPSED_KEY) || '{}');
+        stored[id] = !next;
+        localStorage.setItem(SESSION_COLLAPSED_KEY, JSON.stringify(stored));
+      } catch {}
+      return next;
+    });
+  }
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={toggle}
+        className="w-full flex items-center justify-between text-sm font-semibold text-dnd-gold mb-2 hover:text-yellow-200 transition-colors"
+        title={open ? 'Collapse section' : 'Expand section'}
+      >
+        <span>{title}</span>
+        <span className="text-xs text-gray-500 select-none">{open ? '▼' : '▶'}</span>
+      </button>
+      {open && children}
+    </div>
+  );
+}
+
 // Built-in panel tab bar — filtered by the panelTabHidden registry.
 // Subscribing to the registry version means a plugin enabling/disabling a
 // hide rule re-renders the bar live. Hiding only removes the BUTTON;
 // the corresponding tab content is still rendered when active so a
 // plugin can call setPanelTab to land the user inside a hidden tab.
-function PanelTabBar({ tabs, labels, activeTab, onSelect }) {
+function PanelTabBar({ tabs, labels, activeTab, onSelect, onReorder }) {
   useRegistryVersion();
   const hidden = new Set();
   for (const set of pluginRegistries.panelTabHidden.values()) {
@@ -802,9 +842,25 @@ function PanelTabBar({ tabs, labels, activeTab, onSelect }) {
         <button
           key={t}
           onClick={() => onSelect(t)}
+          draggable={!!onReorder}
+          onDragStart={(e) => {
+            if (!onReorder) return;
+            e.dataTransfer.setData('application/x-dm-tab', t);
+            e.dataTransfer.effectAllowed = 'move';
+          }}
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes('application/x-dm-tab')) e.preventDefault();
+          }}
+          onDrop={(e) => {
+            const from = e.dataTransfer.getData('application/x-dm-tab');
+            if (!from || from === t) return;
+            e.preventDefault();
+            onReorder?.(from, t);
+          }}
           className={`flex-1 py-2 text-xs font-medium transition-colors truncate px-1 ${
             activeTab === t ? 'text-dnd-gold border-b-2 border-dnd-gold bg-black/20' : 'text-gray-400 hover:text-gray-200'
           }`}
+          title={onReorder ? 'Drag to reorder' : undefined}
         >
           {labels[t]}
         </button>
@@ -1038,6 +1094,40 @@ export default function DMView() {
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [panelTab, setPanelTab] = useState('map');
   const [panelOpen, setPanelOpen] = useState(true);
+  const [tokenNameFontSize, setTokenNameFontSize] = useState(45);
+  function handleTokenNameFontSizeChange(v) {
+    const clamped = Math.max(10, Math.min(100, Math.round(v)));
+    setTokenNameFontSize(clamped);
+    if (session?.id) {
+      socket.emit('change_token_name_font_size', { sessionId: session.id, tokenNameFontSize: clamped });
+    }
+  }
+  const [panelTabs, setPanelTabs] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(PANEL_TAB_ORDER_KEY) || 'null');
+      if (Array.isArray(stored) && stored.length) {
+        // Keep only known tabs and append any missing ones (e.g. after upgrade
+        // adds a new built-in tab) so the bar stays complete.
+        const known = stored.filter((t) => DEFAULT_PANEL_TABS.includes(t));
+        for (const t of DEFAULT_PANEL_TABS) if (!known.includes(t)) known.push(t);
+        return known;
+      }
+    } catch {}
+    return [...DEFAULT_PANEL_TABS];
+  });
+  function reorderPanelTab(fromId, toId) {
+    setPanelTabs((prev) => {
+      const arr = [...prev];
+      const fromIdx = arr.indexOf(fromId);
+      const toIdx = arr.indexOf(toId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      arr.splice(fromIdx, 1);
+      const insertAt = arr.indexOf(toId);
+      arr.splice(insertAt, 0, fromId);
+      try { localStorage.setItem(PANEL_TAB_ORDER_KEY, JSON.stringify(arr)); } catch {}
+      return arr;
+    });
+  }
   const [selectedToken, setSelectedToken] = useState(null);
   const [tokenListCollapsed, setTokenListCollapsed] = useState(false);
   const [tokenOrder, setTokenOrder] = useState([]); // array of token ids — manual order for non-player tokens
@@ -1382,6 +1472,7 @@ export default function DMView() {
       setGridOpacity(parsed.opacity);
       setCombatActive(state.session.combat_active || false);
       setCombatTurn(state.session.combat_turn || 0);
+      setTokenNameFontSize(state.session.token_name_font_size ?? 45);
       if (uc) setUserColors(uc);
       if (u) setUsers(u);
     });
@@ -1581,6 +1672,10 @@ export default function DMView() {
     socket.on('grid_style_changed', ({ gridColor: gc, gridThickness: gt }) => {
       if (gc) { setGridColor(gc); const p = parseRgba(gc); setGridHex(p.hex); setGridOpacity(p.opacity); }
       if (gt != null) setGridThickness(gt);
+    });
+
+    socket.on('token_name_font_size_changed', ({ tokenNameFontSize: ts }) => {
+      if (Number.isFinite(ts)) setTokenNameFontSize(ts);
     });
 
     socket.on('combat_changed', ({ active, currentTurn, tokenIds }) => {
@@ -2252,6 +2347,7 @@ export default function DMView() {
             onTemplateDelete={(id) => { socket.emit('delete_template', { id }); setEditingTemplateId(prev => prev === id ? null : prev); }}
             onTemplateSelect={(id) => setEditingTemplateId(id)}
             remoteMeasurements={remoteMeasurements}
+            tokenNameFontSize={tokenNameFontSize}
           />
 
           {placingCreature && (
@@ -2566,10 +2662,11 @@ export default function DMView() {
         <div className="bg-dnd-panel border-l border-gray-700 flex flex-col shrink-0 h-full" style={{ width: panelWidth }}>
           <div className="flex border-b border-gray-700 shrink-0 overflow-x-auto">
             <PanelTabBar
-              tabs={PANEL_TABS}
+              tabs={panelTabs}
               labels={PANEL_LABELS}
               activeTab={panelTab}
               onSelect={setPanelTab}
+              onReorder={reorderPanelTab}
             />
             <PluginDmTabs activeTab={panelTab} onSelect={setPanelTab} />
           </div>
@@ -2668,6 +2765,28 @@ export default function DMView() {
                         <span>Thin</span><span>Thick</span>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold text-dnd-gold mb-2">Token Labels</h3>
+                  <div className="bg-gray-800 rounded-xl p-3">
+                    <div className="flex justify-between text-xs text-gray-400 mb-1">
+                      <span>Name font size</span>
+                      <span>{tokenNameFontSize}px</span>
+                    </div>
+                    <input
+                      type="range" min={10} max={100} step={1}
+                      value={tokenNameFontSize}
+                      onChange={(e) => handleTokenNameFontSizeChange(parseInt(e.target.value, 10))}
+                      className="w-full accent-dnd-gold"
+                    />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>Small</span><span>Large</span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-2 leading-snug">
+                      HP text and bar height scale to half the name size automatically. Synced to all players.
+                    </p>
                   </div>
                 </div>
 
@@ -3414,8 +3533,7 @@ export default function DMView() {
             {/* ── SESSION TAB ── */}
             {panelTab === 'session' && (
               <div className="h-full overflow-y-auto p-4 space-y-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-dnd-gold mb-2">Session Info</h3>
+                <CollapsibleSection id="session_info" title="Session Info">
                   <div className="bg-gray-800 rounded-xl p-4 space-y-3">
                     <div>
                       <div className="text-xs text-gray-400 mb-1">Session Name</div>
@@ -3467,11 +3585,10 @@ export default function DMView() {
                       </div>
                     </div>
                   </div>
-                </div>
+                </CollapsibleSection>
 
                 {users.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-dnd-gold mb-2">Connected Players</h3>
+                  <CollapsibleSection id="connected_players" title="Connected Players">
                     <div className="space-y-2">
                       {users.map((u) => {
                         const hasToken = tokens.some(t => t.is_player && t.player_name === u.name);
@@ -3510,17 +3627,15 @@ export default function DMView() {
                         );
                       })}
                     </div>
-                  </div>
+                  </CollapsibleSection>
                 )}
 
-                <div>
-                  <h3 className="text-sm font-semibold text-dnd-gold mb-2">Quick Dice Reference</h3>
+                <CollapsibleSection id="dice_reference" title="Quick Dice Reference">
                   <DiceRoller rolls={diceRolls} />
-                </div>
+                </CollapsibleSection>
 
                 {/* ── AI Settings ── */}
-                <div>
-                  <h3 className="text-sm font-semibold text-dnd-gold mb-2">AI Integration</h3>
+                <CollapsibleSection id="ai_integration" title="AI Integration" defaultOpen={false}>
                   <div className="bg-gray-800 rounded-xl p-4 space-y-3">
                     <p className="text-xs text-gray-400">
                       Configure a local or cloud LLM to generate stat blocks on the fly and to scan spell PDFs.
@@ -3777,7 +3892,7 @@ export default function DMView() {
                       )}
                     </div>
                   </div>
-                </div>
+                </CollapsibleSection>
 
                 {/* Plugin extensions targeting the Session tab — render
                     just above the manager so plugin-driven controls are

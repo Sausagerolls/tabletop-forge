@@ -256,6 +256,7 @@ async function getSessionState(sessionCode) {
       fow_blur: session.fow_blur ?? 16,
       fow_color: session.fow_color || '#000000',
       ambient_light: session.ambient_light || 'bright',
+      token_name_font_size: session.token_name_font_size ?? 45,
     },
     tokens: tokensRows,
     walls: wallsRows,
@@ -1352,6 +1353,24 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── Token name font size change (DM only) ────────────────────────────────
+  socket.on('change_token_name_font_size', async ({ sessionId, tokenNameFontSize }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+
+    try {
+      const size = Math.max(10, Math.min(100, Math.round(Number(tokenNameFontSize) || 45)));
+      await db.query(
+        'UPDATE sessions SET token_name_font_size=$1 WHERE id=$2',
+        [size, sessionId]
+      );
+      io.to(sessionCode).emit('token_name_font_size_changed', { tokenNameFontSize: size });
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
   // ── Update token size (DM only) ───────────────────────────────────────────
   socket.on('update_token_size', async ({ tokenId, size }) => {
     if (socket.data.role !== 'dm') return;
@@ -1533,6 +1552,7 @@ server.listen(PORT, async () => {
   try {
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS grid_color VARCHAR(50) DEFAULT 'rgba(0,0,0,0.35)'`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS grid_thickness FLOAT DEFAULT 0.7`);
+    await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS token_name_font_size INTEGER DEFAULT 45`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS combat_active BOOLEAN DEFAULT false`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS combat_turn INTEGER DEFAULT 0`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS temp_hp INTEGER DEFAULT 0`);

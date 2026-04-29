@@ -312,7 +312,7 @@ const TokenArt = React.memo(function TokenArt({ src, w, h, x, y }) {
 // offset: { x, y } is the grid origin in map-space (so token at col,row renders
 // at map position offset + col*gridSize, offset + row*gridSize).
 // dragVisPos, when set, is already in map-space (includes the offset).
-function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = false, dragVisPos, playerTokenId, showLabel = true, overrideOpacity = null }) {
+function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = false, dragVisPos, playerTokenId, showLabel = true, overrideOpacity = null, tokenNameFontSize = 45 }) {
   const sz = TOKEN_SIZES[token.size] || TOKEN_SIZES.medium;
   const tW = sz.gridW * gridSize;
   const tH = sz.gridH * gridSize;
@@ -333,7 +333,8 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
 
   const hpPct = token.max_hp > 0 ? Math.max(0, token.current_hp / token.max_hp) : 0;
   const isDead = token.is_dead;
-  const fontSize = 45;
+  const fontSize = tokenNameFontSize;
+  const hpFontSize = Math.max(6, Math.round(fontSize / 2));
 
   // Position derived purely from props — no internal state to cause stale snaps
   const x = dragVisPos ? dragVisPos.x : offset.x + Number(token.grid_col) * gridSize;
@@ -432,9 +433,9 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
         const bW       = cardW - bPad * 2;
         const nameH    = fontSize + 2;
         const barOff   = nameH + 5;
-        const barH     = 7;
+        const barH     = Math.max(4, Math.round(fontSize / 2));
         const cardH    = hpText
-          ? barOff + barH + 10 + 5
+          ? barOff + barH + hpFontSize + 6
           : barOff + barH + 5;
         const hpColor_ = hpColor(token.current_hp, token.max_hp);
 
@@ -498,7 +499,7 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
                 width={cardW - 6}
                 align="center"
                 fill={hpColor_}
-                fontSize={9}
+                fontSize={hpFontSize}
                 listening={false}
               />
             )}
@@ -1350,6 +1351,7 @@ export default function MapStage({
   onTemplateUpdate = null,
   onTemplateSelect = null,
   selectedTemplateId = null,
+  tokenNameFontSize = 45,
 }) {
   const stageRef = useRef(null);
   const containerRef = useRef(null);
@@ -3748,6 +3750,7 @@ export default function MapStage({
                 playerTokenId={playerTokenId}
                 showLabel={showLabel}
                 overrideOpacity={overrideOpacity}
+                tokenNameFontSize={tokenNameFontSize}
               />
             );
           })}
@@ -3787,6 +3790,7 @@ export default function MapStage({
                 playerTokenId={playerTokenId}
                 showLabel={showLabel}
                 overrideOpacity={overrideOpacity}
+                tokenNameFontSize={tokenNameFontSize}
               />
             );
           })}

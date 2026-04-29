@@ -489,6 +489,16 @@ One extension per plugin per tab. If you need multiple chunks, return a Fragment
 
 > **Currently only the Session tab honours panelTabExtensions.** The other built-in tabs don't yet have the host-side render slot wired up — that's a one-line `<PluginPanelTabExtensions tabId="..." />` insertion per tab in `DMView.jsx`. If you need to extend a different tab, open an issue or PR.
 
+#### Session tab layout — collapsible sections
+
+As of v1.4.3 the host's built-in Session tab sections (**Session Info**, **Connected Players**, **Quick Dice Reference**, **AI Integration**) are wrapped in collapsible panels. Each has a `▼/▶` chevron header and the open/closed state is persisted per-DM in `localStorage` under the `dndvtt_session_section_collapsed_v1` key, keyed by section id.
+
+What this means for `panelTabExtensions` targeting `tabId: 'session'`:
+
+- Your extension renders **as a sibling** of those collapsible panels, not inside one. Wrapping behaviour for host sections does not apply to your node — you control your own visibility/layout.
+- If your plugin renders a long form, consider mirroring the host's pattern (a clickable gold header with a chevron, body hidden when closed) so the Session tab keeps a consistent feel. The host helper is not exported, but a 20-line `useState` + `localStorage` shim is enough; pick a unique storage key (e.g. `myplugin_section_collapsed`) so you don't collide with the host's `dndvtt_session_section_collapsed_v1`.
+- Don't try to slot your UI inside one of the host's collapsible panels — there's no API for that. Render at the top level and the host will place you correctly.
+
 ### `mapClickHandlers`
 
 ```js

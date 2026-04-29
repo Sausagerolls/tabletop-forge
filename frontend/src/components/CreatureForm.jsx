@@ -165,20 +165,60 @@ const ATTACK_SAVE_OPTS = [
 const SAVE_ABILITIES = ['STR','DEX','CON','INT','WIS','CHA'];
 
 function SpellEditor({
-  spell, updateSpell, removeSpell,
+  spell, updateSpell, removeSpell, swapSpellType, reorderSpell,
   getSpellDmgEntries, addSpellDmgEntry, updateSpellDmgEntry, removeSpellDmgEntry,
   borderClass = 'border-red-900/40', isUtility = false,
 }) {
   const smallInput = 'bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-dnd-gold';
+  const [dragOver, setDragOver] = useState(false);
   return (
-    <div className={`mb-2 bg-gray-800 rounded-lg p-2 space-y-1.5 border ${borderClass}`}>
+    <div
+      className={`mb-2 bg-gray-800 rounded-lg p-2 space-y-1.5 border ${borderClass} ${dragOver ? 'ring-2 ring-dnd-gold' : ''}`}
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes('application/x-spell-id')) {
+          e.preventDefault();
+          setDragOver(true);
+        }
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        setDragOver(false);
+        const fromId = e.dataTransfer.getData('application/x-spell-id');
+        if (!fromId) return;
+        e.preventDefault();
+        const fromIdNum = Number(fromId);
+        if (!fromIdNum || fromIdNum === spell.id) return;
+        reorderSpell?.(fromIdNum, spell.id);
+      }}
+    >
       <div className="flex gap-2 items-start">
+        <span
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData('application/x-spell-id', String(spell.id));
+            e.dataTransfer.effectAllowed = 'move';
+          }}
+          className="text-gray-500 hover:text-dnd-gold cursor-grab active:cursor-grabbing select-none px-1 pt-1 shrink-0"
+          title="Drag to reorder"
+        >⋮⋮</span>
         <input
           className={`flex-1 ${smallInput}`}
           placeholder="Spell name"
           value={spell.name}
           onChange={(e) => updateSpell(spell.id, 'name', e.target.value)}
         />
+        <button
+          type="button"
+          onClick={() => swapSpellType?.(spell.id)}
+          className={`text-[10px] px-1.5 py-1 rounded border shrink-0 transition-colors ${
+            isUtility
+              ? 'border-red-900/60 text-red-300 hover:bg-red-900/30'
+              : 'border-blue-900/60 text-blue-300 hover:bg-blue-900/30'
+          }`}
+          title={isUtility ? 'Move to Combat' : 'Move to Utility'}
+        >
+          → {isUtility ? 'Combat' : 'Utility'}
+        </button>
         <label className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer" title="Prepared">
           <input
             type="checkbox"
@@ -792,6 +832,26 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   }
   function updateSpell(id, field, value) {
     setForm((f) => ({ ...f, spells: f.spells.map((s) => s.id === id ? { ...s, [field]: value } : s) }));
+  }
+  function swapSpellType(id) {
+    setForm((f) => ({
+      ...f,
+      spells: (f.spells || []).map((s) => s.id === id
+        ? { ...s, type: s.type === 'combat' ? 'utility' : 'combat' }
+        : s),
+    }));
+  }
+  function reorderSpell(fromId, toId) {
+    setForm((f) => {
+      const arr = [...(f.spells || [])];
+      const fromIdx = arr.findIndex((s) => s.id === fromId);
+      if (fromIdx === -1) return f;
+      const [moved] = arr.splice(fromIdx, 1);
+      const toIdx = arr.findIndex((s) => s.id === toId);
+      if (toIdx === -1) { arr.splice(fromIdx, 0, moved); return f; }
+      arr.splice(toIdx, 0, moved);
+      return { ...f, spells: arr };
+    });
   }
 
   function getSpellDmgEntries(spell) {
@@ -1615,6 +1675,8 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                           spell={spell}
                           updateSpell={updateSpell}
                           removeSpell={removeSpell}
+                          swapSpellType={swapSpellType}
+                          reorderSpell={reorderSpell}
                           getSpellDmgEntries={getSpellDmgEntries}
                           addSpellDmgEntry={addSpellDmgEntry}
                           updateSpellDmgEntry={updateSpellDmgEntry}
@@ -1643,6 +1705,8 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                           spell={spell}
                           updateSpell={updateSpell}
                           removeSpell={removeSpell}
+                          swapSpellType={swapSpellType}
+                          reorderSpell={reorderSpell}
                           getSpellDmgEntries={getSpellDmgEntries}
                           addSpellDmgEntry={addSpellDmgEntry}
                           updateSpellDmgEntry={updateSpellDmgEntry}

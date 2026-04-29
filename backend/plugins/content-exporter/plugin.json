@@ -1,8 +1,8 @@
 {
   "id": "content-exporter",
   "name": "Content Exporter",
-  "version": "1.0.0",
-  "description": "Pick creatures and spells from your library and bundle them as an installable plugin .zip. The exported pack auto-installs its content on enable and removes it on disable.",
+  "version": "1.1.0",
+  "description": "Pick creatures, spells, AND treasure-chest items from your DM panel and bundle them as an installable plugin .zip. The exported pack auto-installs its library content (creatures + spells) on enable and removes it on disable; bundled treasure items are pushed into the destination DM's treasure chest once on first install.",
   "author": "TableTop Forge",
   "frontend_entry": "client.js",
   "extension_points": ["dmTabs"]

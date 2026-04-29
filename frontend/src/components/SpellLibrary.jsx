@@ -6,6 +6,28 @@ const LEVEL_LABELS = ['Cantrip', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th'
 export default function SpellLibrary({ aiSettings }) {
   const CLASSES = useAllClasses();
   const [spells, setSpells] = useState([]);
+  // Scan-PDF panel collapse state. Persisted under the same key shape as
+  // the host's CollapsibleSection in DMView so DMs reading the storage
+  // see a consistent layout. Defaults to OPEN — most DMs reach the
+  // panel to import a book, then forget it.
+  const [scanOpen, setScanOpen] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('dndvtt_spell_panel_collapsed_v1') || '{}');
+      if ('scan_pdf' in stored) return !stored.scan_pdf;
+    } catch {}
+    return true;
+  });
+  function toggleScan() {
+    setScanOpen((prev) => {
+      const next = !prev;
+      try {
+        const stored = JSON.parse(localStorage.getItem('dndvtt_spell_panel_collapsed_v1') || '{}');
+        stored.scan_pdf = !next;
+        localStorage.setItem('dndvtt_spell_panel_collapsed_v1', JSON.stringify(stored));
+      } catch {}
+      return next;
+    });
+  }
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
   const [classFilter, setClassFilter] = useState('');
@@ -407,42 +429,56 @@ export default function SpellLibrary({ aiSettings }) {
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4">
-      {/* Open5e ruleset toggle — controls which SRD scans + refreshes pull from. */}
-      <div className="bg-gray-900/60 border border-gray-700 rounded-lg px-3 py-2 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-xs font-semibold text-dnd-gold">Open5e ruleset</div>
-          <p className="text-[10px] text-gray-400 leading-tight">
-            Used as a canonical source when the AI fails or for the per-spell Refresh button. Match this to the edition of the PDF you're importing.
-          </p>
-        </div>
-        <div className="flex items-center gap-1 shrink-0 bg-gray-800 border border-gray-700 rounded-full p-0.5">
-          <button
-            type="button"
-            onClick={() => setRuleset('2014')}
-            className={`text-xs px-3 py-0.5 rounded-full transition ${ruleset === '2014' ? 'bg-dnd-gold text-gray-900 font-semibold' : 'text-gray-300 hover:text-white'}`}
-            title="5e SRD 5.1 (2014 ruleset, OGL)"
-          >
-            2014
-          </button>
-          <button
-            type="button"
-            onClick={() => setRuleset('2024')}
-            className={`text-xs px-3 py-0.5 rounded-full transition ${ruleset === '2024' ? 'bg-dnd-gold text-gray-900 font-semibold' : 'text-gray-300 hover:text-white'}`}
-            title="5e SRD 5.2 (2024 ruleset, CC-BY 4.0)"
-          >
-            2024
-          </button>
-        </div>
-      </div>
-
-      {/* PDF scan */}
-      <div className="bg-gray-800 border border-gray-700 rounded-xl p-3 space-y-2">
-        <h4 className="text-sm font-semibold text-dnd-gold">Scan PDF</h4>
+      {/* PDF scan — Open5e ruleset toggle moved INSIDE this box (it's
+          only relevant to scanning + per-spell Refresh anyway). The
+          whole panel is collapsible so it doesn't crowd the library
+          list when not in use. */}
+      <div className="bg-gray-800 border border-gray-700 rounded-xl">
+        <button
+          type="button"
+          onClick={toggleScan}
+          className="w-full flex items-center justify-between px-3 py-2 text-sm font-semibold text-dnd-gold hover:text-yellow-200 transition-colors"
+          title={scanOpen ? 'Collapse Scan PDF' : 'Expand Scan PDF'}
+        >
+          <span>Scan PDF</span>
+          <span className="text-xs text-gray-500 select-none">{scanOpen ? '▼' : '▶'}</span>
+        </button>
+        {scanOpen && (
+        <div className="px-3 pb-3 space-y-2">
         <p className="text-xs text-gray-400">
           Upload a PDF — every page is rasterised and sent to the configured vision model.
           Each spell extracted is added to the shared library. Requires a vision-capable
           model loaded in LM Studio / Ollama / your custom endpoint.
         </p>
+        {/* Open5e ruleset — used as canonical source for scan fallbacks
+            and the per-spell Refresh action. Lives here because it's
+            only relevant when interacting with the scanner / open5e. */}
+        <div className="bg-gray-900/60 border border-gray-700 rounded-lg px-3 py-2 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-dnd-gold">Open5e ruleset</div>
+            <p className="text-[10px] text-gray-400 leading-tight">
+              Used as a canonical source when the AI fails or for the per-spell Refresh button. Match this to the edition of the PDF you're importing.
+            </p>
+          </div>
+          <div className="flex items-center gap-1 shrink-0 bg-gray-800 border border-gray-700 rounded-full p-0.5">
+            <button
+              type="button"
+              onClick={() => setRuleset('2014')}
+              className={`text-xs px-3 py-0.5 rounded-full transition ${ruleset === '2014' ? 'bg-dnd-gold text-gray-900 font-semibold' : 'text-gray-300 hover:text-white'}`}
+              title="5e SRD 5.1 (2014 ruleset, OGL)"
+            >
+              2014
+            </button>
+            <button
+              type="button"
+              onClick={() => setRuleset('2024')}
+              className={`text-xs px-3 py-0.5 rounded-full transition ${ruleset === '2024' ? 'bg-dnd-gold text-gray-900 font-semibold' : 'text-gray-300 hover:text-white'}`}
+              title="5e SRD 5.2 (2024 ruleset, CC-BY 4.0)"
+            >
+              2024
+            </button>
+          </div>
+        </div>
         <div className="text-[11px] text-amber-200 bg-amber-900/30 border border-amber-700/60 rounded-lg px-2.5 py-2 leading-snug">
           <strong className="text-amber-300">⚠ Expect AI mistakes.</strong> The scanner reads your PDF
           with a language model, so misspelled names, wrong damage dice, missing components, or
@@ -558,6 +594,8 @@ export default function SpellLibrary({ aiSettings }) {
               </details>
             )}
           </div>
+        )}
+        </div>
         )}
       </div>
 

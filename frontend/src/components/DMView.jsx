@@ -676,7 +676,10 @@ function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
 
   return (
     <div>
-      <h3 className="text-sm font-semibold text-dnd-gold mb-2">Plugins</h3>
+      {/* The visible "Plugins" header used to live here; it's now provided
+          by the wrapping CollapsibleSection in the Session tab so the
+          plugin panel folds away in the same chevron style as the other
+          host sections. */}
       <div className="bg-gray-800 rounded-xl p-3 space-y-3">
         <p className="text-[11px] text-gray-400 leading-snug">
           Plugins extend the app with new tools, tabs and overlays. Disabling a plugin
@@ -1228,6 +1231,68 @@ export default function DMView() {
   const [uploadCustomName, setUploadCustomName] = useState('');
   const [treasureList, setTreasureList] = useState([]);
   const [sendingItemId, setSendingItemId] = useState(null);
+  // ── Plugin bridge for the treasure chest ─────────────────────────────
+  // The treasure chest is purely DM-side ephemeral state — there's no
+  // backend table for it, so plugins (e.g. Content Exporter) can't reach
+  // it through the usual /api/* endpoints. Expose a tiny, namespaced
+  // accessor on `window` so DM-side plugins can read the current items
+  // and push new ones onto the list. We refresh the list on every
+  // setTreasureList call via an effect — keeps the accessor's snapshot
+  // in lockstep with React state without re-rendering anything else.
+  // Available only in the DM browser; on the player view this object is
+  // undefined and plugins should noop.
+  const treasureListRef = useRef(treasureList);
+  useEffect(() => { treasureListRef.current = treasureList; }, [treasureList]);
+  const treasureSubsRef = useRef(new Set());
+  useEffect(() => {
+    for (const fn of treasureSubsRef.current) {
+      try { fn(treasureList); } catch {}
+    }
+  }, [treasureList]);
+  useEffect(() => {
+    const ns = (window.__tabletopForge = window.__tabletopForge || {});
+    ns.treasure = {
+      // Snapshot of the current chest. Returns a shallow clone so callers
+      // can't mutate React state in-place.
+      getList: () => treasureListRef.current.map(it => ({ ...it })),
+      // Subscribe to chest changes — handler is called with the full new
+      // list each time it changes. Returns an unsubscribe fn.
+      subscribe: (fn) => {
+        treasureSubsRef.current.add(fn);
+        return () => treasureSubsRef.current.delete(fn);
+      },
+      // Append items to the chest. Each gets a fresh client-side id so
+      // it doesn't collide with anything already in the list. Items
+      // missing required defaults are filled in (qty defaults to 1, etc.)
+      // so a Content Pack importing third-party items can't break the
+      // host UI by sending mis-shaped rows.
+      addItems: (items) => {
+        if (!Array.isArray(items) || items.length === 0) return 0;
+        const cleaned = items.map((raw) => ({
+          id: Date.now() + Math.random(),
+          item_type: raw.item_type || 'item',
+          name: String(raw.name || '').trim() || 'Unnamed item',
+          qty: Math.max(1, parseInt(raw.qty, 10) || 1),
+          weight: raw.weight || '',
+          desc: raw.desc || '',
+          equipped: !!raw.equipped,
+          weapon_range: raw.weapon_range || '',
+          attack_stat: raw.attack_stat || 'STR',
+          attack_bonus_misc: parseInt(raw.attack_bonus_misc, 10) || 0,
+          damage_entries: Array.isArray(raw.damage_entries) && raw.damage_entries.length
+            ? raw.damage_entries.map(e => ({ damage: e.damage || '', damage_type: e.damage_type || '' }))
+            : [{ damage: '', damage_type: '' }],
+          properties: raw.properties || '',
+        }));
+        setTreasureList(prev => [...prev, ...cleaned]);
+        return cleaned.length;
+      },
+    };
+    return () => {
+      // Tear down on unmount so a remount doesn't see a stale snapshot.
+      if (window.__tabletopForge?.treasure) delete window.__tabletopForge.treasure;
+    };
+  }, []);
   const [showTreasureExport, setShowTreasureExport] = useState(false);
   const [treasureExportSelected, setTreasureExportSelected] = useState(new Set());
   const [activeTool, setActiveTool] = useState('pan');
@@ -1304,6 +1369,7 @@ export default function DMView() {
     imageEnabled: false,
     imageProvider: 'swarmui',
     imageBaseUrl: 'http://host.docker.internal:7801',
+    imageApiKey: '',
     imageModel: '',
     imageWidth: 768,
     imageHeight: 768,
@@ -1312,6 +1378,54 @@ export default function DMView() {
     imagePromptTemplate: 'fantasy portrait of a {name}, detailed digital painting, dramatic lighting, painterly',
     imageNegativePrompt: '',
     imageAllowNsfw: false,
+  };
+
+  // Per-provider UI hints — what fields the panel asks for. Mirrors the
+  // backend's IMAGE_PROVIDERS table; the backend is authoritative
+  // (errors out for unsupported combos), this is just for showing/hiding
+  // controls. Default URLs are per-provider so switching the dropdown
+  // gives the user a sensible starting point.
+  const IMAGE_PROVIDER_DEFS = {
+    swarmui:  {
+      label: 'SwarmUI',
+      defaultBaseUrl: 'http://host.docker.internal:7801',
+      placeholderUrl: 'http://host.docker.internal:7801',
+      needsBaseUrl: true,  needsApiKey: false,
+      supportsNegativePrompt: true,  supportsCfg: true,  supportsSteps: true,
+      supportsCustomSize: true,  supportsSeed: true,
+      apiKeyLabel: 'Optional auth token',
+      help: 'SwarmUI runs on Windows? From inside Docker use host.docker.internal, not localhost.',
+    },
+    auto1111: {
+      label: 'Stable Diffusion WebUI (AUTO1111)',
+      defaultBaseUrl: 'http://host.docker.internal:7860',
+      placeholderUrl: 'http://host.docker.internal:7860',
+      needsBaseUrl: true,  needsApiKey: false,
+      supportsNegativePrompt: true,  supportsCfg: true,  supportsSteps: true,
+      supportsCustomSize: true,  supportsSeed: true,
+      apiKeyLabel: 'Optional auth token (Bearer)',
+      help: 'Launch with --api flag. From Docker, use host.docker.internal:7860 to reach a Windows/macOS host.',
+    },
+    openai: {
+      label: 'OpenAI Images (DALL·E / gpt-image)',
+      defaultBaseUrl: '',
+      placeholderUrl: '',
+      needsBaseUrl: false,  needsApiKey: true,
+      supportsNegativePrompt: false,  supportsCfg: false,  supportsSteps: false,
+      supportsCustomSize: true,  supportsSeed: false,
+      apiKeyLabel: 'OpenAI API key',
+      help: 'Hosted, paid. dall-e-3 supports 1024x1024, 1024x1792, 1792x1024. gpt-image-1 supports 1024x1024, 1024x1536, 1536x1024.',
+    },
+    stability: {
+      label: 'Stability AI',
+      defaultBaseUrl: '',
+      placeholderUrl: '',
+      needsBaseUrl: false,  needsApiKey: true,
+      supportsNegativePrompt: true,  supportsCfg: false,  supportsSteps: false,
+      supportsCustomSize: true,  supportsSeed: true,
+      apiKeyLabel: 'Stability API key',
+      help: 'Hosted, paid. Width/height are mapped to the closest supported aspect ratio. Models: core, ultra, sd3.5-large, sd3.5-medium.',
+    },
   };
 
   // AI settings live server-side in `app_settings` (key `ai_config`)
@@ -1405,7 +1519,9 @@ export default function DMView() {
   }
 
   async function handleAIImageTest() {
-    if (!aiSettings.imageBaseUrl) return;
+    const def = IMAGE_PROVIDER_DEFS[aiSettings.imageProvider] || IMAGE_PROVIDER_DEFS.swarmui;
+    if (def.needsBaseUrl && !aiSettings.imageBaseUrl) return;
+    if (def.needsApiKey && !aiSettings.imageApiKey) return;
     setAIImageTestStatus('testing');
     setAIImageTestMessage('');
     setAIImageModelList([]);
@@ -1416,6 +1532,7 @@ export default function DMView() {
         body: JSON.stringify({
           provider: aiSettings.imageProvider,
           baseUrl: aiSettings.imageBaseUrl,
+          apiKey: aiSettings.imageApiKey,
         }),
       });
       const data = await res.json();
@@ -3754,69 +3871,136 @@ export default function DMView() {
                         </span>
                       </label>
 
-                      {aiSettings.imageEnabled && (
+                      {aiSettings.imageEnabled && (() => {
+                        const def = IMAGE_PROVIDER_DEFS[aiSettings.imageProvider] || IMAGE_PROVIDER_DEFS.swarmui;
+                        return (
                         <>
+                          {/* Provider picker. Switching providers wipes
+                              the model + clears the test status because
+                              "currently loaded model" doesn't carry
+                              between platforms. Base URL is updated
+                              only if it's blank or matched the previous
+                              provider's default — preserves a manual
+                              override the user typed in. */}
                           <div>
-                            <label className="block text-xs text-gray-400 mb-1">SwarmUI Base URL</label>
-                            <input
+                            <label className="block text-xs text-gray-400 mb-1">Image provider</label>
+                            <select
                               className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
-                              placeholder="http://host.docker.internal:7801"
-                              value={aiSettings.imageBaseUrl}
-                              onChange={(e) => updateAISettings({ imageBaseUrl: e.target.value })}
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                              SwarmUI runs on Windows? From inside Docker use <code className="text-gray-300">host.docker.internal</code>, not <code>localhost</code>.
-                            </p>
+                              value={aiSettings.imageProvider}
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                const prevDef = IMAGE_PROVIDER_DEFS[aiSettings.imageProvider];
+                                const nextDef = IMAGE_PROVIDER_DEFS[next];
+                                const overwriteUrl =
+                                  !aiSettings.imageBaseUrl ||
+                                  aiSettings.imageBaseUrl === (prevDef?.defaultBaseUrl || '');
+                                const patch = { imageProvider: next, imageModel: '' };
+                                if (overwriteUrl) patch.imageBaseUrl = nextDef?.defaultBaseUrl || '';
+                                updateAISettings(patch);
+                                setAIImageTestStatus(null);
+                                setAIImageModelList([]);
+                              }}
+                            >
+                              {Object.entries(IMAGE_PROVIDER_DEFS).map(([id, p]) => (
+                                <option key={id} value={id}>{p.label}</option>
+                              ))}
+                            </select>
                           </div>
 
+                          {def.needsBaseUrl && (
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">Base URL</label>
+                              <input
+                                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                                placeholder={def.placeholderUrl}
+                                value={aiSettings.imageBaseUrl}
+                                onChange={(e) => updateAISettings({ imageBaseUrl: e.target.value })}
+                              />
+                              {def.help && (
+                                <p className="text-xs text-gray-500 mt-1">{def.help}</p>
+                              )}
+                            </div>
+                          )}
+
+                          {(def.needsApiKey || aiSettings.imageProvider === 'swarmui' || aiSettings.imageProvider === 'auto1111') && (
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">
+                                {def.apiKeyLabel || 'API key'}
+                                {!def.needsApiKey && <span className="text-gray-500"> (optional)</span>}
+                              </label>
+                              <input
+                                type="password"
+                                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                                placeholder={def.needsApiKey ? 'sk-...' : 'leave blank if no auth'}
+                                value={aiSettings.imageApiKey || ''}
+                                onChange={(e) => updateAISettings({ imageApiKey: e.target.value })}
+                              />
+                              {!def.needsApiKey && aiSettings.imageProvider === 'openai' === false && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Most local installs leave this blank. If you've set <code>--api-auth</code> or proxied behind auth, paste the bearer token here.
+                                </p>
+                              )}
+                            </div>
+                          )}
+
                           <div>
-                            <label className="block text-xs text-gray-400 mb-1">Model (optional)</label>
+                            <label className="block text-xs text-gray-400 mb-1">Model {!def.needsApiKey && <span className="text-gray-500">(optional)</span>}</label>
                             <input
                               className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
-                              placeholder="leave blank to use SwarmUI's current model"
+                              placeholder={
+                                aiSettings.imageProvider === 'openai'  ? 'dall-e-3' :
+                                aiSettings.imageProvider === 'stability' ? 'core (or sd3.5-large, ultra)' :
+                                'leave blank to use whatever\'s loaded'
+                              }
                               value={aiSettings.imageModel}
                               onChange={(e) => updateAISettings({ imageModel: e.target.value })}
                             />
                           </div>
 
-                          <div className="grid grid-cols-4 gap-2">
-                            <div>
-                              <label className="block text-xs text-gray-400 mb-1">Width</label>
-                              <input
-                                type="number" min={256} max={2048} step={64}
-                                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
-                                value={aiSettings.imageWidth}
-                                onChange={(e) => updateAISettings({ imageWidth: Number(e.target.value) || 768 })}
-                              />
+                          {def.supportsCustomSize && (
+                            <div className={`grid gap-2 ${def.supportsSteps && def.supportsCfg ? 'grid-cols-4' : 'grid-cols-2'}`}>
+                              <div>
+                                <label className="block text-xs text-gray-400 mb-1">Width</label>
+                                <input
+                                  type="number" min={256} max={2048} step={64}
+                                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                                  value={aiSettings.imageWidth}
+                                  onChange={(e) => updateAISettings({ imageWidth: Number(e.target.value) || 768 })}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-gray-400 mb-1">Height</label>
+                                <input
+                                  type="number" min={256} max={2048} step={64}
+                                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                                  value={aiSettings.imageHeight}
+                                  onChange={(e) => updateAISettings({ imageHeight: Number(e.target.value) || 768 })}
+                                />
+                              </div>
+                              {def.supportsSteps && (
+                                <div>
+                                  <label className="block text-xs text-gray-400 mb-1">Steps</label>
+                                  <input
+                                    type="number" min={1} max={150}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                                    value={aiSettings.imageSteps}
+                                    onChange={(e) => updateAISettings({ imageSteps: Number(e.target.value) || 25 })}
+                                  />
+                                </div>
+                              )}
+                              {def.supportsCfg && (
+                                <div>
+                                  <label className="block text-xs text-gray-400 mb-1">CFG</label>
+                                  <input
+                                    type="number" min={1} max={30} step={0.5}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                                    value={aiSettings.imageCfgScale}
+                                    onChange={(e) => updateAISettings({ imageCfgScale: Number(e.target.value) || 6 })}
+                                  />
+                                </div>
+                              )}
                             </div>
-                            <div>
-                              <label className="block text-xs text-gray-400 mb-1">Height</label>
-                              <input
-                                type="number" min={256} max={2048} step={64}
-                                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
-                                value={aiSettings.imageHeight}
-                                onChange={(e) => updateAISettings({ imageHeight: Number(e.target.value) || 768 })}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-400 mb-1">Steps</label>
-                              <input
-                                type="number" min={1} max={150}
-                                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
-                                value={aiSettings.imageSteps}
-                                onChange={(e) => updateAISettings({ imageSteps: Number(e.target.value) || 25 })}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-400 mb-1">CFG</label>
-                              <input
-                                type="number" min={1} max={30} step={0.5}
-                                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
-                                value={aiSettings.imageCfgScale}
-                                onChange={(e) => updateAISettings({ imageCfgScale: Number(e.target.value) || 6 })}
-                              />
-                            </div>
-                          </div>
+                          )}
 
                           <div>
                             <label className="block text-xs text-gray-400 mb-1">
@@ -3830,16 +4014,18 @@ export default function DMView() {
                             />
                           </div>
 
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">Negative prompt (optional)</label>
-                            <textarea
-                              rows={2}
-                              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold resize-y"
-                              placeholder="things you don't want — e.g. blurry, watermark, extra limbs"
-                              value={aiSettings.imageNegativePrompt}
-                              onChange={(e) => updateAISettings({ imageNegativePrompt: e.target.value })}
-                            />
-                          </div>
+                          {def.supportsNegativePrompt && (
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">Negative prompt (optional)</label>
+                              <textarea
+                                rows={2}
+                                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold resize-y"
+                                placeholder="things you don't want — e.g. blurry, watermark, extra limbs"
+                                value={aiSettings.imageNegativePrompt}
+                                onChange={(e) => updateAISettings({ imageNegativePrompt: e.target.value })}
+                              />
+                            </div>
+                          )}
 
                           <label className="flex items-start gap-2 cursor-pointer select-none">
                             <input
@@ -3851,16 +4037,20 @@ export default function DMView() {
                             <span>
                               <span className="text-sm text-red-300 font-semibold">Allow NSFW content</span>
                               <span className="block text-xs text-gray-400 leading-snug">
-                                When off, safe-content terms are appended to the negative prompt.
-                                When on, only your prompt + your negative prompt are sent — what you actually
-                                get depends on the model loaded in SwarmUI.
+                                {def.supportsNegativePrompt
+                                  ? 'When off, safe-content terms are appended to the negative prompt. When on, only your prompt + your negative prompt are sent — what you actually get depends on the model loaded.'
+                                  : 'This provider has its own content policy and ignores negative prompts. Toggling this only affects how your locally-stored settings are exported.'}
                               </span>
                             </span>
                           </label>
 
                           <button
                             onClick={handleAIImageTest}
-                            disabled={!aiSettings.imageBaseUrl || aiImageTestStatus === 'testing'}
+                            disabled={
+                              (def.needsBaseUrl && !aiSettings.imageBaseUrl) ||
+                              (def.needsApiKey && !aiSettings.imageApiKey) ||
+                              aiImageTestStatus === 'testing'
+                            }
                             className="w-full bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white py-2 rounded-lg text-xs font-semibold transition-colors"
                           >
                             {aiImageTestStatus === 'testing' ? 'Testing...' : 'Test Image Connection'}
@@ -3897,7 +4087,8 @@ export default function DMView() {
                             </div>
                           )}
                         </>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 </CollapsibleSection>
@@ -3911,13 +4102,19 @@ export default function DMView() {
                   ctx={{ sessionId: session.id, role: 'dm', socket, setPanelTab }}
                 />
 
-                {/* Plugin manager — install / enable / disable / delete. */}
-                <PluginManager
-                  loadErrors={pluginLoadErrors}
-                  pluginsTick={pluginsTick}
-                  onPluginsChanged={() => setPluginsTick(t => t + 1)}
-                  context={{ sessionId: session.id, role: 'dm', socket }}
-                />
+                {/* Plugin manager — install / enable / disable / delete.
+                    Wrapped so the panel folds away with the same chevron
+                    treatment as the other Session-tab sections. The
+                    section id matches what tab-controller looks for if a
+                    DM later wants to hide the panel entirely. */}
+                <CollapsibleSection id="plugins" title="Plugins">
+                  <PluginManager
+                    loadErrors={pluginLoadErrors}
+                    pluginsTick={pluginsTick}
+                    onPluginsChanged={() => setPluginsTick(t => t + 1)}
+                    context={{ sessionId: session.id, role: 'dm', socket }}
+                  />
+                </CollapsibleSection>
 
                 <button
                   onClick={() => navigate('/')}

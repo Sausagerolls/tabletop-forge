@@ -1,7 +1,7 @@
 {
   "id": "tab-controller",
   "name": "Tab Controller",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Hide rarely-used DM panel tabs AND individual collapsible sub-sections inside the Session tab (Session Info, Connected Players, Quick Dice Reference, AI Integration). Hidden tabs stay reachable via the Open button; hidden sub-sections re-appear only by re-ticking them. Map / Token library / Token list / Session itself are protected. The plugin's own panel is collapsible too.",
   "author": "TableTop Forge",
   "requires": [],

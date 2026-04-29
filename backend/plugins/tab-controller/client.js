@@ -63,6 +63,7 @@ const BUILTIN_SECTIONS = [
   { id: 'connected_players', label: 'Connected Players' },
   { id: 'dice_reference',    label: 'Quick Dice Reference' },
   { id: 'ai_integration',    label: 'AI Integration' },
+  { id: 'plugins',           label: 'Plugins' },
 ];
 
 // Module-level state.

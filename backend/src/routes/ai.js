@@ -421,17 +421,253 @@ router.post('/generate', async (req, res) => {
 });
 
 // ───────────────────────────────────────────────────────────────────
-// Image generation (SwarmUI)
+// Image generation
 // ───────────────────────────────────────────────────────────────────
-// SwarmUI exposes its API at <base>/API/<Command>. The two we use:
-//   POST /API/GetNewSession           → { session_id }
-//   POST /API/GenerateText2Image      → { images: [<url-or-base64>], ... }
-// Sessions are cheap; we acquire a fresh one per call to avoid stale
-// state when the user restarts SwarmUI.
+// Provider-adapter shape:
+//   { needsBaseUrl, needsApiKey, supportsNegativePrompt, supportsCfg,
+//     supportsSteps, supportsModelList, defaultModel,
+//     test({ baseUrl, apiKey })  → { preview, models }
+//     generate({ baseUrl, apiKey, model, prompt, negativePrompt,
+//                width, height, steps, cfgScale, seed })  → 'data:image/...'  }
+// `generate` returns a single data: URI so the caller doesn't have to
+// distinguish base64-from-API vs URL-fetched-and-converted.
 
-const SWARMUI_DEFAULT_PROMPT = 'fantasy portrait of a {name}, detailed digital painting, dramatic lighting, painterly';
-const SWARMUI_DEFAULT_NEG_SFW = 'low quality, blurry, distorted, watermark, text, signature, nsfw, nude, explicit, sexual, gore';
-const SWARMUI_DEFAULT_NEG_NSFW = 'low quality, blurry, distorted, watermark, text, signature';
+const DEFAULT_IMAGE_PROMPT = 'fantasy portrait of a {name}, detailed digital painting, dramatic lighting, painterly';
+const DEFAULT_NEG_SFW = 'low quality, blurry, distorted, watermark, text, signature, nsfw, nude, explicit, sexual, gore';
+const DEFAULT_NEG_NSFW = 'low quality, blurry, distorted, watermark, text, signature';
+// Backwards-compat aliases — the SwarmUI-only code used these names.
+const SWARMUI_DEFAULT_PROMPT = DEFAULT_IMAGE_PROMPT;
+const SWARMUI_DEFAULT_NEG_SFW = DEFAULT_NEG_SFW;
+const SWARMUI_DEFAULT_NEG_NSFW = DEFAULT_NEG_NSFW;
+
+// ── AUTO1111 (Stable Diffusion WebUI) ─────────────────────────────
+// Local server, typically http://localhost:7860 or host.docker.internal.
+// Auth-less by default; some setups front it with a reverse-proxy token,
+// in which case the user pastes that into the API Key field and we
+// forward as Bearer. Endpoint pattern:
+//   GET  <base>/sdapi/v1/sd-models  → list checkpoints
+//   POST <base>/sdapi/v1/options    → set "sd_model_checkpoint"
+//   POST <base>/sdapi/v1/txt2img    → returns base64 images
+async function auto1111Headers(apiKey) {
+  const h = { 'Content-Type': 'application/json' };
+  if (apiKey) h['Authorization'] = `Bearer ${apiKey}`;
+  return h;
+}
+async function auto1111ListModels(baseUrl, apiKey) {
+  const res = await fetchWithDetail(
+    `${normaliseBaseUrl(baseUrl)}/sdapi/v1/sd-models`,
+    { headers: await auto1111Headers(apiKey) }
+  );
+  if (!res.ok) throw new Error(`AUTO1111 list models ${res.status}`);
+  const list = await res.json();
+  return Array.isArray(list)
+    ? list.map(m => m.title || m.model_name).filter(Boolean)
+    : [];
+}
+async function auto1111SetModel(baseUrl, apiKey, model) {
+  if (!model) return;
+  await fetchWithDetail(`${normaliseBaseUrl(baseUrl)}/sdapi/v1/options`, {
+    method: 'POST',
+    headers: await auto1111Headers(apiKey),
+    body: JSON.stringify({ sd_model_checkpoint: model }),
+  });
+}
+async function auto1111Generate(opts) {
+  const { baseUrl, apiKey, model, prompt, negativePrompt, width, height, steps, cfgScale, seed } = opts;
+  if (model) await auto1111SetModel(baseUrl, apiKey, model);
+  const res = await fetchWithDetail(
+    `${normaliseBaseUrl(baseUrl)}/sdapi/v1/txt2img`,
+    {
+      method: 'POST',
+      headers: await auto1111Headers(apiKey),
+      body: JSON.stringify({
+        prompt,
+        negative_prompt: negativePrompt || '',
+        width: width || 768,
+        height: height || 768,
+        steps: steps || 25,
+        cfg_scale: cfgScale || 6,
+        seed: seed != null ? seed : -1,
+        batch_size: 1,
+        n_iter: 1,
+      }),
+    }
+  );
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`AUTO1111 txt2img ${res.status}: ${txt.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const b64 = Array.isArray(data.images) && data.images[0];
+  if (!b64) throw new Error('AUTO1111 returned no images');
+  // AUTO1111 emits raw base64 (no data: prefix). Always PNG.
+  return `data:image/png;base64,${b64}`;
+}
+
+// ── OpenAI Images (DALL·E 3 / gpt-image-1) ────────────────────────
+// Hosted, paid, API-key auth. The legacy DALL·E 3 endpoint and the
+// newer gpt-image-1 share the /v1/images/generations URL but accept
+// a different `size` set. We pass through whatever the user picked
+// in the UI; OpenAI rejects unsupported pairs with a clear 400.
+const OPENAI_IMAGE_MODELS = ['dall-e-3', 'gpt-image-1', 'dall-e-2'];
+function openaiImageBaseUrl(baseUrl) {
+  return baseUrl ? normaliseBaseUrl(baseUrl) : 'https://api.openai.com';
+}
+async function openaiImageGenerate(opts) {
+  const { baseUrl, apiKey, model, prompt, width, height } = opts;
+  if (!apiKey) throw new Error('OpenAI image gen requires an API key.');
+  const url = `${openaiImageBaseUrl(baseUrl)}/v1/images/generations`;
+  const m = model || 'dall-e-3';
+  const w = width || 1024;
+  const h = height || 1024;
+  const body = {
+    model: m,
+    prompt,
+    size: `${w}x${h}`,
+    n: 1,
+    // dall-e-3 supports response_format; gpt-image-1 always returns
+    // base64 by default. Asking for b64_json on dall-e-3 gives us a
+    // consistent payload across both.
+    response_format: m === 'gpt-image-1' ? undefined : 'b64_json',
+  };
+  const res = await fetchWithDetail(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`OpenAI image ${res.status}: ${txt.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  const item = Array.isArray(data.data) && data.data[0];
+  if (!item) throw new Error('OpenAI returned no image data');
+  if (item.b64_json) return `data:image/png;base64,${item.b64_json}`;
+  if (item.url) {
+    // Fetch and inline the URL so the client doesn't need cross-origin
+    // access to OpenAI's CDN. URLs from /v1/images/generations are
+    // signed and typically expire after an hour.
+    const r2 = await fetchWithDetail(item.url, { method: 'GET' });
+    if (!r2.ok) throw new Error(`OpenAI image fetch ${r2.status}`);
+    const buf = Buffer.from(await r2.arrayBuffer());
+    const ct = r2.headers.get('content-type') || 'image/png';
+    return `data:${ct};base64,${buf.toString('base64')}`;
+  }
+  throw new Error('OpenAI image response had neither b64_json nor url');
+}
+async function openaiImageTest({ apiKey }) {
+  if (!apiKey) throw new Error('API key is required.');
+  // Cheapest verification: hit /v1/models with the key. Avoids spending
+  // image-gen credits during a connection test.
+  const res = await fetchWithDetail('https://api.openai.com/v1/models', {
+    method: 'GET', headers: { 'Authorization': `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`OpenAI auth ${res.status}: ${txt.slice(0, 200)}`);
+  }
+  return { preview: 'API key validated', models: OPENAI_IMAGE_MODELS };
+}
+
+// ── Stability AI ──────────────────────────────────────────────────
+// Hosted, paid, API-key auth. Three quality tiers under
+//   /v2beta/stable-image/generate/{core,sd3,ultra}
+// "Core" = SDXL-class (cheapest), "SD3" = SD3 / SD3.5 family,
+// "Ultra" = highest fidelity. SD3 takes a `model` form field
+// (sd3-large, sd3-medium, sd3.5-large, sd3.5-large-turbo, sd3.5-medium);
+// Core/Ultra do not. We accept the model id as the "model" field in the
+// generic adapter; if it starts with "sd3" we route to /sd3, else
+// "ultra"/"core" picks the right endpoint.
+const STABILITY_MODELS = [
+  'core',
+  'ultra',
+  'sd3.5-large',
+  'sd3.5-large-turbo',
+  'sd3.5-medium',
+  'sd3-large',
+  'sd3-medium',
+];
+function stabilityEndpoint(model) {
+  const m = String(model || '').toLowerCase();
+  if (m === 'ultra') return 'ultra';
+  if (m === 'core' || m === '') return 'core';
+  // Anything starting with sd3 routes to /sd3 with the model name as a form field.
+  return 'sd3';
+}
+function stabilityAspectRatio(width, height) {
+  const w = Math.max(1, Number(width) || 1024);
+  const h = Math.max(1, Number(height) || 1024);
+  // Stability accepts an enum, not freeform dims. Pick the closest match
+  // by ratio so the user's width/height controls map sensibly.
+  const ratios = [
+    [16, 9], [1, 1], [21, 9], [2, 3], [3, 2], [4, 5], [5, 4], [9, 16], [9, 21],
+  ];
+  const want = w / h;
+  let best = '1:1', bestErr = Infinity;
+  for (const [a, b] of ratios) {
+    const err = Math.abs((a / b) - want);
+    if (err < bestErr) { best = `${a}:${b}`; bestErr = err; }
+  }
+  return best;
+}
+async function stabilityGenerate(opts) {
+  const { apiKey, model, prompt, negativePrompt, width, height, seed } = opts;
+  if (!apiKey) throw new Error('Stability AI requires an API key.');
+  const tier = stabilityEndpoint(model);
+  const url = `https://api.stability.ai/v2beta/stable-image/generate/${tier}`;
+  // multipart/form-data — Stability expects FormData even for plain
+  // text fields. Use the global FormData (Node 20+) and Blob.
+  const fd = new FormData();
+  fd.append('prompt', prompt);
+  if (negativePrompt) fd.append('negative_prompt', negativePrompt);
+  fd.append('aspect_ratio', stabilityAspectRatio(width, height));
+  fd.append('output_format', 'png');
+  if (seed != null && seed !== -1) fd.append('seed', String(seed));
+  if (tier === 'sd3') {
+    // model is the SD3 variant id. Default to the cheapest one if the
+    // caller picked 'sd3' generically.
+    const sd3Model = String(model || '').toLowerCase().startsWith('sd3') ? model : 'sd3.5-medium';
+    fd.append('model', sd3Model);
+  }
+  const res = await fetchWithDetail(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      // Accept JSON so we can parse error messages cleanly. The body
+      // contains { image: "base64...", finish_reason, seed }.
+      'Accept': 'application/json',
+    },
+    body: fd,
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Stability ${tier} ${res.status}: ${txt.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  if (data.errors && data.errors.length) throw new Error(`Stability: ${data.errors.join(', ')}`);
+  if (!data.image) throw new Error('Stability returned no image');
+  return `data:image/png;base64,${data.image}`;
+}
+async function stabilityTest({ apiKey }) {
+  if (!apiKey) throw new Error('API key is required.');
+  // Stability's /v1/user/account is the simplest auth check that
+  // doesn't burn generation credits.
+  const res = await fetchWithDetail('https://api.stability.ai/v1/user/account', {
+    method: 'GET', headers: { 'Authorization': `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Stability auth ${res.status}: ${txt.slice(0, 200)}`);
+  }
+  const data = await res.json().catch(() => ({}));
+  return {
+    preview: data.email ? `Authenticated as ${data.email}` : 'API key validated',
+    models: STABILITY_MODELS,
+  };
+}
 
 async function swarmuiGetSession(baseUrl) {
   const url = `${normaliseBaseUrl(baseUrl)}/API/GetNewSession`;
@@ -575,32 +811,135 @@ function buildImagePrompt(template, name, appearance) {
   return t.replace(/,\s*,/g, ',').replace(/\s+,/g, ',').replace(/\s{2,}/g, ' ').trim().replace(/^,\s*|,\s*$/g, '');
 }
 
-// POST /api/ai/test-image — verify SwarmUI is reachable + return the
-// list of installed models so the user can pick one for the Model field.
+// ── Provider registry ─────────────────────────────────────────────
+// Each entry advertises which fields the UI should ask for + holds the
+// adapter functions. The route handlers pick from this map by `provider`
+// id. Every adapter returns a data: URI so callers don't have to know
+// whether the source was URL or base64.
+const IMAGE_PROVIDERS = {
+  swarmui: {
+    label: 'SwarmUI',
+    needsBaseUrl: true,
+    needsApiKey: false,
+    supportsNegativePrompt: true,
+    supportsCfg: true,
+    supportsSteps: true,
+    supportsCustomSize: true,
+    supportsSeed: true,
+    listsModels: true,
+    async test({ baseUrl }) {
+      if (!baseUrl) throw new Error('baseUrl is required');
+      const sid = await swarmuiGetSession(baseUrl);
+      let models = [];
+      try { models = await swarmuiListModels(baseUrl, sid); } catch { /* non-fatal */ }
+      return { preview: `Session ${sid.slice(0, 8)}…`, models };
+    },
+    async generate(opts) {
+      if (!opts.baseUrl) throw new Error('baseUrl is required');
+      return swarmuiGenerate(opts);
+    },
+  },
+  auto1111: {
+    label: 'Stable Diffusion WebUI (AUTO1111)',
+    needsBaseUrl: true,
+    needsApiKey: false,            // auth-less by default; key is optional
+    supportsNegativePrompt: true,
+    supportsCfg: true,
+    supportsSteps: true,
+    supportsCustomSize: true,
+    supportsSeed: true,
+    listsModels: true,
+    async test({ baseUrl, apiKey }) {
+      if (!baseUrl) throw new Error('baseUrl is required');
+      let models = [];
+      try { models = await auto1111ListModels(baseUrl, apiKey); } catch { /* may be empty */ }
+      return { preview: `Found ${models.length} checkpoint(s)`, models };
+    },
+    async generate(opts) {
+      if (!opts.baseUrl) throw new Error('baseUrl is required');
+      return auto1111Generate(opts);
+    },
+  },
+  openai: {
+    label: 'OpenAI Images (DALL·E / gpt-image)',
+    needsBaseUrl: false,
+    needsApiKey: true,
+    supportsNegativePrompt: false, // OpenAI Images has no negative-prompt field
+    supportsCfg: false,
+    supportsSteps: false,
+    supportsCustomSize: true,      // limited to per-model whitelisted sizes
+    supportsSeed: false,
+    listsModels: true,             // we hand back a fixed list
+    async test(opts) { return openaiImageTest(opts); },
+    async generate(opts) { return openaiImageGenerate(opts); },
+  },
+  stability: {
+    label: 'Stability AI',
+    needsBaseUrl: false,
+    needsApiKey: true,
+    supportsNegativePrompt: true,
+    supportsCfg: false,            // tier auto-handles guidance
+    supportsSteps: false,
+    supportsCustomSize: true,      // mapped to closest aspect_ratio enum
+    supportsSeed: true,
+    listsModels: true,
+    async test(opts) { return stabilityTest(opts); },
+    async generate(opts) { return stabilityGenerate(opts); },
+  },
+};
+
+// GET /api/ai/image-providers — UI lookup so the frontend stays
+// in sync with whatever this backend supports.
+router.get('/image-providers', (req, res) => {
+  const out = {};
+  for (const [id, p] of Object.entries(IMAGE_PROVIDERS)) {
+    out[id] = {
+      label: p.label,
+      needsBaseUrl: !!p.needsBaseUrl,
+      needsApiKey: !!p.needsApiKey,
+      supportsNegativePrompt: !!p.supportsNegativePrompt,
+      supportsCfg: !!p.supportsCfg,
+      supportsSteps: !!p.supportsSteps,
+      supportsCustomSize: !!p.supportsCustomSize,
+      supportsSeed: !!p.supportsSeed,
+      listsModels: !!p.listsModels,
+    };
+  }
+  res.json(out);
+});
+
+// POST /api/ai/test-image — verify the configured provider is reachable
+// and return its model list (when supported) so the UI can offer a picker.
 router.post('/test-image', async (req, res) => {
-  const { provider, baseUrl } = req.body;
-  if (!baseUrl) return res.status(400).json({ error: 'baseUrl is required' });
-  if (provider && provider !== 'swarmui') {
-    return res.status(400).json({ error: `Unsupported image provider: ${provider}` });
+  const { provider = 'swarmui', baseUrl, apiKey } = req.body;
+  const adapter = IMAGE_PROVIDERS[provider];
+  if (!adapter) {
+    return res.status(400).json({ error: `Unknown image provider: ${provider}` });
+  }
+  if (adapter.needsBaseUrl && !baseUrl) {
+    return res.status(400).json({ error: `${adapter.label} requires a Base URL.` });
+  }
+  if (adapter.needsApiKey && !apiKey) {
+    return res.status(400).json({ error: `${adapter.label} requires an API key.` });
   }
   try {
-    const sid = await swarmuiGetSession(baseUrl);
-    let models = [];
-    try { models = await swarmuiListModels(baseUrl, sid); } catch { /* model list failure is non-fatal for the test */ }
-    res.json({ ok: true, preview: `Session ${sid.slice(0, 8)}…`, models });
+    const out = await adapter.test({ baseUrl, apiKey });
+    res.json({ ok: true, preview: out.preview, models: out.models || [] });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
 });
 
-// POST /api/ai/generate-image — generate one image
-// Body: { provider, baseUrl, model, name, promptTemplate, negativePrompt,
-//         allowNsfw, width, height, steps, cfgScale, seed }
-// Response: { image: 'data:image/...;base64,...' }
+// POST /api/ai/generate-image — generate one image via the chosen provider.
+// Body: { provider, baseUrl, apiKey, model, name, appearance,
+//         promptTemplate, rawPrompt, negativePrompt, allowNsfw,
+//         width, height, steps, cfgScale, seed }
+// Response: { image: 'data:image/...;base64,...', prompt }
 router.post('/generate-image', async (req, res) => {
   const {
     provider = 'swarmui',
     baseUrl,
+    apiKey,
     model,
     name,
     appearance,
@@ -611,10 +950,18 @@ router.post('/generate-image', async (req, res) => {
     width, height, steps, cfgScale, seed,
   } = req.body;
 
-  if (!baseUrl) return res.status(400).json({ error: 'baseUrl is required' });
-  if (!rawPrompt && !name) return res.status(400).json({ error: 'name or rawPrompt is required' });
-  if (provider !== 'swarmui') {
-    return res.status(400).json({ error: `Unsupported image provider: ${provider}` });
+  const adapter = IMAGE_PROVIDERS[provider];
+  if (!adapter) {
+    return res.status(400).json({ error: `Unknown image provider: ${provider}` });
+  }
+  if (adapter.needsBaseUrl && !baseUrl) {
+    return res.status(400).json({ error: `${adapter.label} requires a Base URL.` });
+  }
+  if (adapter.needsApiKey && !apiKey) {
+    return res.status(400).json({ error: `${adapter.label} requires an API key.` });
+  }
+  if (!rawPrompt && !name) {
+    return res.status(400).json({ error: 'name or rawPrompt is required' });
   }
 
   // rawPrompt skips template substitution entirely — used by the
@@ -623,23 +970,26 @@ router.post('/generate-image', async (req, res) => {
   const prompt = (rawPrompt && rawPrompt.trim())
     ? rawPrompt.trim()
     : buildImagePrompt(promptTemplate, name, appearance);
-  // The negative prompt is the safety lever. When NSFW is disallowed
-  // we *append* the safety terms so the user's own negative additions
-  // are preserved. When NSFW is allowed we just use the user's
-  // negative prompt verbatim (or a quality-only default).
-  const finalNeg = allowNsfw
-    ? (negativePrompt || SWARMUI_DEFAULT_NEG_NSFW)
-    : `${negativePrompt ? negativePrompt + ', ' : ''}${SWARMUI_DEFAULT_NEG_SFW}`;
+
+  // Negative prompt is only meaningful for providers that support one.
+  // For OpenAI / providers without negative-prompt support we silently
+  // drop it; the safety guarantee shifts to the upstream policy filter.
+  let finalNeg = '';
+  if (adapter.supportsNegativePrompt) {
+    finalNeg = allowNsfw
+      ? (negativePrompt || DEFAULT_NEG_NSFW)
+      : `${negativePrompt ? negativePrompt + ', ' : ''}${DEFAULT_NEG_SFW}`;
+  }
 
   try {
-    const image = await swarmuiGenerate({
-      baseUrl, model, prompt,
+    const image = await adapter.generate({
+      baseUrl, apiKey, model, prompt,
       negativePrompt: finalNeg,
       width, height, steps, cfgScale, seed,
     });
     res.json({ image, prompt });
   } catch (err) {
-    console.error('AI generate-image error:', err);
+    console.error(`AI generate-image (${provider}) error:`, err);
     res.status(500).json({ error: err.message });
   }
 });

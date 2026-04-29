@@ -110,11 +110,33 @@ if [ "$SKIP_GIT" = "0" ]; then
       # Falls back to the empty tree if this is the very first tag.
       prev_tag=$(git tag --sort=-v:refname | grep -v "^v${VERSION}\$" | head -1 || true)
       if [ -n "$prev_tag" ]; then
-        # Filter out website-only commits — they're noise in user-facing notes.
-        notes=$(git log --pretty=format:"- %s" "${prev_tag}..v${VERSION}" \
-          | grep -v '^- website:' || true)
+        # Pull subject + full body for every commit since the previous
+        # tag, in chronological order. Each commit is delimited by a
+        # ---COMMIT--- marker so awk can scan and skip ones we don't
+        # want to surface — currently:
+        #   - website housekeeping ("website: download v…")
+        #   - "Bump package.json" version bumps
+        #   - the trailing Co-Authored-By trailer (every commit has one
+        #     since Claude is a co-author; one line repeated per release
+        #     is just noise in the user-facing changelog)
+        # Anything else lands verbatim — keeps the bullet structure of
+        # the commit body which is where the actual change list lives.
+        notes=$(git log --reverse --pretty=format:"---COMMIT---%n%s%n%n%b" "${prev_tag}..v${VERSION}" \
+          | awk '
+              BEGIN { keep=0; first=1 }
+              /^---COMMIT---$/ { keep=0; next }
+              keep==0 {
+                if ($0 ~ /^website:/)        { keep=-1; next }
+                if ($0 ~ /^Bump package\.json/) { keep=-1; next }
+                keep=1
+                if (first) { first=0 } else { print "" }
+              }
+              keep==-1 { next }
+              /^Co-Authored-By:/ { next }
+              keep==1 { print }
+            ' || true)
       fi
-      [ -z "${notes:-}" ] && notes="- See commit log for changes."
+      [ -z "${notes:-}" ] && notes="See commit log for changes."
       zip_path="website/releases/dnd-vtt-v${VERSION}.zip"
       if [ -f "$zip_path" ]; then
         gh release create "v${VERSION}" "$zip_path" \

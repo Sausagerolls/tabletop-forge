@@ -464,7 +464,7 @@ const WarningIcon = () => (
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import CharacterSetup from './CharacterSetup.jsx';
 import socket from '../socket.js';
-import { loadPlugins } from '../plugins/pluginRegistry.js';
+import { loadPlugins, registries as pluginRegistries, useRegistryVersion } from '../plugins/pluginRegistry.js';
 import MapStage, { TOKEN_SIZES } from './MapStage.jsx';
 import DiceRoller, { DiceRollOverlay } from './DiceRoller.jsx';
 import ToolPanel from './ToolPanel.jsx';
@@ -644,6 +644,92 @@ export default function PlayerView() {
   const [doors, setDoors] = useState([]);
   const [lights, setLights] = useState([]);
   const [magicalDarkness, setMagicalDarkness] = useState([]);
+  // Per-player map override — set by the split-the-party plugin via the
+  // `playerMapOverride` registry. When non-null, this is the full map
+  // slice fetched from /api/maps/:id/state and the rendered scene
+  // overrides the session's current map without disturbing it. Real-
+  // time socket events for the override map are merged into this
+  // snapshot; events for any other map fall through to the session
+  // state buckets above (where they're held until the override clears).
+  const [overrideMap, setOverrideMap] = useState(null);
+  const overrideMapRef = useRef(null);
+  useEffect(() => { overrideMapRef.current = overrideMap; }, [overrideMap]);
+  // Bumped to force a refetch of the override slice without changing
+  // the resolved override map id — used when a token arrives on the
+  // map we're currently viewing as our override and we need its
+  // creature-image join from the server.
+  const [overrideRefetchKey, setOverrideRefetchKey] = useState(0);
+  const registryVersion = useRegistryVersion();
+  // ── Override snapshot patchers ─────────────────────────────────────
+  // Each socket-event handler below mirrors changes into the override
+  // snapshot when the event's map_id matches what the player is
+  // currently routed to. Calls are no-ops when no override is active,
+  // so handlers don't need to branch — they always call both the
+  // session setter and the override patcher.
+  function appendOverrideField(field, item) {
+    if (!item || item.map_id == null) return;
+    setOverrideMap((prev) => prev && prev.mapId === item.map_id
+      ? { ...prev, [field]: [...prev[field], item] } : prev);
+  }
+  function patchOverrideField(field, predicate, mutator) {
+    setOverrideMap((prev) => prev
+      ? { ...prev, [field]: prev[field].map((x) => predicate(x) ? mutator(x) : x) }
+      : prev);
+  }
+  function removeOverrideField(field, predicate) {
+    setOverrideMap((prev) => prev
+      ? { ...prev, [field]: prev[field].filter((x) => !predicate(x)) }
+      : prev);
+  }
+  function clearOverrideField(field) {
+    setOverrideMap((prev) => prev ? { ...prev, [field]: [] } : prev);
+  }
+  function patchOverrideToken(tokenId, mutator) {
+    setOverrideMap((prev) => {
+      if (!prev) return prev;
+      const idx = prev.tokens.findIndex((t) => t.id === tokenId);
+      if (idx === -1) return prev;
+      const next = { ...prev, tokens: [...prev.tokens] };
+      next.tokens[idx] = mutator(next.tokens[idx]);
+      return next;
+    });
+  }
+  function addOverrideToken(token) {
+    if (!token || token.map_id == null || token.is_hidden) return;
+    setOverrideMap((prev) => {
+      if (!prev || prev.mapId !== token.map_id) return prev;
+      if (prev.tokens.some((t) => t.id === token.id)) {
+        return { ...prev, tokens: prev.tokens.map((t) => t.id === token.id ? { ...t, ...token } : t) };
+      }
+      return { ...prev, tokens: [...prev.tokens, token] };
+    });
+  }
+  function removeOverrideToken(tokenId) {
+    setOverrideMap((prev) => prev
+      ? { ...prev, tokens: prev.tokens.filter((t) => t.id !== tokenId) }
+      : prev);
+  }
+
+  // Live-tracked refs the player bridge reads via getters.
+  const sessionRef = useRef(session);
+  useEffect(() => { sessionRef.current = session; }, [session]);
+  // ── Player-side bridge ────────────────────────────────────────────
+  // Surfaces the player's name + token id so a plugin (split-the-party)
+  // can look up its assignment without re-parsing setup props. The
+  // plugin drives the override via `pluginRegistries.playerMapOverride`
+  // — it sets a getter, calls notifyChange(), and the override-resolution
+  // memo above re-runs. The `overrideMapId` getter lets plugin UIs
+  // surface the currently-rendered map.
+  useEffect(() => {
+    const ns = (window.__tabletopForge = window.__tabletopForge || {});
+    ns.player = {
+      getName: () => name,
+      getTokenId: () => playerTokenIdRef.current,
+      getOverrideMapId: () => overrideMapRef.current?.mapId ?? null,
+      getEffectiveMapId: () => overrideMapRef.current?.mapId ?? (sessionRef.current?.map_id ?? null),
+    };
+    return () => { if (window.__tabletopForge) delete window.__tabletopForge.player; };
+  }, [name]);
   const [fowEnabled, setFowEnabled] = useState(false);
   const [fowBlur, setFowBlur] = useState(16);
   const [fowColor, setFowColor] = useState('#000000');
@@ -796,12 +882,42 @@ export default function PlayerView() {
       setTokens((prev) =>
         prev.map((t) => (t.id === tokenId ? { ...t, grid_col: gridCol, grid_row: gridRow } : t))
       );
+      patchOverrideToken(tokenId, (t) => ({ ...t, grid_col: gridCol, grid_row: gridRow }));
+    });
+
+    // Token relocated to a different map. We update our local tokens
+    // mirror so the override resolver (further down) can pick up the
+    // new map_id; if this token IS our own, the resolver will then
+    // route our view to that map. If the override snapshot is currently
+    // showing the source or destination, patch it directly so it
+    // doesn't go stale before the next refetch.
+    socket.on('token_map_changed', ({ tokenId, fromMapId, toMapId, gridCol, gridRow }) => {
+      setTokens((prev) =>
+        prev.map((t) => (t.id === tokenId
+          ? { ...t, map_id: toMapId, grid_col: gridCol, grid_row: gridRow }
+          : t))
+      );
+      // Source map (still in our snapshot): drop the row.
+      setOverrideMap((prev) => {
+        if (!prev) return prev;
+        if (prev.mapId === fromMapId) {
+          return { ...prev, tokens: prev.tokens.filter((t) => t.id !== tokenId) };
+        }
+        return prev;
+      });
+      // Destination map (we're viewing it as our override): bump the
+      // refetch key so the override useEffect re-runs and picks up
+      // the new token row with its creature-image join.
+      if (overrideMapRef.current && overrideMapRef.current.mapId === toMapId) {
+        setOverrideRefetchKey((k) => k + 1);
+      }
     });
 
     socket.on('token_hp_changed', ({ tokenId, currentHp }) => {
       setTokens((prev) =>
         prev.map((t) => (t.id === tokenId ? { ...t, current_hp: currentHp } : t))
       );
+      patchOverrideToken(tokenId, (t) => ({ ...t, current_hp: currentHp }));
     });
 
     socket.on('concentration_check', (payload) => {
@@ -818,29 +934,34 @@ export default function PlayerView() {
       setTokens((prev) =>
         prev.map((t) => (t.id === tokenId ? { ...t, max_hp: maxHp } : t))
       );
+      patchOverrideToken(tokenId, (t) => ({ ...t, max_hp: maxHp }));
     });
 
     socket.on('token_temp_hp_changed', ({ tokenId, tempHp }) => {
       setTokens((prev) =>
         prev.map((t) => (t.id === tokenId ? { ...t, temp_hp: tempHp } : t))
       );
+      patchOverrideToken(tokenId, (t) => ({ ...t, temp_hp: tempHp }));
     });
 
     socket.on('token_conditions_changed', ({ tokenId, conditions }) => {
       setTokens((prev) =>
         prev.map((t) => (t.id === tokenId ? { ...t, conditions } : t))
       );
+      patchOverrideToken(tokenId, (t) => ({ ...t, conditions }));
     });
 
     socket.on('token_initiative_changed', ({ tokenId, initiative }) => {
       setTokens((prev) =>
         prev.map((t) => (t.id === tokenId ? { ...t, initiative } : t))
       );
+      patchOverrideToken(tokenId, (t) => ({ ...t, initiative }));
     });
 
     socket.on('token_visibility_changed', ({ tokenId, isHidden }) => {
       if (isHidden) {
         setTokens((prev) => prev.filter((t) => t.id !== tokenId));
+        removeOverrideToken(tokenId);
       }
     });
 
@@ -850,33 +971,46 @@ export default function PlayerView() {
           if (prev.find((t) => t.id === token.id)) return prev;
           return [...prev, token];
         });
+        addOverrideToken(token);
       }
     });
 
     socket.on('token_refreshed', ({ token }) => {
       setTokens((prev) => prev.map((t) => t.id === token.id ? { ...t, ...token } : t));
+      // Token may have moved between maps — addOverrideToken handles
+      // both "already there" (merge) and "newly arrived" cases. If
+      // the token's map_id no longer matches the override, evict it.
+      if (overrideMapRef.current && token.map_id !== overrideMapRef.current.mapId) {
+        removeOverrideToken(token.id);
+      } else {
+        addOverrideToken(token);
+      }
     });
 
     socket.on('token_removed', ({ tokenId }) => {
       setTokens((prev) => prev.filter((t) => t.id !== tokenId));
+      removeOverrideToken(tokenId);
     });
 
     socket.on('token_size_changed', ({ tokenId, size }) => {
       setTokens((prev) =>
         prev.map((t) => (t.id === tokenId ? { ...t, size } : t))
       );
+      patchOverrideToken(tokenId, (t) => ({ ...t, size }));
     });
 
     socket.on('token_name_changed', ({ tokenId, name: tokenName }) => {
       setTokens((prev) =>
         prev.map((t) => (t.id === tokenId ? { ...t, name: tokenName } : t))
       );
+      patchOverrideToken(tokenId, (t) => ({ ...t, name: tokenName }));
     });
 
     socket.on('token_nickname_changed', ({ tokenId, nickname }) => {
       setTokens((prev) =>
         prev.map((t) => (t.id === tokenId ? { ...t, nickname } : t))
       );
+      patchOverrideToken(tokenId, (t) => ({ ...t, nickname }));
     });
 
     socket.on('map_changed', ({ map, walls: newWalls, doors: newDoors, lights: newLights, tokens: newTokens, magicalDarkness: newDarkness }) => {
@@ -896,28 +1030,76 @@ export default function PlayerView() {
       setMagicalDarkness(newDarkness || []);
     });
 
-    socket.on('wall_added',   ({ wall })   => setWalls(prev => [...prev, wall]));
-    socket.on('wall_deleted', ({ wallId }) => setWalls(prev => prev.filter(w => w.id !== wallId)));
-    socket.on('walls_cleared', ()          => setWalls([]));
+    socket.on('wall_added',   ({ wall })   => {
+      setWalls(prev => [...prev, wall]);
+      appendOverrideField('walls', wall);
+    });
+    socket.on('wall_deleted', ({ wallId }) => {
+      setWalls(prev => prev.filter(w => w.id !== wallId));
+      removeOverrideField('walls', (w) => w.id === wallId);
+    });
+    socket.on('walls_cleared', () => {
+      setWalls([]);
+      // walls_cleared is map-scoped server-side but the broadcast carries
+      // no map_id; clearing both is conservative and only affects the
+      // override map's snapshot if one is active.
+      clearOverrideField('walls');
+    });
 
-    socket.on('door_added',      ({ door })   => setDoors(prev => [...prev, door]));
-    socket.on('door_deleted',    ({ doorId }) => setDoors(prev => prev.filter(d => d.id !== doorId)));
-    socket.on('door_toggled',    ({ doorId, isOpen }) =>
-      setDoors(prev => prev.map(d => d.id === doorId ? { ...d, is_open: isOpen } : d)));
-    socket.on('door_dir_flipped', ({ doorId, openDir }) =>
-      setDoors(prev => prev.map(d => d.id === doorId ? { ...d, open_dir: openDir } : d)));
-    socket.on('doors_cleared', () => setDoors([]));
+    socket.on('door_added',      ({ door })   => {
+      setDoors(prev => [...prev, door]);
+      appendOverrideField('doors', door);
+    });
+    socket.on('door_deleted',    ({ doorId }) => {
+      setDoors(prev => prev.filter(d => d.id !== doorId));
+      removeOverrideField('doors', (d) => d.id === doorId);
+    });
+    socket.on('door_toggled',    ({ doorId, isOpen }) => {
+      setDoors(prev => prev.map(d => d.id === doorId ? { ...d, is_open: isOpen } : d));
+      patchOverrideField('doors', (d) => d.id === doorId, (d) => ({ ...d, is_open: isOpen }));
+    });
+    socket.on('door_dir_flipped', ({ doorId, openDir }) => {
+      setDoors(prev => prev.map(d => d.id === doorId ? { ...d, open_dir: openDir } : d));
+      patchOverrideField('doors', (d) => d.id === doorId, (d) => ({ ...d, open_dir: openDir }));
+    });
+    socket.on('doors_cleared', () => {
+      setDoors([]);
+      clearOverrideField('doors');
+    });
 
-    socket.on('light_added',   ({ light })   => setLights(prev => [...prev, light]));
-    socket.on('light_updated', ({ light })   => setLights(prev => prev.map(l => l.id === light.id ? light : l)));
-    socket.on('light_deleted', ({ lightId }) => setLights(prev => prev.filter(l => l.id !== lightId)));
-    socket.on('lights_cleared', ()           => setLights([]));
+    socket.on('light_added',   ({ light })   => {
+      setLights(prev => [...prev, light]);
+      appendOverrideField('lights', light);
+    });
+    socket.on('light_updated', ({ light })   => {
+      setLights(prev => prev.map(l => l.id === light.id ? light : l));
+      patchOverrideField('lights', (l) => l.id === light.id, () => light);
+    });
+    socket.on('light_deleted', ({ lightId }) => {
+      setLights(prev => prev.filter(l => l.id !== lightId));
+      removeOverrideField('lights', (l) => l.id === lightId);
+    });
+    socket.on('lights_cleared', () => {
+      setLights([]);
+      clearOverrideField('lights');
+    });
 
-    socket.on('magical_darkness_added',   ({ darkness }) => setMagicalDarkness(prev => [...prev, darkness]));
-    socket.on('magical_darkness_deleted', ({ darknessId }) => setMagicalDarkness(prev => prev.filter(d => d.id !== darknessId)));
-    socket.on('magical_darkness_cleared', () => setMagicalDarkness([]));
-    socket.on('zone_feather_updated', ({ darknessId, featherAmount }) =>
-      setMagicalDarkness(prev => prev.map(d => d.id === darknessId ? { ...d, feather_amount: featherAmount } : d)));
+    socket.on('magical_darkness_added',   ({ darkness }) => {
+      setMagicalDarkness(prev => [...prev, darkness]);
+      appendOverrideField('magicalDarkness', darkness);
+    });
+    socket.on('magical_darkness_deleted', ({ darknessId }) => {
+      setMagicalDarkness(prev => prev.filter(d => d.id !== darknessId));
+      removeOverrideField('magicalDarkness', (d) => d.id === darknessId);
+    });
+    socket.on('magical_darkness_cleared', () => {
+      setMagicalDarkness([]);
+      clearOverrideField('magicalDarkness');
+    });
+    socket.on('zone_feather_updated', ({ darknessId, featherAmount }) => {
+      setMagicalDarkness(prev => prev.map(d => d.id === darknessId ? { ...d, feather_amount: featherAmount } : d));
+      patchOverrideField('magicalDarkness', (d) => d.id === darknessId, (d) => ({ ...d, feather_amount: featherAmount }));
+    });
 
     socket.on('play_sound', ({ filename, volume }) => {
       const vol = Math.max(0, Math.min(1, volume ?? 1.0));
@@ -1293,7 +1475,93 @@ export default function PlayerView() {
     );
   }
 
-  const mapUrl  = session.map_image ? `/uploads/${session.map_image}` : null;
+  // ── Per-player map override resolution ────────────────────────────
+  // Priority: (1) any plugin in the playerMapOverride registry, then
+  // (2) auto-follow our own token's map_id if it differs from the
+  // session's current map. Phase-1 plugins (split-the-party dropdown)
+  // win over the auto-follow so the DM can manually pin a player to
+  // a map even if their token is elsewhere.
+  const desiredOverrideMapId = (() => {
+    if (!session) return null;
+    const ctx = { sessionId: session.id, playerTokenId, defaultMapId: session.map_id };
+    for (const fn of pluginRegistries.playerMapOverride.values()) {
+      try {
+        const v = fn(ctx);
+        if (v != null) {
+          const n = Number(v);
+          if (Number.isFinite(n) && n !== session.map_id) return n;
+        }
+      } catch { /* plugin error — skip */ }
+    }
+    // Auto-follow: if our own token sits on a different map, route
+    // our view there. The token list is filtered to non-hidden tokens
+    // and may not contain our row briefly during creation; we skip
+    // the auto-follow in that window.
+    if (playerTokenId) {
+      const own = tokens.find((t) => t.id === playerTokenId);
+      if (own && own.map_id != null && own.map_id !== session.map_id) {
+        return own.map_id;
+      }
+    }
+    return null;
+  })();
+  // Re-fetch the override slice from the server when the desired id
+  // changes. Cancellation guards against stale fetches if the DM
+  // re-routes the player while a previous fetch is in-flight.
+  useEffect(() => {
+    if (!session?.id) return;
+    if (desiredOverrideMapId == null) {
+      setOverrideMap(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/maps/${desiredOverrideMapId}/state?session_id=${session.id}`)
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((data) => {
+        if (cancelled) return;
+        setOverrideMap({
+          mapId: desiredOverrideMapId,
+          map: data.map,
+          walls: data.walls || [],
+          doors: data.doors || [],
+          lights: data.lights || [],
+          magicalDarkness: data.magicalDarkness || [],
+          dmMarkers: data.dmMarkers || [],
+          tokens: (data.tokens || []).filter((t) => !t.is_hidden),
+          spawnPoint: data.spawnPoint || { col: 0, row: 0 },
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn('Map-override fetch failed:', err.message);
+        setOverrideMap(null);
+      });
+    return () => { cancelled = true; };
+  }, [desiredOverrideMapId, session?.id, registryVersion, overrideRefetchKey]);
+
+  // Effective scene values — when an override is active, render its
+  // snapshot; otherwise fall through to the session's live state.
+  const effectiveMap = overrideMap
+    ? {
+        id: overrideMap.mapId,
+        image: overrideMap.map?.image_path || null,
+        width: overrideMap.map?.width,
+        height: overrideMap.map?.height,
+        gridSize: overrideMap.map?.grid_size || gridSize,
+      }
+    : {
+        id: session.map_id,
+        image: session.map_image,
+        width: session.map_width,
+        height: session.map_height,
+        gridSize,
+      };
+  const mapUrl = effectiveMap.image ? `/uploads/${effectiveMap.image}` : null;
+  const effectiveWalls = overrideMap ? overrideMap.walls : walls;
+  const effectiveDoors = overrideMap ? overrideMap.doors : doors;
+  const effectiveLights = overrideMap ? overrideMap.lights : lights;
+  const effectiveDarkness = overrideMap ? overrideMap.magicalDarkness : magicalDarkness;
+  const effectiveTokens = overrideMap ? overrideMap.tokens : tokens;
 
   const sortedCombat = [...tokens]
     .filter((t) => !t.is_hidden && t.in_combat)
@@ -1349,10 +1617,10 @@ export default function PlayerView() {
 
         <MapStage
           mapUrl={mapUrl}
-          mapWidth={session.map_width}
-          mapHeight={session.map_height}
-          gridSize={gridSize}
-          tokens={tokens}
+          mapWidth={effectiveMap.width}
+          mapHeight={effectiveMap.height}
+          gridSize={effectiveMap.gridSize}
+          tokens={effectiveTokens}
           isPlayer
           onTokenMove={handleTokenMove}
           selectedTokenId={selectedToken}
@@ -1362,10 +1630,10 @@ export default function PlayerView() {
           gridThickness={gridThickness}
           tokenNameFontSize={tokenNameFontSize}
           playerTokenId={playerTokenId}
-          walls={walls}
-          doors={doors}
-          lights={lights}
-          magicalDarkness={magicalDarkness}
+          walls={effectiveWalls}
+          doors={effectiveDoors}
+          lights={effectiveLights}
+          magicalDarkness={effectiveDarkness}
           spellTemplates={spellTemplates}
           fogOfWar={fowEnabled}
           fowBlur={fowBlur}

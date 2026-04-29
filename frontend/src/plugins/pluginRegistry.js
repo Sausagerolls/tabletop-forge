@@ -109,6 +109,14 @@ export const registries = {
   // just collapsing it. Lets a tab-management plugin declutter the
   // Session tab the same way it declutters the tab bar.
   sessionSectionHidden: new Map(),
+  // Map<pluginId, ({ sessionId, playerTokenId, defaultMapId }) => mapId | null>
+  // Player-side only. When non-null, the PlayerView fetches that map's
+  // state via /api/maps/:id/state and renders it instead of the session's
+  // current map. Driven by the split-the-party plugin so the DM can
+  // route different players onto different maps simultaneously.
+  // Resolved on first paint and re-evaluated every time the registry
+  // version bumps (use notifyChange() after writing).
+  playerMapOverride: new Map(),
 };
 
 // Snapshot helpers — components subscribe via React state to a snapshot

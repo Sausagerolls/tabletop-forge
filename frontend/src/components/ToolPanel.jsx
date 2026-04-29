@@ -258,7 +258,8 @@ const SPAWN_GROUP = {
   color: 'green-500',
   icon: <SpawnIcon />,
   tools: [
-    { id: 'spawn-point', label: 'Set Spawn', key: 'Z', icon: <SpawnIcon /> },
+    { id: 'spawn-point', label: 'Set Spawn',  key: 'Z', icon: <SpawnIcon /> },
+    { id: 'spawn-named', label: 'Add Named', key: 'X', icon: <SpawnIcon /> },
   ],
 };
 

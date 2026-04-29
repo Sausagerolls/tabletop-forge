@@ -548,6 +548,26 @@ Built-in section ids:
 
 Plugins / Plugin Manager / Leave Session render outside the collapsible wrappers, so hiding sections never locks the DM out of plugin management. Use this together with `panelTabHidden` (whole-tab hide) for a tab-management plugin that gives the DM coarse + fine declutter controls.
 
+### `playerMapOverride`
+
+```js
+registries.playerMapOverride.set(pluginId, (ctx) => mapId | null)
+```
+
+Player-side only. The host's `PlayerView` walks every entry on each registry-version bump and picks the first non-null `mapId` returned. When that's set, PlayerView fetches `/api/maps/<id>/state?session_id=<sid>` and renders the resulting slice (map image, walls, doors, lights, magical darkness, dm markers, tokens) instead of the session's current map. Real-time socket events for the override map are mirrored into the rendered snapshot; events for any other map fall through to the session-state buckets and stay out of the player's view.
+
+`ctx` carries `{ sessionId, playerTokenId, defaultMapId }`. Returning `null` means "no override — render the session map" (which is what every player gets by default; the registry is empty until a plugin populates it).
+
+Use this together with the `window.__tabletopForge.player` getters (player-side bridge) so the plugin knows whose override to apply:
+
+```js
+const myName = window.__tabletopForge?.player?.getName?.();
+```
+
+The bundled `split-the-party` plugin is the canonical user — it persists DM-set assignments in plugin KV and registers a getter that returns the current player's mapId.
+
+**Server endpoint pairing:** `GET /api/maps/:id/state?session_id=<sid>` returns the full per-map slice `{ map, walls, doors, lights, magicalDarkness, dmMarkers, tokens, spawnPoint }` for a map belonging to the named session. Plugins driving overrides don't usually call this directly — PlayerView fetches it whenever the override changes — but it's available if you need it for previews / DM-side thumbnails.
+
 ### `panelTabExtensions`
 
 ```js

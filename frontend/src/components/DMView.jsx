@@ -1130,6 +1130,174 @@ function CombatPicker({ tokens, selection, onToggle, onConfirm, onCancel, mode =
   );
 }
 
+// Right-click-on-token context menu. Positioned with `fixed` at the
+// click's viewport coords; the parent passes those in via `menu`.
+// First action is "Send to →" — relocates the token to a different
+// campaign map. More actions slot in below as the app grows.
+function TokenContextMenu({ menu, tokens, maps, currentMapId, spawnPointsByMapId, onClose, onSendToMap }) {
+  const token = tokens.find((t) => t.id === menu.tokenId) || null;
+  // Two-level submenu: hovering "Send to map" opens the map list;
+  // hovering a map (when it has named spawn points) opens its
+  // sub-submenu of points. Track which map's sub-sub is open so only
+  // one renders at a time.
+  const [submenuOpen, setSubmenuOpen] = useState(false);
+  const [hoverMapId, setHoverMapId] = useState(null);
+  // Close on Escape and on any outside click. Mousedown rather than click
+  // so the menu dismisses before any new gesture begins.
+  useEffect(() => {
+    function onDown(e) {
+      const root = document.getElementById('token-context-menu-root');
+      if (root && !root.contains(e.target)) onClose();
+    }
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  // Destination list. Other-map entries always show; the current map
+  // is included only if it has at least one named spawn point — sending
+  // to a map's default spawn would dump the token where it already is.
+  const destinationMaps = (maps || []).filter((m) => {
+    if (m.id !== currentMapId) return true;
+    const pts = spawnPointsByMapId?.[m.id] || [];
+    return pts.length > 0;
+  });
+
+  // Clamp to viewport so the menu doesn't render off-screen when the
+  // DM right-clicks near the edge of the canvas.
+  const left = Math.min(menu.x, window.innerWidth - 240);
+  const top  = Math.min(menu.y, window.innerHeight - 240);
+
+  return (
+    <div
+      id="token-context-menu-root"
+      className="fixed z-50 bg-gray-900 border border-gray-700 rounded-lg shadow-xl text-sm text-gray-100 min-w-[200px] py-1"
+      style={{ left, top }}
+    >
+      <div className="px-3 py-2 border-b border-gray-800 text-gray-400 text-xs">
+        {token?.name || 'Token'}
+      </div>
+      <div
+        className="relative px-3 py-2 hover:bg-gray-800 cursor-pointer flex items-center justify-between"
+        onMouseEnter={() => setSubmenuOpen(true)}
+        onMouseLeave={() => setSubmenuOpen(false)}
+      >
+        <span>Send to map</span>
+        <span className="text-gray-500">▸</span>
+        {submenuOpen && (
+          <div
+            className="absolute left-full top-0 ml-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl min-w-[200px] py-1"
+          >
+            {destinationMaps.length === 0 ? (
+              <div className="px-3 py-2 text-gray-500 italic">No other maps</div>
+            ) : (
+              destinationMaps.map((m) => {
+                const pts = spawnPointsByMapId?.[m.id] || [];
+                const hasPts = pts.length > 0;
+                return (
+                  <div
+                    key={m.id}
+                    className="relative px-3 py-2 hover:bg-gray-800 cursor-pointer flex items-center justify-between gap-3"
+                    onMouseEnter={() => setHoverMapId(m.id)}
+                    onMouseLeave={() => setHoverMapId(prev => prev === m.id ? null : prev)}
+                    onClick={(e) => {
+                      // Maps with named points: clicking the map row
+                      // alone would be ambiguous, so require picking a
+                      // specific point from the sub-submenu. Maps
+                      // without named points fall through to the
+                      // default spawn.
+                      if (hasPts) return;
+                      e.stopPropagation();
+                      onSendToMap(menu.tokenId, m.id, null);
+                    }}
+                  >
+                    <span>{m.name || `Map #${m.id}`}</span>
+                    {hasPts && <span className="text-gray-500">▸</span>}
+                    {hasPts && hoverMapId === m.id && (
+                      <div className="absolute left-full top-0 ml-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl min-w-[180px] py-1">
+                        <div
+                          className="px-3 py-2 hover:bg-gray-800 cursor-pointer text-gray-300 italic border-b border-gray-800"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSendToMap(menu.tokenId, m.id, null);
+                          }}
+                        >
+                          Default spawn
+                        </div>
+                        {pts.map((sp) => (
+                          <div
+                            key={sp.id}
+                            className="px-3 py-2 hover:bg-gray-800 cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSendToMap(menu.tokenId, m.id, sp.id);
+                            }}
+                          >
+                            {sp.label || `Point ${sp.id}`}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Label-prompt modal opened after the DM clicks the canvas with the
+// 'spawn-named' tool. The parent owns the pending coords and the
+// socket emit; we only collect the label and call back.
+function SpawnPointLabelModal({ onCancel, onSubmit }) {
+  const [label, setLabel] = useState('');
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  function submit() {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    onSubmit(trimmed);
+  }
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-96 shadow-2xl">
+        <div className="text-lg font-semibold mb-3 text-gray-100">Name this spawn point</div>
+        <input
+          ref={inputRef}
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+            if (e.key === 'Escape') onCancel();
+          }}
+          maxLength={100}
+          placeholder="e.g. Front Entrance"
+          className="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 text-gray-100 focus:border-cyan-500 outline-none"
+        />
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-100"
+          >Cancel</button>
+          <button
+            onClick={submit}
+            disabled={!label.trim()}
+            className="px-4 py-2 rounded bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:text-gray-500 text-white"
+          >Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DMView() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1139,6 +1307,12 @@ export default function DMView() {
   const [session, setSession] = useState(null);
   const [tokens, setTokens] = useState([]);
   const [maps, setMaps] = useState([]);
+  // Default map newly-spawned player tokens land on. Stored in
+  // sessions.spawn_map_id; null means "use the session's current map_id"
+  // (legacy behaviour). Set via the picker in the Map tab and surfaced
+  // through window.__tabletopForge.dm so the split-the-party plugin can
+  // read it without scraping React state.
+  const [spawnMapId, setSpawnMapId] = useState(null);
   const [diceRolls, setDiceRolls] = useState([]);
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
@@ -1194,6 +1368,10 @@ export default function DMView() {
     });
   }
   const [selectedToken, setSelectedToken] = useState(null);
+  // Right-click-on-token context menu. `null` when closed, otherwise
+  // { tokenId, x, y } where x/y are viewport coords from the
+  // contextmenu event so the popup can position itself with `fixed`.
+  const [tokenContextMenu, setTokenContextMenu] = useState(null);
   const [tokenListCollapsed, setTokenListCollapsed] = useState(false);
   const [tokenOrder, setTokenOrder] = useState([]); // array of token ids — manual order for non-player tokens
   const [handoutTitle, setHandoutTitle] = useState('');
@@ -1364,6 +1542,48 @@ export default function DMView() {
   const [combatPickerViewerId, setCombatPickerViewerId] = useState(null);
   const [userColors, setUserColors] = useState({});
   const [users, setUsers] = useState([]);
+
+  // ── DM-side bridge for the split-the-party plugin ────────────────
+  // Exposes a snapshot of the data the plugin needs to render its
+  // assignment UI: maps in this session, connected users, the live
+  // session row, and the configured default spawn map. The plugin
+  // subscribes once and gets re-rendered when any of these change.
+  // Like the treasure bridge, this is DM-only — players don't have a
+  // tabletop-forge.dm namespace. Declared here (after `users`) so the
+  // refs/effects don't hit a TDZ on the `users` state.
+  const mapsRef = useRef(maps);
+  const usersRef = useRef(users);
+  const sessionRef = useRef(session);
+  const spawnMapIdRef = useRef(spawnMapId);
+  useEffect(() => { mapsRef.current = maps; }, [maps]);
+  useEffect(() => { usersRef.current = users; }, [users]);
+  useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => { spawnMapIdRef.current = spawnMapId; }, [spawnMapId]);
+  const dmSubsRef = useRef(new Set());
+  useEffect(() => {
+    for (const fn of dmSubsRef.current) {
+      try { fn({ maps: mapsRef.current, users: usersRef.current, session: sessionRef.current, spawnMapId: spawnMapIdRef.current }); }
+      catch {}
+    }
+  }, [maps, users, session, spawnMapId]);
+  useEffect(() => {
+    const ns = (window.__tabletopForge = window.__tabletopForge || {});
+    ns.dm = {
+      get: () => ({
+        maps: (mapsRef.current || []).map((m) => ({ ...m })),
+        users: (usersRef.current || []).map((u) => ({ ...u })),
+        session: sessionRef.current ? { ...sessionRef.current } : null,
+        spawnMapId: spawnMapIdRef.current,
+      }),
+      subscribe: (fn) => {
+        dmSubsRef.current.add(fn);
+        return () => dmSubsRef.current.delete(fn);
+      },
+      setPanelTab: (tabId) => setPanelTab(tabId),
+    };
+    return () => { if (window.__tabletopForge) delete window.__tabletopForge.dm; };
+  }, []);
+
   const rollIdRef = useRef(0);
   const activeSoundsRef = useRef([]);
   const audioCtxRef    = useRef(null);
@@ -1393,6 +1613,16 @@ export default function DMView() {
 
   // DM markers
   const [dmMarkers, setDmMarkers] = useState([]);
+  // Named per-map spawn points (Phase 2). Keyed by mapId so the
+  // right-click "Send to map → spawn point" submenu can list points
+  // for ANY map in the campaign, not just the one the DM is currently
+  // viewing. Glyphs for the current map are derived from this via
+  // `currentMapSpawnPoints` below.
+  const [allSpawnPoints, setAllSpawnPoints] = useState({});
+  // After clicking the canvas with the spawn-named tool we hold the
+  // pending coords here while the label modal is open. Submit creates
+  // the row; cancel discards it.
+  const [pendingSpawnPoint, setPendingSpawnPoint] = useState(null);
   const [placingMarkerType, setPlacingMarkerType] = useState(null); // type string when placing
   const [editingMarker, setEditingMarker] = useState(null);         // marker object being edited
 
@@ -1636,6 +1866,28 @@ export default function DMView() {
       setMagicalDarkness(state.magicalDarkness || []);
       setSpellTemplates(state.spellTemplates || []);
       setDmMarkers(state.dmMarkers || []);
+      // Seed the current map's spawn points immediately, then pull
+      // every other map's points in one shot so the right-click submenu
+      // can list them without firing a fetch per map.
+      const seed = state.session?.map_id != null
+        ? { [state.session.map_id]: state.spawnPoints || [] }
+        : {};
+      setAllSpawnPoints(seed);
+      if (state.session?.id != null) {
+        fetch(`/api/sessions/${state.session.id}/spawn-points`)
+          .then(r => r.ok ? r.json() : [])
+          .then(rows => {
+            const grouped = {};
+            for (const sp of rows || []) {
+              if (sp.map_id == null) continue;
+              (grouped[sp.map_id] = grouped[sp.map_id] || []).push(sp);
+            }
+            // Merge — current-map seed wins to stay consistent with
+            // socket events that may have already fired for it.
+            setAllSpawnPoints(prev => ({ ...grouped, ...prev }));
+          })
+          .catch(() => {});
+      }
       setSpawnPoint(state.spawnPoint || { col: 0, row: 0 });
       setFowEnabled(state.session.fow_enabled || false);
       setFowBlur(state.session.fow_blur ?? 16);
@@ -1652,6 +1904,7 @@ export default function DMView() {
       setCombatActive(state.session.combat_active || false);
       setCombatTurn(state.session.combat_turn || 0);
       setTokenNameFontSize(state.session.token_name_font_size ?? 45);
+      setSpawnMapId(state.session.spawn_map_id ?? null);
       if (uc) setUserColors(uc);
       if (u) setUsers(u);
     });
@@ -1660,6 +1913,29 @@ export default function DMView() {
 
     socket.on('token_moved', ({ tokenId, gridCol, gridRow }) => {
       setTokens((prev) => prev.map((t) => t.id === tokenId ? { ...t, grid_col: gridCol, grid_row: gridRow } : t));
+    });
+
+    // A token was relocated to a different map (e.g. via the right-click
+    // "Send to" menu). The DM only loads tokens for the current map at a
+    // time, so:
+    //   - If the token left this map → drop it from local state.
+    //   - If the token arrived on this map → re-load tokens to pull the
+    //     full row (we don't have it client-side yet).
+    socket.on('token_map_changed', async ({ tokenId, fromMapId, toMapId, gridCol, gridRow }) => {
+      const currentMapId = sessionRef.current?.map_id ?? null;
+      if (currentMapId == null) return;
+      if (toMapId === currentMapId) {
+        // Token came to us — re-fetch tokens for this map.
+        try {
+          const r = await fetch(`/api/maps/${currentMapId}/state?session_id=${sessionRef.current.id}`);
+          if (r.ok) {
+            const data = await r.json();
+            setTokens(data.tokens || []);
+          }
+        } catch {}
+      } else if (fromMapId === currentMapId) {
+        setTokens((prev) => prev.filter((t) => t.id !== tokenId));
+      }
     });
 
     socket.on('token_hp_changed', ({ tokenId, currentHp }) => {
@@ -1716,6 +1992,40 @@ export default function DMView() {
     socket.on('dm_marker_removed', ({ markerId }) => setDmMarkers(prev => prev.filter(m => m.id !== markerId)));
     socket.on('dm_marker_updated', ({ marker }) => setDmMarkers(prev => prev.map(m => m.id === marker.id ? marker : m)));
 
+    // Spawn point CRUD broadcasts (Phase 2). Bucketed by mapId so all
+    // maps' points stay in sync — the canvas reads only the current
+    // map's, the right-click submenu reads them all.
+    socket.on('spawn_point_added', ({ spawnPoint }) => {
+      const m = spawnPoint?.map_id;
+      if (m == null) return;
+      setAllSpawnPoints(prev => {
+        const list = prev[m] || [];
+        if (list.some(s => s.id === spawnPoint.id)) return prev;
+        return { ...prev, [m]: [...list, spawnPoint] };
+      });
+    });
+    socket.on('spawn_point_updated', ({ spawnPoint }) => {
+      const m = spawnPoint?.map_id;
+      if (m == null) return;
+      setAllSpawnPoints(prev => ({
+        ...prev,
+        [m]: (prev[m] || []).map(s => s.id === spawnPoint.id ? spawnPoint : s),
+      }));
+    });
+    socket.on('spawn_point_removed', ({ id, mapId }) => {
+      if (mapId == null) {
+        // Defensive: if the broadcast omitted mapId, sweep every bucket.
+        setAllSpawnPoints(prev => Object.fromEntries(
+          Object.entries(prev).map(([k, v]) => [k, v.filter(s => s.id !== id)])
+        ));
+        return;
+      }
+      setAllSpawnPoints(prev => ({
+        ...prev,
+        [mapId]: (prev[mapId] || []).filter(s => s.id !== id),
+      }));
+    });
+
     socket.on('token_size_changed', ({ tokenId, size }) => {
       setTokens((prev) => prev.map((t) => t.id === tokenId ? { ...t, size } : t));
     });
@@ -1728,7 +2038,7 @@ export default function DMView() {
       setTokens((prev) => prev.map((t) => t.id === tokenId ? { ...t, nickname } : t));
     });
 
-    socket.on('map_changed', ({ map, walls: newWalls, doors: newDoors, lights: newLights, tokens: newTokens, magicalDarkness: newDarkness, spawnPoint: newSpawn }) => {
+    socket.on('map_changed', ({ map, walls: newWalls, doors: newDoors, lights: newLights, tokens: newTokens, magicalDarkness: newDarkness, spawnPoint: newSpawn, spawnPoints: newSpawnPoints }) => {
       setSession((prev) => map ? ({
         ...prev, map_id: map.id,
         map_image: map.image_path, map_name: map.name,
@@ -1740,6 +2050,9 @@ export default function DMView() {
       setTokens(newTokens || []);
       setMagicalDarkness(newDarkness || []);
       setSpawnPoint(newSpawn || { col: 0, row: 0 });
+      if (map?.id != null) {
+        setAllSpawnPoints(prev => ({ ...prev, [map.id]: newSpawnPoints || [] }));
+      }
       setDmMarkers([]);
       // Sync grid size from the map record (important after dd2vtt import)
       if (map?.grid_size) setGridSize(map.grid_size);
@@ -1855,6 +2168,10 @@ export default function DMView() {
 
     socket.on('token_name_font_size_changed', ({ tokenNameFontSize: ts }) => {
       if (Number.isFinite(ts)) setTokenNameFontSize(ts);
+    });
+
+    socket.on('spawn_map_changed', ({ spawnMapId: m }) => {
+      setSpawnMapId(m == null ? null : Number(m));
     });
 
     socket.on('combat_changed', ({ active, currentTurn, tokenIds }) => {
@@ -2527,7 +2844,40 @@ export default function DMView() {
             onTemplateSelect={(id) => setEditingTemplateId(id)}
             remoteMeasurements={remoteMeasurements}
             tokenNameFontSize={tokenNameFontSize}
+            onTokenContextMenu={(tokenId, x, y) => setTokenContextMenu({ tokenId, x, y })}
+            spawnPoints={allSpawnPoints[session?.map_id] || []}
+            onSpawnNamedAdd={(col, row) => setPendingSpawnPoint({ col, row })}
           />
+
+          {tokenContextMenu && (
+            <TokenContextMenu
+              menu={tokenContextMenu}
+              tokens={tokens}
+              maps={maps}
+              currentMapId={session?.map_id}
+              spawnPointsByMapId={allSpawnPoints}
+              onClose={() => setTokenContextMenu(null)}
+              onSendToMap={(tokenId, mapId, spawnPointId) => {
+                socket.emit('dm_send_token_to_map', { tokenId, mapId, spawnPointId });
+                setTokenContextMenu(null);
+              }}
+            />
+          )}
+
+          {pendingSpawnPoint && (
+            <SpawnPointLabelModal
+              onCancel={() => setPendingSpawnPoint(null)}
+              onSubmit={(label) => {
+                socket.emit('add_spawn_point', {
+                  mapId: session.map_id,
+                  label,
+                  gridCol: pendingSpawnPoint.col,
+                  gridRow: pendingSpawnPoint.row,
+                });
+                setPendingSpawnPoint(null);
+              }}
+            />
+          )}
 
           {placingCreature && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-dnd-gold text-gray-900 px-4 py-2 rounded-xl font-semibold text-sm shadow-lg z-30">
@@ -2965,6 +3315,76 @@ export default function DMView() {
                     </div>
                     <p className="text-[11px] text-gray-500 mt-2 leading-snug">
                       HP text and bar height scale to half the name size automatically. Synced to all players.
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold text-dnd-gold mb-2">Default Spawn Map</h3>
+                  <div className="bg-gray-800 rounded-xl p-3 space-y-2">
+                    <select
+                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                      value={spawnMapId ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value === '' ? null : Number(e.target.value);
+                        socket.emit('change_spawn_map', { sessionId: session.id, mapId: v });
+                        setSpawnMapId(v);
+                      }}
+                    >
+                      <option value="">— Use current map —</option>
+                      {maps.map((m) => (
+                        <option key={m.id} value={m.id}>{m.name || `Map #${m.id}`}</option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-gray-500 leading-snug">
+                      New player tokens spawn on this map by default. Useful for staging incoming
+                      players on a "lobby" map while the rest of the party is mid-encounter elsewhere.
+                      Leave blank to use whatever map is currently loaded.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Named spawn points (current map) */}
+                <div>
+                  <h3 className="text-sm font-semibold text-dnd-gold mb-2">Named Spawn Points</h3>
+                  <div className="bg-gray-800 rounded-xl p-3 space-y-2">
+                    {(allSpawnPoints[session?.map_id] || []).length === 0 ? (
+                      <div className="text-[11px] text-gray-500">
+                        None on this map. Use the <strong>Spawn → Add Named</strong> tool, then click on the map to drop one.
+                      </div>
+                    ) : (
+                      (allSpawnPoints[session?.map_id] || []).map((sp) => (
+                        <div key={sp.id} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            defaultValue={sp.label}
+                            maxLength={100}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim();
+                              if (v && v !== sp.label) {
+                                socket.emit('update_spawn_point', { id: sp.id, label: v });
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.target.blur();
+                              if (e.key === 'Escape') { e.target.value = sp.label; e.target.blur(); }
+                            }}
+                            className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-500"
+                          />
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Delete spawn point "${sp.label}"?`)) {
+                                socket.emit('remove_spawn_point', { id: sp.id });
+                              }
+                            }}
+                            className="px-2 py-1 text-xs rounded bg-red-700 hover:bg-red-600 text-white"
+                            title="Delete spawn point"
+                          >×</button>
+                        </div>
+                      ))
+                    )}
+                    <p className="text-[11px] text-gray-500 leading-snug">
+                      Right-click a token → <em>Send to map → [point]</em> to drop it at a named point.
                     </p>
                   </div>
                 </div>

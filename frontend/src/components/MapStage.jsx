@@ -66,7 +66,7 @@ const LIGHT_DRAW_TOOLS = new Set(['light']);
 const DOOR_ERASE_TOOLS = new Set(['door-erase']);
 const DARKNESS_DRAW_TOOLS = new Set(['magical-darkness', 'heavy-fog', 'darkness-polygon', 'fog-polygon', 'water-circle', 'water-polygon']);
 const DARKNESS_POLY_TOOLS = new Set(['darkness-polygon', 'fog-polygon', 'water-polygon']);
-const SPAWN_TOOLS = new Set(['spawn-point']);
+const SPAWN_TOOLS = new Set(['spawn-point', 'spawn-named']);
 
 // Distance from point (px,py) to segment (ax,ay)-(bx,by)
 function distToSeg(px, py, ax, ay, bx, by) {
@@ -1412,6 +1412,13 @@ export default function MapStage({
   onTemplateSelect = null,
   selectedTemplateId = null,
   tokenNameFontSize = 45,
+  onTokenContextMenu = null,
+  // Named per-map spawn points (Phase 2 — split-the-party):
+  // an array of { id, label, grid_col, grid_row }. Glyphs are DM-only.
+  // The 'spawn-named' tool fires `onSpawnNamedAdd(col, row)` on click;
+  // the parent prompts for a label and emits the socket event itself.
+  spawnPoints = [],
+  onSpawnNamedAdd = null,
 }) {
   const stageRef = useRef(null);
   const containerRef = useRef(null);
@@ -2872,6 +2879,12 @@ export default function MapStage({
   // initial array and never sees templates placed after the first mount —
   // so tpl-edit / tpl-erase silently do nothing on freshly-drawn shapes.
   const spellTemplatesRef = useRef(spellTemplates);
+  const onTokenContextMenuRef = useRef(onTokenContextMenu);
+  useEffect(() => { onTokenContextMenuRef.current = onTokenContextMenu; }, [onTokenContextMenu]);
+  const spawnPointsRef = useRef(spawnPoints);
+  useEffect(() => { spawnPointsRef.current = spawnPoints; }, [spawnPoints]);
+  const onSpawnNamedAddRef = useRef(onSpawnNamedAdd);
+  useEffect(() => { onSpawnNamedAddRef.current = onSpawnNamedAdd; }, [onSpawnNamedAdd]);
   useEffect(() => { onTokenMoveRef.current   = onTokenMove;   }, [onTokenMove]);
   useEffect(() => { onTokenSelectRef.current = onTokenSelect; }, [onTokenSelect]);
   useEffect(() => { onMapClickRef.current    = onMapClick;    }, [onMapClick]);
@@ -3030,6 +3043,17 @@ export default function MapStage({
         const col = (mc.x - ox) / gs;
         const row = (mc.y - oy) / gs;
         onSetSpawnPointRef.current?.(col, row);
+        return;
+      }
+
+      // ── Named spawn point ────────────────────────────────────────────────
+      // Same coordinate math as spawn-point, but the parent owns the
+      // label-prompt flow and decides whether to actually persist.
+      if (tool === 'spawn-named') {
+        const ox = offsetXRef.current, oy = offsetYRef.current, gs = gridSizeRef.current;
+        const col = (mc.x - ox) / gs;
+        const row = (mc.y - oy) / gs;
+        onSpawnNamedAddRef.current?.(col, row);
         return;
       }
 
@@ -3511,6 +3535,16 @@ export default function MapStage({
 
     function onContextMenu(e) {
       e.preventDefault();
+      // Token right-click takes priority over door-flip when a token is
+      // under the cursor — DM-only callback; player passes a no-op.
+      if (onTokenContextMenuRef.current) {
+        const mc = toMap(e.clientX, e.clientY);
+        const tk = hitToken(mc.x, mc.y);
+        if (tk) {
+          onTokenContextMenuRef.current(tk.id, e.clientX, e.clientY);
+          return;
+        }
+      }
       if (onDoorFlipRef.current) {
         const mc = toMap(e.clientX, e.clientY);
         const hit = findNearestDoor(mc.x, mc.y, doorsRef.current, 14 / scaleRef.current);
@@ -3824,6 +3858,36 @@ export default function MapStage({
                 </Group>
               );
             })()}
+          </Layer>
+        )}
+
+        {/* Named spawn points — DM-only. Cyan to distinguish from the
+            map's default green spawn glyph; label rendered above. */}
+        {!isPlayer && spawnPoints.length > 0 && (
+          <Layer listening={false}>
+            {spawnPoints.map((sp) => {
+              const sx = offsetX + Number(sp.grid_col) * gridSize;
+              const sy = offsetY + Number(sp.grid_row) * gridSize;
+              const label = sp.label || 'Spawn';
+              return (
+                <Group key={sp.id} x={sx} y={sy}>
+                  <Circle radius={gridSize * 0.4} stroke="#06b6d4" strokeWidth={2} dash={[3, 3]} fill="#06b6d4" fillOpacity={0.18} />
+                  <Circle radius={4} fill="#06b6d4" />
+                  <Text
+                    text={label}
+                    fontSize={Math.max(11, gridSize * 0.28)}
+                    fill="#fff"
+                    stroke="#0e7490"
+                    strokeWidth={2.4}
+                    fillAfterStrokeEnabled
+                    x={-gridSize * 0.6}
+                    y={-gridSize * 0.7}
+                    width={gridSize * 1.2}
+                    align="center"
+                  />
+                </Group>
+              );
+            })}
           </Layer>
         )}
 

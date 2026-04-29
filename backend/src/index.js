@@ -175,6 +175,21 @@ db.query(`
   )
 `).catch(err => console.error('dm_markers migration error:', err));
 
+// ─── Named per-map spawn points (Phase 2 of split-the-party) ─────────────────
+// A map can have many labelled spawn points — the "Send to map" right-click
+// flow surfaces them as a sub-submenu so the DM can land a token at a
+// specific location ("Throne Room") rather than the map's default spawn.
+db.query(`
+  CREATE TABLE IF NOT EXISTS map_spawn_points (
+    id SERIAL PRIMARY KEY,
+    map_id INTEGER REFERENCES maps(id) ON DELETE CASCADE,
+    label VARCHAR(100) NOT NULL DEFAULT '',
+    grid_col FLOAT NOT NULL DEFAULT 0,
+    grid_row FLOAT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW()
+  )
+`).catch(err => console.error('map_spawn_points migration error:', err));
+
 // ─── Socket.io ───────────────────────────────────────────────────────────────
 
 // Track connected users per session
@@ -234,6 +249,10 @@ async function getSessionState(sessionCode) {
       [session.id, session.map_id]
     );
     dmMarkersRows = dmMarkersRes.rows;
+    var spawnPointsRows = (await db.query(
+      'SELECT * FROM map_spawn_points WHERE map_id=$1 ORDER BY created_at',
+      [session.map_id]
+    )).rows;
   } else {
     // No map selected — still load player tokens that have no map association
     const tokensRes = await db.query(
@@ -257,6 +276,7 @@ async function getSessionState(sessionCode) {
       fow_color: session.fow_color || '#000000',
       ambient_light: session.ambient_light || 'bright',
       token_name_font_size: session.token_name_font_size ?? 45,
+      spawn_map_id: session.spawn_map_id ?? null,
     },
     tokens: tokensRows,
     walls: wallsRows,
@@ -264,6 +284,7 @@ async function getSessionState(sessionCode) {
     lights: lightsRows,
     magicalDarkness: darknessRows,
     dmMarkers: dmMarkersRows,
+    spawnPoints: typeof spawnPointsRows !== 'undefined' ? spawnPointsRows : [],
     spawnPoint: { col: session.map_spawn_col ?? 0, row: session.map_spawn_row ?? 0 },
   };
 }
@@ -333,6 +354,62 @@ io.on('connection', (socket) => {
         [gridCol, gridRow, tokenId]
       );
       io.to(sessionCode).emit('token_moved', { tokenId, gridCol, gridRow });
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
+  // ── DM "Send to map" — physically relocate a token to another map.
+  // Used by the right-click context menu and by warp-point activation.
+  // Token's session_tokens.map_id is updated, and grid_col/grid_row are
+  // reset to the destination map's spawn point so the token doesn't
+  // land out of bounds. Broadcast carries the from/to map ids so each
+  // client can patch its own view: the source map removes the token,
+  // the destination map (if anyone is on it) re-fetches.
+  socket.on('dm_send_token_to_map', async ({ tokenId, mapId, spawnPointId }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const prev = await db.query(
+        'SELECT map_id FROM session_tokens WHERE id=$1',
+        [tokenId]
+      );
+      if (!prev.rows.length) return;
+      const fromMapId = prev.rows[0].map_id ?? null;
+      const mapRes = await db.query(
+        'SELECT id, spawn_col, spawn_row FROM maps WHERE id=$1',
+        [mapId]
+      );
+      if (!mapRes.rows.length) return;
+      const m = mapRes.rows[0];
+      // Default landing: the map's spawn_col/spawn_row. If the DM picked
+      // a named spawn point we look its coords up and use those instead;
+      // a missing/foreign spawn point silently falls back to the default
+      // so a stale UI can't strand a token off-map.
+      let sc = m.spawn_col ?? 0;
+      let sr = m.spawn_row ?? 0;
+      if (spawnPointId != null) {
+        const sp = await db.query(
+          'SELECT grid_col, grid_row FROM map_spawn_points WHERE id=$1 AND map_id=$2',
+          [spawnPointId, mapId]
+        );
+        if (sp.rows.length) {
+          sc = sp.rows[0].grid_col;
+          sr = sp.rows[0].grid_row;
+        }
+      }
+      await db.query(
+        'UPDATE session_tokens SET map_id=$1, grid_col=$2, grid_row=$3 WHERE id=$4',
+        [mapId, sc, sr, tokenId]
+      );
+      io.to(sessionCode).emit('token_map_changed', {
+        tokenId,
+        fromMapId,
+        toMapId: mapId,
+        gridCol: sc,
+        gridRow: sr,
+      });
     } catch (err) {
       console.error(err);
     }
@@ -565,9 +642,16 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Use map spawn point and current map for new player tokens
-      const sessionInfoRes = await db.query('SELECT map_id FROM sessions WHERE id=$1', [sessionId]);
-      const currentMapId = sessionInfoRes.rows[0]?.map_id || null;
+      // Use the DM-configured spawn map (sessions.spawn_map_id) when set —
+      // lets a DM stage incoming players on a "lobby" map while the rest
+      // of the party is mid-encounter on a different one. Falls back to
+      // the session's current map_id if no spawn map has been picked.
+      const sessionInfoRes = await db.query(
+        'SELECT map_id, spawn_map_id FROM sessions WHERE id=$1', [sessionId]
+      );
+      const currentMapId = sessionInfoRes.rows[0]?.spawn_map_id
+        ?? sessionInfoRes.rows[0]?.map_id
+        ?? null;
       let spawnCol = 0, spawnRow = 0;
       if (currentMapId) {
         const mapInfo = await db.query('SELECT spawn_col, spawn_row FROM maps WHERE id=$1', [currentMapId]);
@@ -607,7 +691,8 @@ io.on('connection', (socket) => {
       );
       if (!sessionRes.rows.length) return;
       const session = sessionRes.rows[0];
-      const currentMapId = session.map_id || null;
+      // Match the new-token spawn rule: prefer the configured spawn map.
+      const currentMapId = session.spawn_map_id || session.map_id || null;
 
       // Check if token already exists ON THE CURRENT MAP
       const existing = await db.query(
@@ -955,6 +1040,10 @@ io.on('connection', (socket) => {
         'SELECT * FROM magical_darkness WHERE session_id=$1 AND map_id=$2 ORDER BY created_at',
         [sessionId, mapId]
       );
+      const spawnPointsRes = await db.query(
+        'SELECT * FROM map_spawn_points WHERE map_id=$1 ORDER BY created_at',
+        [mapId]
+      );
       io.to(sessionCode).emit('map_changed', {
         map,
         walls: wallsRes.rows,
@@ -962,8 +1051,64 @@ io.on('connection', (socket) => {
         lights: lightsRes.rows,
         tokens: tokensRes.rows,
         magicalDarkness: darknessRes.rows,
+        spawnPoints: spawnPointsRes.rows,
         spawnPoint: { col: map.spawn_col ?? 0, row: map.spawn_row ?? 0 },
       });
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
+  // ── Map spawn points CRUD (DM only) ───────────────────────────────────────
+  // Named spawn points per map. The right-click "Send to map → spawn point"
+  // submenu pulls labels from here, and `dm_send_token_to_map` accepts an
+  // optional spawnPointId that overrides the map's default landing tile.
+  socket.on('add_spawn_point', async ({ mapId, label, gridCol, gridRow }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const r = await db.query(
+        'INSERT INTO map_spawn_points (map_id, label, grid_col, grid_row) VALUES ($1,$2,$3,$4) RETURNING *',
+        [mapId, String(label || '').slice(0, 100), gridCol, gridRow]
+      );
+      io.to(sessionCode).emit('spawn_point_added', { spawnPoint: r.rows[0] });
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
+  socket.on('update_spawn_point', async ({ id, label, gridCol, gridRow }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const fields = [];
+      const values = [];
+      if (label !== undefined)   { values.push(String(label).slice(0, 100)); fields.push(`label=$${values.length}`); }
+      if (gridCol !== undefined) { values.push(gridCol); fields.push(`grid_col=$${values.length}`); }
+      if (gridRow !== undefined) { values.push(gridRow); fields.push(`grid_row=$${values.length}`); }
+      if (!fields.length) return;
+      values.push(id);
+      const r = await db.query(
+        `UPDATE map_spawn_points SET ${fields.join(', ')} WHERE id=$${values.length} RETURNING *`,
+        values
+      );
+      if (!r.rows.length) return;
+      io.to(sessionCode).emit('spawn_point_updated', { spawnPoint: r.rows[0] });
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
+  socket.on('remove_spawn_point', async ({ id }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const r = await db.query('DELETE FROM map_spawn_points WHERE id=$1 RETURNING map_id', [id]);
+      if (!r.rows.length) return;
+      io.to(sessionCode).emit('spawn_point_removed', { id, mapId: r.rows[0].map_id });
     } catch (err) {
       console.error(err);
     }
@@ -1353,6 +1498,21 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── Default spawn-map for new player tokens (DM only) ────────────────
+  // Set to null to clear the default (revert to "use whatever map_id the
+  // session currently points at"). Broadcast so the DM panel UI in
+  // other open tabs reflects the change live.
+  socket.on('change_spawn_map', async ({ sessionId, mapId }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const value = mapId == null ? null : Number(mapId);
+      await db.query('UPDATE sessions SET spawn_map_id=$1 WHERE id=$2', [value, sessionId]);
+      io.to(sessionCode).emit('spawn_map_changed', { spawnMapId: value });
+    } catch (err) { console.error(err); }
+  });
+
   // ── Token name font size change (DM only) ────────────────────────────────
   socket.on('change_token_name_font_size', async ({ sessionId, tokenNameFontSize }) => {
     if (socket.data.role !== 'dm') return;
@@ -1553,6 +1713,10 @@ server.listen(PORT, async () => {
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS grid_color VARCHAR(50) DEFAULT 'rgba(0,0,0,0.35)'`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS grid_thickness FLOAT DEFAULT 0.7`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS token_name_font_size INTEGER DEFAULT 45`);
+    // Default map for newly-spawned player tokens. NULL = fall back to the
+    // session's current map_id (legacy behaviour). The DM Map tab picker
+    // and the split-the-party plugin both read/write this column.
+    await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS spawn_map_id INTEGER REFERENCES maps(id) ON DELETE SET NULL`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS combat_active BOOLEAN DEFAULT false`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS combat_turn INTEGER DEFAULT 0`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS temp_hp INTEGER DEFAULT 0`);

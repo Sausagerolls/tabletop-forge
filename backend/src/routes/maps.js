@@ -52,6 +52,59 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// GET /api/maps/:id/state?session_id=Y
+//   Full per-map slice: walls, doors, lights, magical darkness, dm markers,
+//   and tokens. Used by the player view when the split-the-party plugin
+//   has overridden which map this player should be looking at — instead
+//   of the session's current map_id.
+//
+//   `session_id` is required so we can scope tokens (which live under
+//   a session) to the right campaign. Walls/doors/lights/etc. are
+//   per-map-not-per-session in the schema, so they need no extra filter.
+router.get('/:id/state', async (req, res) => {
+  try {
+    const mapId = req.params.id;
+    const { session_id } = req.query;
+    if (!session_id) return res.status(400).json({ error: 'session_id is required' });
+
+    const mapRes = await db.query('SELECT * FROM maps WHERE id=$1', [mapId]);
+    if (!mapRes.rows.length) return res.status(404).json({ error: 'Map not found' });
+    const map = mapRes.rows[0];
+
+    const [wallsRes, doorsRes, lightsRes, darknessRes, markersRes, tokensRes, spawnPointsRes] = await Promise.all([
+      db.query('SELECT * FROM walls WHERE map_id=$1 ORDER BY created_at', [mapId]),
+      db.query('SELECT * FROM doors WHERE map_id=$1 ORDER BY created_at', [mapId]),
+      db.query('SELECT * FROM light_sources WHERE map_id=$1 ORDER BY created_at', [mapId]),
+      db.query('SELECT * FROM magical_darkness WHERE session_id=$1 AND map_id=$2 ORDER BY created_at', [session_id, mapId]),
+      db.query('SELECT * FROM dm_markers WHERE session_id=$1 AND map_id=$2 ORDER BY created_at', [session_id, mapId]),
+      db.query(
+        `SELECT st.*, c.image_path AS creature_image, c.dexterity AS creature_dex,
+                COALESCE(c.initiative_bonus, 0) AS initiative_bonus
+           FROM session_tokens st
+           LEFT JOIN creatures c ON st.creature_id = c.id
+          WHERE st.session_id = $1 AND st.map_id = $2
+          ORDER BY st.z_index, st.id`,
+        [session_id, mapId]
+      ),
+      db.query('SELECT * FROM map_spawn_points WHERE map_id=$1 ORDER BY created_at', [mapId]),
+    ]);
+
+    res.json({
+      map,
+      walls: wallsRes.rows,
+      doors: doorsRes.rows,
+      lights: lightsRes.rows,
+      magicalDarkness: darknessRes.rows,
+      dmMarkers: markersRes.rows,
+      tokens: tokensRes.rows,
+      spawnPoints: spawnPointsRes.rows,
+      spawnPoint: { col: map.spawn_col ?? 0, row: map.spawn_row ?? 0 },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/maps — upload a map
 router.post('/', upload.single('image'), async (req, res) => {
   try {

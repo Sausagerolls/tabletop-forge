@@ -92,4 +92,24 @@ router.get('/:code/tokens', async (req, res) => {
   }
 });
 
+// GET /api/sessions/:id/spawn-points — every named spawn point across
+// every map in this session. Used by the DM-only right-click "Send to
+// map → spawn point" submenu so it can list points for maps the DM
+// isn't currently viewing without firing one fetch per map.
+router.get('/:id/spawn-points', async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT sp.*
+         FROM map_spawn_points sp
+         JOIN maps m ON sp.map_id = m.id
+        WHERE m.session_id = $1
+        ORDER BY sp.map_id, sp.created_at`,
+      [req.params.id]
+    );
+    res.json(r.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

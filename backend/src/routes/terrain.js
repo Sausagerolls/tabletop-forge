@@ -137,4 +137,131 @@ router.delete('/library/:id', async (req, res) => {
   }
 });
 
+// MIME hints used when round-tripping image bytes through base64. The
+// extension is what actually matters on disk; this keeps the data:
+// URL payload viewable in a browser if the JSON is opened directly.
+const EXT_TO_MIME = {
+  '.svg':  'image/svg+xml',
+  '.png':  'image/png',
+  '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif':  'image/gif',
+};
+
+// GET /api/terrain/library/export?ids=1,2,3 — returns a JSON dump of
+// the selected library pieces (or every piece if `ids` is omitted),
+// each with its image embedded as a base64 data: URL so the dump is
+// fully self-contained and re-importable on a different host.
+router.get('/library/export', async (req, res) => {
+  try {
+    const idsParam = String(req.query.ids || '').trim();
+    let rows;
+    if (idsParam) {
+      const idList = idsParam.split(',').map((s) => parseInt(s, 10)).filter((n) => Number.isFinite(n));
+      if (!idList.length) return res.json({ terrain: [] });
+      rows = (await db.query(
+        'SELECT * FROM terrain_library WHERE id = ANY($1::int[]) ORDER BY id',
+        [idList]
+      )).rows;
+    } else {
+      rows = (await db.query('SELECT * FROM terrain_library ORDER BY id')).rows;
+    }
+    const out = [];
+    for (const r of rows) {
+      const piece = {
+        name: r.name,
+        default_w: r.default_w,
+        default_h: r.default_h,
+        hide_until_revealed: !!r.hide_until_revealed,
+        custom_walls: r.custom_walls || null,
+        // Stash the original filename so importers can preserve the
+        // extension; the actual on-disk path on import is fresh.
+        image_filename: r.image_path ? path.basename(r.image_path) : null,
+      };
+      if (r.image_path) {
+        const filePath = path.join(__dirname, '../../uploads', r.image_path);
+        if (fs.existsSync(filePath)) {
+          const buf = fs.readFileSync(filePath);
+          const ext = path.extname(filePath).toLowerCase();
+          const mime = EXT_TO_MIME[ext] || 'application/octet-stream';
+          piece.image_data = `data:${mime};base64,${buf.toString('base64')}`;
+        }
+      }
+      out.push(piece);
+    }
+    res.json({ terrain: out });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/terrain/library/import — accepts a JSON body shaped like
+// the export's output (or just a bare `[...]` array). For each entry
+// with embedded image_data the bytes are decoded and saved fresh in
+// /uploads/terrain/, then a new library row is inserted. Returns the
+// list of newly-created rows so the client can stitch them into its
+// state without a full refetch.
+router.post('/library/import', express.json({ limit: '50mb' }), async (req, res) => {
+  try {
+    const body = req.body;
+    const list = Array.isArray(body?.terrain) ? body.terrain
+               : (Array.isArray(body) ? body : []);
+    if (!list.length) return res.status(400).json({ error: 'No terrain entries in payload' });
+    const inserted = [];
+    for (const raw of list) {
+      const name = String(raw?.name || '').trim();
+      if (!name) continue;
+      let imagePath = null;
+      if (typeof raw.image_data === 'string') {
+        // Strip the data: URL header if present, then decode.
+        const m = raw.image_data.match(/^data:([^;]+);base64,(.+)$/);
+        const b64 = m ? m[2] : raw.image_data;
+        try {
+          const buf = Buffer.from(b64, 'base64');
+          if (buf.length === 0) continue;
+          // Prefer the original filename's extension; fall back to a
+          // mime-derived one if the importer dropped the filename.
+          let ext = '';
+          if (raw.image_filename && typeof raw.image_filename === 'string') {
+            ext = path.extname(raw.image_filename).toLowerCase();
+          }
+          if (!ext && m) {
+            const mime = m[1];
+            for (const [e, mm] of Object.entries(EXT_TO_MIME)) {
+              if (mm === mime) { ext = e; break; }
+            }
+          }
+          if (!ext) ext = '.png';
+          const filename = `${uuidv4()}${ext}`;
+          fs.writeFileSync(path.join(TERRAIN_DIR, filename), buf);
+          imagePath = `terrain/${filename}`;
+        } catch (decodeErr) {
+          console.warn('terrain import: bad image_data for', name, decodeErr.message);
+          continue;
+        }
+      }
+      if (!imagePath) continue; // can't insert a piece without art
+      const r = await db.query(
+        `INSERT INTO terrain_library
+           (name, image_path, default_w, default_h, hide_until_revealed, custom_walls)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         RETURNING *`,
+        [
+          name.slice(0, 120),
+          imagePath,
+          Number(raw.default_w) || 2,
+          Number(raw.default_h) || 2,
+          !!raw.hide_until_revealed,
+          raw.custom_walls ? JSON.stringify(raw.custom_walls) : null,
+        ]
+      );
+      inserted.push(r.rows[0]);
+    }
+    res.json({ imported: inserted.length, terrain: inserted });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

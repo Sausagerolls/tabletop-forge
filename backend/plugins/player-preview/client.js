@@ -251,6 +251,39 @@ export default {
       label: '👁 Preview',
       render: () => React.createElement(PreviewTab, null),
     });
+
+    // ── Top-bar flyout button ────────────────────────────────────────
+    // Lets the DM start a player-view preview from anywhere — the
+    // flyout is the same picker as the dmTab, just one click away
+    // from any panel.
+    function PreviewTopBarButton() {
+      const [open, setOpen] = React.useState(false);
+      const ref = React.useRef(null);
+      React.useEffect(() => {
+        if (!open) return;
+        function onDown(e) {
+          if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+        }
+        window.addEventListener('mousedown', onDown);
+        return () => window.removeEventListener('mousedown', onDown);
+      }, [open]);
+      return React.createElement(React.Fragment, null,
+        React.createElement('button', {
+          onClick: () => setOpen((o) => !o),
+          className: open
+            ? 'bg-purple-700 text-white px-3 py-1.5 rounded-lg text-sm border border-purple-500 transition-colors'
+            : 'bg-dnd-panel/90 text-white px-3 py-1.5 rounded-lg text-sm border border-gray-600 hover:border-purple-400 transition-colors',
+          title: 'Player View Preview',
+        }, '👁 Preview'),
+        open && React.createElement('div', {
+          ref: ref,
+          className: 'absolute top-14 right-4 z-40 bg-dnd-panel border border-gray-600 rounded-xl w-80 shadow-2xl',
+        }, React.createElement(PreviewTab, null))
+      );
+    }
+    registries.dmTopBarButtons.set(PLUGIN_ID, {
+      render: () => React.createElement(PreviewTopBarButton, null),
+    });
   },
 
   // Tear down the overlay if the DM disables the plugin while a

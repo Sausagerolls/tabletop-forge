@@ -421,14 +421,108 @@ function pointInPolygon(col, row, poly) {
   }
   return inside;
 }
-function scatterSpawnPosition(centerCol, centerRow, radius, occupiedTiles, polygon = null) {
-  const cx = Math.round(Number(centerCol) || 0);
-  const cy = Math.round(Number(centerRow) || 0);
-  const blocked = new Set();
-  for (const t of occupiedTiles) {
-    blocked.add(`${Math.round(Number(t.col) || 0)},${Math.round(Number(t.row) || 0)}`);
+
+// Distance from point (px,py) to a line segment (ax,ay)→(bx,by).
+function distPointToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-9) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// Minimum distance from a map-pixel point to a wall row (any type).
+// Returns Infinity for malformed walls so they never reject candidates.
+function minDistToWall(px, py, wall) {
+  const pts = wall.points;
+  if (!Array.isArray(pts) || pts.length < 2) return Infinity;
+  switch (wall.type) {
+    case 'line':
+    case 'ledge':
+      return pts.length >= 4
+        ? distPointToSegment(px, py, pts[0], pts[1], pts[2], pts[3])
+        : Infinity;
+    case 'rect': {
+      if (pts.length < 4) return Infinity;
+      const minX = Math.min(pts[0], pts[2]), maxX = Math.max(pts[0], pts[2]);
+      const minY = Math.min(pts[1], pts[3]), maxY = Math.max(pts[1], pts[3]);
+      return Math.min(
+        distPointToSegment(px, py, minX, minY, maxX, minY),
+        distPointToSegment(px, py, maxX, minY, maxX, maxY),
+        distPointToSegment(px, py, maxX, maxY, minX, maxY),
+        distPointToSegment(px, py, minX, maxY, minX, minY),
+      );
+    }
+    case 'polygon': {
+      if (pts.length < 6) return Infinity;
+      let minD = Infinity;
+      for (let i = 0; i < pts.length; i += 2) {
+        const j = (i + 2) % pts.length;
+        const d = distPointToSegment(px, py, pts[i], pts[i + 1], pts[j], pts[j + 1]);
+        if (d < minD) minD = d;
+      }
+      return minD;
+    }
+    case 'circle':
+      if (pts.length < 3) return Infinity;
+      return Math.abs(Math.hypot(px - pts[0], py - pts[1]) - pts[2]);
+    default:
+      return Infinity;
   }
-  // Polygon mode: rejection-sample inside the polygon's bounding box.
+}
+
+// Pick a random landing tile inside a spawn area while respecting two
+// hard rules:
+//   1. The token's centre must be at least `wallBufferPx` away from
+//      every wall — touching a wall breaks the line-of-sight system
+//      (the ray-cast clips both sides of the wall and the player can
+//      see straight through).
+//   2. Don't overlap an existing token if avoidable. Same-tile
+//      overlap is allowed as a last resort so a tight, fully-walled
+//      pocket still produces a valid landing tile.
+//
+// Coordinates are fractional grid units throughout — no integer-tile
+// snap — so a token can squeeze between walls in zones smaller than
+// a single cell.
+function scatterSpawnPosition(centerCol, centerRow, radius, occupiedTiles, polygon, walls, gridSize, offsetX, offsetY) {
+  const cx = Number(centerCol) || 0;
+  const cy = Number(centerRow) || 0;
+  const gs = Number(gridSize) || 50;
+  const ox = Number(offsetX) || 0;
+  const oy = Number(offsetY) || 0;
+  // Buffer is measured from the token's CENTRE. A 1x1 token's visible
+  // edge sits half a grid cell from its centre, so the buffer has to
+  // be just past that — otherwise the token spawns with its edge on
+  // a wall and the LoS ray-cast clips both sides. 0.55 gives a thin
+  // safety margin past the visual edge; 8px floor keeps it sensible
+  // on tiny grids.
+  const wallBufferPx = Math.max(8, gs * 0.55);
+  const allWalls = Array.isArray(walls) ? walls : [];
+  const others = Array.isArray(occupiedTiles) ? occupiedTiles : [];
+
+  // Convert a candidate's (col, row) to its pixel centre and reject
+  // when it sits inside the wall-buffer of any wall.
+  function clearOfWalls(col, row) {
+    if (!allWalls.length) return true;
+    const px = ox + (col + 0.5) * gs;
+    const py = oy + (row + 0.5) * gs;
+    for (const w of allWalls) {
+      if (minDistToWall(px, py, w) < wallBufferPx) return false;
+    }
+    return true;
+  }
+  // Soft "don't share a tile" check — fractional distance test rather
+  // than an integer-tile bucket so close-but-not-overlapping spots
+  // pass.
+  function clearOfTokens(col, row, minDistGrid) {
+    for (const t of others) {
+      if (Math.hypot(col - Number(t.col), row - Number(t.row)) < minDistGrid) return false;
+    }
+    return true;
+  }
+
+  // Polygon mode — rejection-sample inside the polygon's bounding box.
   if (Array.isArray(polygon) && polygon.length >= 3) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     let sumX = 0, sumY = 0;
@@ -438,30 +532,36 @@ function scatterSpawnPosition(centerCol, centerRow, radius, occupiedTiles, polyg
       if (y < minY) minY = y; if (y > maxY) maxY = y;
       sumX += x; sumY += y;
     }
-    const centroidCol = Math.round(sumX / polygon.length);
-    const centroidRow = Math.round(sumY / polygon.length);
-    const lo = (v) => Math.floor(v), hi = (v) => Math.ceil(v);
-    for (let i = 0; i < 60; i++) {
-      const col = lo(minX) + Math.floor(Math.random() * (hi(maxX) - lo(minX) + 1));
-      const row = lo(minY) + Math.floor(Math.random() * (hi(maxY) - lo(minY) + 1));
-      if (!pointInPolygon(col + 0.5, row + 0.5, polygon)) continue;
-      if (blocked.has(`${col},${row}`)) continue;
-      return { col, row };
+    const centroidCol = sumX / polygon.length;
+    const centroidRow = sumY / polygon.length;
+    let bestNoToken = null; // best wall-clear candidate even if a token is on it
+    for (let i = 0; i < 80; i++) {
+      const col = minX + Math.random() * (maxX - minX);
+      const row = minY + Math.random() * (maxY - minY);
+      if (!pointInPolygon(col, row, polygon)) continue;
+      if (!clearOfWalls(col, row)) continue;
+      if (clearOfTokens(col, row, 0.7)) return { col, row };
+      if (!bestNoToken) bestNoToken = { col, row };
     }
-    return { col: centroidCol, row: centroidRow };
+    if (bestNoToken) return bestNoToken;       // tokens overlap, but at least no walls
+    return { col: centroidCol, row: centroidRow }; // fallback
   }
-  // Legacy circle mode.
-  const r = Math.max(0, Math.floor(Number(radius) || 0));
+
+  // Circle mode (legacy bubble).
+  const r = Math.max(0, Number(radius) || 0);
   if (r === 0) return { col: cx, row: cy };
-  for (let i = 0; i < 40; i++) {
-    const dx = Math.floor((Math.random() * 2 - 1) * r);
-    const dy = Math.floor((Math.random() * 2 - 1) * r);
+  let bestNoToken = null;
+  for (let i = 0; i < 80; i++) {
+    const dx = (Math.random() * 2 - 1) * r;
+    const dy = (Math.random() * 2 - 1) * r;
     if (dx * dx + dy * dy > r * r) continue;
     const col = cx + dx;
     const row = cy + dy;
-    if (blocked.has(`${col},${row}`)) continue;
-    return { col, row };
+    if (!clearOfWalls(col, row)) continue;
+    if (clearOfTokens(col, row, 0.7)) return { col, row };
+    if (!bestNoToken) bestNoToken = { col, row };
   }
+  if (bestNoToken) return bestNoToken;
   return { col: cx, row: cy };
 }
 
@@ -691,7 +791,10 @@ io.on('connection', (socket) => {
       const fromMapId = prev.rows[0].map_id ?? null;
       const sessionId = prev.rows[0].session_id;
       const mapRes = await db.query(
-        'SELECT id, spawn_col, spawn_row, spawn_radius FROM maps WHERE id=$1',
+        `SELECT m.id, m.spawn_col, m.spawn_row, m.spawn_radius, m.width, m.height,
+                COALESCE(s.grid_size, m.grid_size) AS grid_size
+           FROM maps m LEFT JOIN sessions s ON m.session_id = s.id
+          WHERE m.id=$1`,
         [mapId]
       );
       if (!mapRes.rows.length) return;
@@ -725,7 +828,14 @@ io.on('connection', (socket) => {
         'SELECT grid_col AS col, grid_row AS row FROM session_tokens WHERE session_id=$1 AND map_id=$2 AND id<>$3',
         [sessionId, mapId, tokenId]
       );
-      const { col: sc, row: sr } = scatterSpawnPosition(centerCol, centerRow, radius, occupiedRows.rows, polygon);
+      const wallsRes = await db.query('SELECT type, points FROM walls WHERE map_id=$1', [mapId]);
+      const gs = Number(m.grid_size) || 50;
+      const offX = gs > 0 ? (Number(m.width  || 0) % gs) / 2 : 0;
+      const offY = gs > 0 ? (Number(m.height || 0) % gs) / 2 : 0;
+      const { col: sc, row: sr } = scatterSpawnPosition(
+        centerCol, centerRow, radius, occupiedRows.rows, polygon,
+        wallsRes.rows, gs, offX, offY,
+      );
       await db.query(
         'UPDATE session_tokens SET map_id=$1, grid_col=$2, grid_row=$3 WHERE id=$4',
         [mapId, sc, sr, tokenId]
@@ -981,12 +1091,23 @@ io.on('connection', (socket) => {
         ?? null;
       let spawnCol = 0, spawnRow = 0;
       if (currentMapId) {
-        const mapInfo = await db.query('SELECT spawn_col, spawn_row, spawn_radius FROM maps WHERE id=$1', [currentMapId]);
-        const cx = Math.floor(mapInfo.rows[0]?.spawn_col ?? 0);
-        const cy = Math.floor(mapInfo.rows[0]?.spawn_row ?? 0);
-        const r  = mapInfo.rows[0]?.spawn_radius ?? 0;
+        const mapInfo = await db.query(
+          `SELECT m.spawn_col, m.spawn_row, m.spawn_radius, m.width, m.height,
+                  COALESCE(s.grid_size, m.grid_size) AS grid_size
+             FROM maps m LEFT JOIN sessions s ON m.session_id = s.id
+            WHERE m.id=$1`,
+          [currentMapId]
+        );
+        const mr = mapInfo.rows[0] || {};
+        const cx = Number(mr.spawn_col ?? 0);
+        const cy = Number(mr.spawn_row ?? 0);
+        const r  = Number(mr.spawn_radius ?? 0);
+        const gs = Number(mr.grid_size) || 50;
+        const offX = gs > 0 ? (Number(mr.width  || 0) % gs) / 2 : 0;
+        const offY = gs > 0 ? (Number(mr.height || 0) % gs) / 2 : 0;
         const occupied = await loadOccupiedTiles(sessionId, currentMapId);
-        const picked = scatterSpawnPosition(cx, cy, r, occupied);
+        const wallsRes = await db.query('SELECT type, points FROM walls WHERE map_id=$1', [currentMapId]);
+        const picked = scatterSpawnPosition(cx, cy, r, occupied, null, wallsRes.rows, gs, offX, offY);
         spawnCol = picked.col;
         spawnRow = picked.row;
       }
@@ -1051,15 +1172,28 @@ io.on('connection', (socket) => {
       }
 
       // Get spawn point — scatter inside spawn_radius if set so a
-      // re-spawned token doesn't pile back onto the original tile.
+      // re-spawned token doesn't pile back onto the original tile,
+      // and respect walls so the centre never lands flush against
+      // one (would break line-of-sight ray-casts).
       let spawnCol = 0, spawnRow = 0;
       if (currentMapId) {
-        const mapInfo = await db.query('SELECT spawn_col, spawn_row, spawn_radius FROM maps WHERE id=$1', [currentMapId]);
-        const cx = Math.floor(mapInfo.rows[0]?.spawn_col ?? 0);
-        const cy = Math.floor(mapInfo.rows[0]?.spawn_row ?? 0);
-        const r  = mapInfo.rows[0]?.spawn_radius ?? 0;
+        const mapInfo = await db.query(
+          `SELECT m.spawn_col, m.spawn_row, m.spawn_radius, m.width, m.height,
+                  COALESCE(s.grid_size, m.grid_size) AS grid_size
+             FROM maps m LEFT JOIN sessions s ON m.session_id = s.id
+            WHERE m.id=$1`,
+          [currentMapId]
+        );
+        const mr = mapInfo.rows[0] || {};
+        const cx = Number(mr.spawn_col ?? 0);
+        const cy = Number(mr.spawn_row ?? 0);
+        const r  = Number(mr.spawn_radius ?? 0);
+        const gs = Number(mr.grid_size) || 50;
+        const offX = gs > 0 ? (Number(mr.width  || 0) % gs) / 2 : 0;
+        const offY = gs > 0 ? (Number(mr.height || 0) % gs) / 2 : 0;
         const occupied = await loadOccupiedTiles(session.id, currentMapId);
-        const picked = scatterSpawnPosition(cx, cy, r, occupied);
+        const wallsRes = await db.query('SELECT type, points FROM walls WHERE map_id=$1', [currentMapId]);
+        const picked = scatterSpawnPosition(cx, cy, r, occupied, null, wallsRes.rows, gs, offX, offY);
         spawnCol = picked.col;
         spawnRow = picked.row;
       }

@@ -526,6 +526,39 @@ export default {
       label: '💬 NPC Chat',
       render: () => React.createElement(ChatTab, null),
     });
+
+    // ── Top-bar flyout button ────────────────────────────────────────
+    // Lets the DM open NPC Chat from anywhere without losing the
+    // currently-open tab. Same content as the dmTab, just rendered
+    // inside a flyout positioned next to the existing Dice button.
+    function NPCChatTopBarButton() {
+      const [open, setOpen] = React.useState(false);
+      const ref = React.useRef(null);
+      React.useEffect(() => {
+        if (!open) return;
+        function onDown(e) {
+          if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+        }
+        window.addEventListener('mousedown', onDown);
+        return () => window.removeEventListener('mousedown', onDown);
+      }, [open]);
+      return React.createElement(React.Fragment, null,
+        React.createElement('button', {
+          onClick: () => setOpen((o) => !o),
+          className: open
+            ? 'bg-dnd-gold text-gray-900 px-3 py-1.5 rounded-lg text-sm border border-yellow-400 transition-colors'
+            : 'bg-dnd-panel/90 text-white px-3 py-1.5 rounded-lg text-sm border border-gray-600 hover:border-yellow-400 transition-colors',
+          title: 'NPC Chat',
+        }, '💬 NPC Chat'),
+        open && React.createElement('div', {
+          ref: ref,
+          className: 'absolute top-14 right-4 z-40 bg-dnd-panel border border-gray-600 rounded-xl w-96 max-h-[80vh] overflow-y-auto shadow-2xl',
+        }, React.createElement(ChatTab, null))
+      );
+    }
+    registries.dmTopBarButtons.set(PLUGIN_ID, {
+      render: () => React.createElement(NPCChatTopBarButton, null),
+    });
   },
 
   unregister() {

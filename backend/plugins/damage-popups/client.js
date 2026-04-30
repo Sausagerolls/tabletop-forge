@@ -334,5 +334,40 @@ export default {
       label: '💥 Damage',
       render: () => React.createElement(DamageTab, null),
     });
+
+    // ── Top-bar flyout button ────────────────────────────────────────
+    // Same content as the dmTab, but accessible from the always-visible
+    // top toolbar so the DM doesn't have to leave whichever panel
+    // they're in to drop a damage number.
+    function DamageTopBarButton() {
+      const [open, setOpen] = React.useState(false);
+      const ref = React.useRef(null);
+      // Close when the user clicks outside the popup. Mousedown so the
+      // popup dismisses before any new gesture begins.
+      React.useEffect(() => {
+        if (!open) return;
+        function onDown(e) {
+          if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+        }
+        window.addEventListener('mousedown', onDown);
+        return () => window.removeEventListener('mousedown', onDown);
+      }, [open]);
+      return React.createElement(React.Fragment, null,
+        React.createElement('button', {
+          onClick: () => setOpen((o) => !o),
+          className: open
+            ? 'bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-sm border border-emerald-500 transition-colors'
+            : 'bg-dnd-panel/90 text-white px-3 py-1.5 rounded-lg text-sm border border-gray-600 hover:border-emerald-400 transition-colors',
+          title: 'Damage / Healing / Temp HP',
+        }, '💥 Damage'),
+        open && React.createElement('div', {
+          ref: ref,
+          className: 'absolute top-14 right-4 z-40 bg-dnd-panel border border-gray-600 rounded-xl w-80 shadow-2xl',
+        }, React.createElement(DamageTab, null))
+      );
+    }
+    registries.dmTopBarButtons.set(PLUGIN_ID, {
+      render: () => React.createElement(DamageTopBarButton, null),
+    });
   },
 };

@@ -1,7 +1,7 @@
 {
   "id": "damage-popups",
   "name": "Damage Pop-Ups",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "DM picks a token and announces a damage / healing / temp HP value — all clients see a colour-coded number float up above the token and fade out. Visual only — does not modify token HP.",
   "author": "TableTop Forge",
   "requires": [],

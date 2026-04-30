@@ -1,7 +1,7 @@
 {
   "id": "player-preview",
   "name": "Player View Preview",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "DM-only — preview exactly what a specific player sees (fog of war, hidden tokens, light radius, magical darkness) in a fullscreen overlay, with a one-click switch back to the DM view.",
   "author": "TableTop Forge",
   "frontend_entry": "client.js",

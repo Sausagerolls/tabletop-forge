@@ -46,6 +46,13 @@ export const registries = {
   // Map<pluginId, { id, label, icon, render: (ctx) => ReactNode }>
   // Adds a new tab to the DM right-hand panel.
   dmTabs: new Map(),
+  // Map<pluginId, { render: () => ReactNode }>
+  // Adds a button to the DM's top-right toolbar (alongside Actions /
+  // Sounds / Dice). Plugins render their own button + flyout popup,
+  // so they own the open/close state and styling. Useful for "open
+  // this plugin's quick-use UI without leaving the active tab" —
+  // e.g. damage popups, NPC chat, player-view preview.
+  dmTopBarButtons: new Map(),
   // Map<templateId, { kind, pluginId }>
   // Lets a plugin tag a spell template with a "kind" that the host renders
   // natively (using core canvas effects the plugin couldn't otherwise touch

@@ -3240,14 +3240,15 @@ export default function MapStage({
         }
       }
 
-      // DM-only: if the click landed on a named spawn-point glyph,
-      // start a spawn drag and skip every other tool/dispatch path so
-      // the active tool doesn't simultaneously start panning, drawing
-      // a wall, etc. Stage listening is off (perf choice) so we do
-      // the drag bookkeeping ourselves. Tokens take priority — if a
-      // token sits inside the spawn polygon the click should drag the
-      // token, not the zone.
-      if (!isPlayer && !hitToken(mc.x, mc.y)) {
+      // DM-only: if the click landed on a named spawn-point glyph
+      // and the move tool is active, start a spawn drag and skip
+      // every other tool/dispatch path. Gating on the move tool means
+      // the pan tool can pan freely across spawn zones without
+      // accidentally grabbing them. Stage listening is off (perf
+      // choice) so we do the drag bookkeeping ourselves. Tokens take
+      // priority — if a token sits inside the spawn polygon the
+      // click should drag the token, not the zone.
+      if (!isPlayer && tool === 'move' && !hitToken(mc.x, mc.y)) {
         const sp = hitSpawnPoint(mc.x, mc.y);
         if (sp) {
           spawnDrag = { id: sp.id, origCol: Number(sp.grid_col), origRow: Number(sp.grid_row) };

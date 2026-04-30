@@ -1682,6 +1682,10 @@ function TerrainWallEditor({ piece, initialWalls, onCancel, onSave }) {
 }
 
 export default function DMView() {
+  // Subscribe DMView itself to registry bumps so plugin-registered
+  // toolbar buttons (and any other extension point we wire into the
+  // host UI) re-render when plugins enable/disable.
+  useRegistryVersion();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const code = searchParams.get('code') || '';
@@ -1725,6 +1729,15 @@ export default function DMView() {
     }
   }
   const [panelTabs, setPanelTabs] = useState(() => {
+    // Always parks 'session' at the rightmost position. The DM can
+    // still drag it elsewhere; this is just the default — including
+    // when a stored order from before a new tab was added pushed
+    // session out of the last slot.
+    function pinSessionLast(arr) {
+      const out = arr.filter((t) => t !== 'session');
+      if (arr.includes('session')) out.push('session');
+      return out;
+    }
     try {
       const stored = JSON.parse(localStorage.getItem(PANEL_TAB_ORDER_KEY) || 'null');
       if (Array.isArray(stored) && stored.length) {
@@ -1732,10 +1745,10 @@ export default function DMView() {
         // adds a new built-in tab) so the bar stays complete.
         const known = stored.filter((t) => DEFAULT_PANEL_TABS.includes(t));
         for (const t of DEFAULT_PANEL_TABS) if (!known.includes(t)) known.push(t);
-        return known;
+        return pinSessionLast(known);
       }
     } catch {}
-    return [...DEFAULT_PANEL_TABS];
+    return pinSessionLast([...DEFAULT_PANEL_TABS]);
   });
   function reorderPanelTab(fromId, toId) {
     setPanelTabs((prev) => {
@@ -1896,6 +1909,12 @@ export default function DMView() {
             ? raw.damage_entries.map(e => ({ damage: e.damage || '', damage_type: e.damage_type || '' }))
             : [{ damage: '', damage_type: '' }],
           properties: raw.properties || '',
+          mastery: raw.mastery || '',
+          attunement_required: !!raw.attunement_required,
+          attuned: !!raw.attuned,
+          sheds_light: !!raw.sheds_light,
+          bright_ft: parseInt(raw.bright_ft, 10) || 0,
+          dim_ft: parseInt(raw.dim_ft, 10) || 0,
         }));
         setTreasureList(prev => [...prev, ...cleaned]);
         return cleaned.length;
@@ -3509,6 +3528,14 @@ export default function DMView() {
               >
                 Dice
               </button>
+              {/* Plugin-registered top-bar buttons — each plugin
+                  renders its own button + flyout via the
+                  dmTopBarButtons registry. */}
+              {Array.from(pluginRegistries.dmTopBarButtons.entries()).map(([id, entry]) => (
+                <React.Fragment key={id}>
+                  {entry && typeof entry.render === 'function' ? entry.render() : null}
+                </React.Fragment>
+              ))}
             </div>
           </div>
 
@@ -4288,11 +4315,63 @@ export default function DMView() {
               <div className="h-full overflow-y-auto p-4 space-y-3">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-semibold text-dnd-gold">Terrain Library</h3>
-                  <button
-                    onClick={() => setShowTerrainUpload(true)}
-                    className="px-3 py-1 text-xs rounded bg-cyan-700 hover:bg-cyan-600 text-white"
-                    title="Upload a new terrain piece"
-                  >+ Create</button>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={async () => {
+                        if (!terrainLibrary.length) return;
+                        try {
+                          const r = await fetch('/api/terrain/library/export');
+                          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                          const blob = await r.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = 'terrain-library.json';
+                          document.body.appendChild(a); a.click(); a.remove();
+                          setTimeout(() => URL.revokeObjectURL(url), 5000);
+                        } catch (err) { alert('Export failed: ' + err.message); }
+                      }}
+                      disabled={terrainLibrary.length === 0}
+                      className="text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-50 px-2 py-1 rounded text-gray-200"
+                      title="Download every terrain piece in the library as a JSON file"
+                    >Export</button>
+                    <label className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-200 cursor-pointer">
+                      Import
+                      <input
+                        type="file"
+                        accept="application/json,.json"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const text = await file.text();
+                            const r = await fetch('/api/terrain/library/import', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: text,
+                            });
+                            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                            const out = await r.json();
+                            if (Array.isArray(out.terrain) && out.terrain.length) {
+                              setTerrainLibrary((prev) => [...prev, ...out.terrain]);
+                            } else {
+                              alert('Nothing imported — JSON had no valid terrain entries.');
+                            }
+                          } catch (err) {
+                            alert('Import failed: ' + err.message);
+                          } finally {
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+                    <button
+                      onClick={() => setShowTerrainUpload(true)}
+                      className="px-3 py-1 text-xs rounded bg-cyan-700 hover:bg-cyan-600 text-white"
+                      title="Upload a new terrain piece"
+                    >+ Create</button>
+                  </div>
                 </div>
                 <p className="text-[11px] text-gray-500 leading-snug">
                   Click a piece to enter place-mode, then click the map to drop it. Right-click a placed piece for delete / hide / edit. Drag any placed piece to move it. Players see your changes live.
@@ -4513,7 +4592,26 @@ export default function DMView() {
               const pcTokens = tokens.filter(t => t.creature_id && t.is_player);
 
               function newItem() {
-                return { id: Date.now() + Math.random(), item_type: 'item', name: '', qty: 1, weight: '', desc: '', equipped: false, weapon_range: '', attack_stat: 'STR', attack_bonus_misc: 0, damage_entries: [{ damage: '', damage_type: '' }], properties: '' };
+                return {
+                  id: Date.now() + Math.random(),
+                  item_type: 'item',
+                  name: '',
+                  qty: 1,
+                  weight: '',
+                  desc: '',
+                  equipped: false,
+                  weapon_range: '',
+                  attack_stat: 'STR',
+                  attack_bonus_misc: 0,
+                  damage_entries: [{ damage: '', damage_type: '' }],
+                  properties: '',
+                  mastery: '',
+                  attunement_required: false,
+                  attuned: false,
+                  sheds_light: false,
+                  bright_ft: 20,
+                  dim_ft: 40,
+                };
               }
               function addTreasureItem() {
                 setTreasureList(prev => [...prev, newItem()]);
@@ -4722,6 +4820,21 @@ export default function DMView() {
                                     value={item.properties || ''}
                                     onChange={e => updateTreasureItem(item.id, 'properties', e.target.value)} />
                                 </div>
+
+                                {/* Mastery */}
+                                <div>
+                                  <label className={labelCls}>Mastery</label>
+                                  <select
+                                    className={`w-full ${inputCls}`}
+                                    value={item.mastery || ''}
+                                    onChange={e => updateTreasureItem(item.id, 'mastery', e.target.value)}
+                                  >
+                                    <option value="">None</option>
+                                    {['Cleave','Graze','Nick','Push','Sap','Slow','Topple','Vex'].map(m => (
+                                      <option key={m} value={m}>{m}</option>
+                                    ))}
+                                  </select>
+                                </div>
                               </div>
                             )}
 
@@ -4739,6 +4852,69 @@ export default function DMView() {
                                 </select>
                               </label>
                             )}
+
+                            {/* Equipped + Sheds light — mirror the
+                                inventory form so a weapon arrives with
+                                the same toggles available. */}
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={item.equipped || false}
+                                  onChange={e => updateTreasureItem(item.id, 'equipped', e.target.checked)}
+                                  className="accent-dnd-gold"
+                                />
+                                Equipped
+                              </label>
+                              <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={item.sheds_light || false}
+                                  onChange={e => updateTreasureItem(item.id, 'sheds_light', e.target.checked)}
+                                  className="accent-yellow-400"
+                                />
+                                Sheds Light
+                              </label>
+                            </div>
+                            {item.sheds_light && (
+                              <div className="flex items-center gap-3 flex-wrap pl-1">
+                                <label className="flex items-center gap-1.5 text-xs text-gray-300">
+                                  <span className="text-yellow-300">Bright:</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={5}
+                                    className={`w-16 text-center ${inputCls}`}
+                                    value={item.bright_ft ?? 20}
+                                    onChange={e => updateTreasureItem(item.id, 'bright_ft', Math.max(0, parseInt(e.target.value) || 0))}
+                                  />
+                                  <span className="text-gray-500">ft</span>
+                                </label>
+                                <label className="flex items-center gap-1.5 text-xs text-gray-300">
+                                  <span className="text-yellow-600">Dim:</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={5}
+                                    className={`w-16 text-center ${inputCls}`}
+                                    value={item.dim_ft ?? 40}
+                                    onChange={e => updateTreasureItem(item.id, 'dim_ft', Math.max(0, parseInt(e.target.value) || 0))}
+                                  />
+                                  <span className="text-gray-500">ft</span>
+                                </label>
+                              </div>
+                            )}
+
+                            {/* Weight */}
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-gray-400 shrink-0">Weight</label>
+                              <input
+                                className={`w-24 ${inputCls}`}
+                                placeholder="e.g. 3 lb"
+                                value={item.weight || ''}
+                                onChange={e => updateTreasureItem(item.id, 'weight', e.target.value)}
+                              />
+                            </div>
 
                             {/* Description */}
                             <input

@@ -195,31 +195,20 @@ export function ledgeFarSidePolygon(ledge, ox, oy, mapW, mapH) {
   const side = ledgeSide(ledge, ox, oy);
   if (side >= 0) return null; // above side or on the ledge: no dim effect
   const { ax, ay, bx, by } = ledge;
-  const dx = bx - ax, dy = by - ay;
-  const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len, uy = dy / len;
-  // Normal pointing to "above" (LEFT of A→B in canvas coords, which is (-uy, ux) in screen-y-flipped convention).
-  // But we want the side AWAY from origin, i.e. the side origin is NOT on (opposite of below).
-  // origin is on below side (side = -1), so far side is above = LEFT of A→B = (-uy, ux) rotated.
-  // Left-perpendicular in canvas coords: nx = -uy, ny = ux gives cross((B-A),(n)) = dx*ux + dy*(-(-uy))... let me just verify.
-  // cross((B-A), N) where N is the normal:
-  //   with N = (-uy, ux): cross = dx*ux - dy*(-uy) = dx*ux + dy*uy = (ux²+uy²)*len = len > 0
-  //   → matches our "above = cross<0" definition? Let me re-check:
-  // Our side = -1 when cross > 0; side = +1 when cross < 0. So above corresponds to cross < 0.
-  // cross = (bx-ax)*(oy-ay) - (by-ay)*(ox-ax) = dx*(oy-ay) - dy*(ox-ax).
-  // For normal N = (nx, ny): cross((B-A), N) = dx*ny - dy*nx.
-  // Want cross < 0 (above). With N = (-uy, ux): dx*ux - dy*(-uy) = dx*ux + dy*uy = len > 0 → side = -1 (below).
-  // With N = (uy, -ux): dx*(-ux) - dy*(uy) = -len < 0 → side = +1 (above).
-  // So above-pointing normal is (uy, -ux).
-  const nx = uy, ny = -ux;
-  // The dim polygon is the rectangular strip directly behind the ledge
-  // segment, only as wide as the ledge itself. The earlier version
-  // also extended A and B by L along the ledge axis (treating the
-  // ledge line as effectively infinite), which dimmed light WAY past
-  // the actual ledge endpoints — the bug the DM noticed where a
-  // 50-px ledge dropped a shadow across half the map.
+  // Shadow cone from origin: cast rays from origin through A and B and
+  // extend them past the ledge. Anything the origin can see through the
+  // ledge falls inside this cone, so the dim overlay correctly covers the
+  // full far side regardless of viewing angle. The downstream clip to the
+  // origin's LOS polygon caps the cone at endpoint A/B for points the origin
+  // can't actually see past.
   const L = Math.max(mapW, mapH) * 4;
-  const AxF = ax + nx * L, AyF = ay + ny * L;
-  const BxF = bx + nx * L, ByF = by + ny * L;
-  return [ax, ay, bx, by, BxF, ByF, AxF, AyF];
+  const aDx = ax - ox, aDy = ay - oy;
+  const aLen = Math.hypot(aDx, aDy) || 1;
+  const aFx = ax + (aDx / aLen) * L;
+  const aFy = ay + (aDy / aLen) * L;
+  const bDx = bx - ox, bDy = by - oy;
+  const bLen = Math.hypot(bDx, bDy) || 1;
+  const bFx = bx + (bDx / bLen) * L;
+  const bFy = by + (bDy / bLen) * L;
+  return [ax, ay, bx, by, bFx, bFy, aFx, aFy];
 }

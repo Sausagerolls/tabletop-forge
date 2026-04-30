@@ -115,6 +115,14 @@ function buildPlayerUrl(token) {
     code,
     previewTokenId: String(token.id),
     name: `${baseName} (preview)`,
+    // Cache buster: the iframe sometimes holds onto an older asset
+    // bundle through the service worker, so the fog/LOS/ledge math
+    // it runs is whatever was cached the first time the iframe was
+    // ever loaded. Stamping a fresh value on every open forces the
+    // iframe URL to differ, which the browser treats as a new
+    // navigation and re-fetches the HTML (and through it, the
+    // current asset hashes referenced from the rebuilt index.html).
+    _: String(Date.now()),
   });
   return `/play?${params.toString()}`;
 }
@@ -122,6 +130,18 @@ function buildPlayerUrl(token) {
 function openPreview(token) {
   ensureStyleTag();
   tearDownOverlay();
+
+  // Nudge the service worker to fetch the latest assets before the
+  // iframe loads — `update()` revalidates the SW script itself and,
+  // with vite-plugin-pwa's auto-update strategy, makes the next
+  // navigation pick up the rebuilt bundle. We don't await this; the
+  // cache buster on the iframe URL is the primary mitigation, and
+  // skipping the await keeps the preview responsive.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations()
+      .then((regs) => Promise.all(regs.map((r) => r.update())))
+      .catch(() => {});
+  }
 
   const root = document.createElement('div');
   root.id = OVERLAY_ID;
@@ -150,7 +170,22 @@ function openPreview(token) {
   reloadBtn.textContent = '↻ Reload';
   reloadBtn.addEventListener('click', () => {
     const ifr = root.querySelector('iframe');
-    if (ifr) ifr.src = ifr.src;
+    if (!ifr) return;
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then((regs) => Promise.all(regs.map((r) => r.update())))
+        .catch(() => {});
+    }
+    // Re-stamp the cache buster so the reload navigates to a URL
+    // the browser treats as new — otherwise `ifr.src = ifr.src`
+    // re-uses the same SW-cached navigation response.
+    try {
+      const u = new URL(ifr.src, window.location.origin);
+      u.searchParams.set('_', String(Date.now()));
+      ifr.src = u.toString();
+    } catch {
+      ifr.src = ifr.src;
+    }
   });
   bar.appendChild(reloadBtn);
 

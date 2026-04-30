@@ -1418,6 +1418,9 @@ export default function MapStage({
   // The 'spawn-named' tool fires `onSpawnNamedAdd(col, row)` on click;
   // the parent prompts for a label and emits the socket event itself.
   spawnPoints = [],
+  // Fired when the DM finalises a polygon (Enter / double-click) with
+  // the spawn-named tool. Parent collects the points + label and
+  // persists via add_spawn_point.
   onSpawnNamedAdd = null,
   // Fired when the DM drags an existing named spawn-point glyph to a
   // new tile. Parent persists via the update_spawn_point socket event.
@@ -1627,6 +1630,14 @@ export default function MapStage({
       }
       wallDrawRef.current = null;
       setWallPreview(null);
+    }
+  }, [activeTool]);
+
+  // Discard a spawn polygon mid-draw if the DM picks a different tool.
+  useEffect(() => {
+    if (activeTool !== 'spawn-named') {
+      spawnPolyDrawRef.current = null;
+      setSpawnPolyPreview(null);
     }
   }, [activeTool]);
 
@@ -2888,6 +2899,11 @@ export default function MapStage({
   useEffect(() => { spawnPointsRef.current = spawnPoints; }, [spawnPoints]);
   const onSpawnNamedAddRef = useRef(onSpawnNamedAdd);
   useEffect(() => { onSpawnNamedAddRef.current = onSpawnNamedAdd; }, [onSpawnNamedAdd]);
+  // Polygon-draw scratch space for the spawn-named tool. Holds a flat
+  // [x, y, x, y, ...] array of vertices in map-pixel coords while the
+  // DM is dragging vertices in. Cleared on finalise / Esc.
+  const spawnPolyDrawRef = useRef(null);
+  const [spawnPolyPreview, setSpawnPolyPreview] = useState(null);
   const onSpawnPointMoveRef = useRef(onSpawnPointMove);
   useEffect(() => { onSpawnPointMoveRef.current = onSpawnPointMove; }, [onSpawnPointMove]);
   // Live drag preview for the spawn point being moved. Stage listening
@@ -2949,13 +2965,28 @@ export default function MapStage({
     }
 
     // Picks the named spawn-point glyph under the given map-space
-    // coords. Hits anywhere inside the bubble (or a generous halo
-    // around a zero-radius point) so the whole glyph is grabbable.
-    // DM-only path; players are passed an empty spawnPoints list.
+    // coords. Hits anywhere inside the polygon (or bubble / halo for
+    // legacy circle rows). DM-only path; players are passed an empty
+    // spawnPoints list.
     function hitSpawnPoint(mapX, mapY) {
       const gs = gridSizeRef.current;
       const ox = offsetXRef.current, oy = offsetYRef.current;
       for (const sp of spawnPointsRef.current) {
+        const poly = Array.isArray(sp.shape_points) ? sp.shape_points : null;
+        if (poly && poly.length >= 3) {
+          let inside = false;
+          for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            const xi = ox + Number(poly[i].col) * gs;
+            const yi = oy + Number(poly[i].row) * gs;
+            const xj = ox + Number(poly[j].col) * gs;
+            const yj = oy + Number(poly[j].row) * gs;
+            const intersect = ((yi > mapY) !== (yj > mapY)) &&
+              (mapX < (xj - xi) * (mapY - yi) / ((yj - yi) || 1e-9) + xi);
+            if (intersect) inside = !inside;
+          }
+          if (inside) return sp;
+          continue;
+        }
         const cx = ox + Number(sp.grid_col) * gs;
         const cy = oy + Number(sp.grid_row) * gs;
         const r = Number(sp.radius) || 0;
@@ -3000,8 +3031,10 @@ export default function MapStage({
       // start a spawn drag and skip every other tool/dispatch path so
       // the active tool doesn't simultaneously start panning, drawing
       // a wall, etc. Stage listening is off (perf choice) so we do
-      // the drag bookkeeping ourselves.
-      if (!isPlayer) {
+      // the drag bookkeeping ourselves. Tokens take priority — if a
+      // token sits inside the spawn polygon the click should drag the
+      // token, not the zone.
+      if (!isPlayer && !hitToken(mc.x, mc.y)) {
         const sp = hitSpawnPoint(mc.x, mc.y);
         if (sp) {
           spawnDrag = { id: sp.id, origCol: Number(sp.grid_col), origRow: Number(sp.grid_row) };
@@ -3109,14 +3142,19 @@ export default function MapStage({
         return;
       }
 
-      // ── Named spawn point ────────────────────────────────────────────────
-      // Same coordinate math as spawn-point, but the parent owns the
-      // label-prompt flow and decides whether to actually persist.
+      // ── Named spawn point (polygon mode) ──────────────────────────────────
+      // Each click drops a vertex; Enter or double-click finalises and
+      // hands the polygon to the parent for the label modal. Esc cancels.
+      // Coordinates kept in map-pixel space during draw — converted to
+      // grid space at finalise time.
       if (tool === 'spawn-named') {
-        const ox = offsetXRef.current, oy = offsetYRef.current, gs = gridSizeRef.current;
-        const col = (mc.x - ox) / gs;
-        const row = (mc.y - oy) / gs;
-        onSpawnNamedAddRef.current?.(col, row);
+        const ref = spawnPolyDrawRef.current;
+        spawnPolyDrawRef.current = ref ? [...ref, mc.x, mc.y] : [mc.x, mc.y];
+        setSpawnPolyPreview({
+          points: [...spawnPolyDrawRef.current],
+          cursorX: mc.x,
+          cursorY: mc.y,
+        });
         return;
       }
 
@@ -3207,14 +3245,16 @@ export default function MapStage({
 
       // Spawn-point drag preview. Updates on every mousemove so the
       // bubble follows the cursor; final commit happens in onMouseUp.
+      // Coords stay fractional — snapping to integer cells made
+      // polygons with non-integer vertices jump unpredictably.
       if (spawnDrag) {
         const mc = toMap(e.clientX, e.clientY);
         const gs = gridSizeRef.current;
         const ox = offsetXRef.current, oy = offsetYRef.current;
         setSpawnDragVis({
           id: spawnDrag.id,
-          col: Math.round((mc.x - ox) / gs),
-          row: Math.round((mc.y - oy) / gs),
+          col: (mc.x - ox) / gs,
+          row: (mc.y - oy) / gs,
         });
         return;
       }
@@ -3240,6 +3280,15 @@ export default function MapStage({
       if (tool === 'wall-polygon' && polyDrawRef.current) {
         const mc = toMap(e.clientX, e.clientY);
         setWallPreview({ type: 'polygon', points: [...polyDrawRef.current], cursorX: mc.x, cursorY: mc.y });
+        return;
+      }
+      if (tool === 'spawn-named' && spawnPolyDrawRef.current) {
+        const mc = toMap(e.clientX, e.clientY);
+        setSpawnPolyPreview({
+          points: [...spawnPolyDrawRef.current],
+          cursorX: mc.x,
+          cursorY: mc.y,
+        });
         return;
       }
 
@@ -3354,9 +3403,11 @@ export default function MapStage({
         const mc = toMap(e.clientX, e.clientY);
         const gs = gridSizeRef.current;
         const ox = offsetXRef.current, oy = offsetYRef.current;
-        const col = Math.round((mc.x - ox) / gs);
-        const row = Math.round((mc.y - oy) / gs);
-        if (col !== spawnDrag.origCol || row !== spawnDrag.origRow) {
+        const col = (mc.x - ox) / gs;
+        const row = (mc.y - oy) / gs;
+        // Tiny-movement guard: a click-without-drag doesn't churn the
+        // DB. Threshold in grid units, ~1/10 of a cell.
+        if (Math.abs(col - spawnDrag.origCol) > 0.1 || Math.abs(row - spawnDrag.origRow) > 0.1) {
           onSpawnPointMoveRef.current?.(spawnDrag.id, col, row);
         }
         spawnDrag = null;
@@ -3625,8 +3676,37 @@ export default function MapStage({
       measuring.current = false;
     }
 
-    // Escape = finalise polygon (if ≥3 pts) or cancel any in-progress draw
+    // Spawn polygon: convert in-progress map-pixel vertices into the
+    // grid-space {col, row} list the parent expects, then hand off to
+    // onSpawnNamedAdd. Resets the in-progress state either way.
+    function finaliseSpawnPolygon() {
+      const ref = spawnPolyDrawRef.current;
+      spawnPolyDrawRef.current = null;
+      setSpawnPolyPreview(null);
+      if (!ref || ref.length < 6) return; // need ≥3 vertices
+      const ox = offsetXRef.current, oy = offsetYRef.current, gs = gridSizeRef.current;
+      const pts = [];
+      for (let i = 0; i < ref.length; i += 2) {
+        pts.push({ col: (ref[i] - ox) / gs, row: (ref[i + 1] - oy) / gs });
+      }
+      onSpawnNamedAddRef.current?.(pts);
+    }
+
+    // Escape = cancel in-progress draws. Enter = finalise polygons
+    // (walls or spawn) when at least 3 vertices have been placed.
     function onKeyDown(e) {
+      if (e.key === 'Enter') {
+        if (spawnPolyDrawRef.current && spawnPolyDrawRef.current.length >= 6) {
+          finaliseSpawnPolygon();
+          return;
+        }
+        if (polyDrawRef.current && polyDrawRef.current.length >= 6) {
+          onWallAddRef.current?.({ type: 'polygon', points: polyDrawRef.current });
+          polyDrawRef.current = null;
+          setWallPreview(null);
+          return;
+        }
+      }
       if (e.key === 'Escape') {
         if (polyDrawRef.current) {
           const pts = polyDrawRef.current;
@@ -3641,6 +3721,10 @@ export default function MapStage({
           setDarknessPreview(null);
         }
         darknessDrawRef.current = null;
+        // Cancel any in-progress spawn polygon. Esc always discards;
+        // use Enter to finalise.
+        spawnPolyDrawRef.current = null;
+        setSpawnPolyPreview(null);
       }
     }
 
@@ -3987,21 +4071,72 @@ export default function MapStage({
             map's default green spawn glyph; label rendered above. The
             DM can drag the centre dot to relocate; on release the
             grid-snapped col/row goes back to the parent. */}
-        {!isPlayer && spawnPoints.length > 0 && (
+        {!isPlayer && (
           <Layer listening={false}>
             {spawnPoints.map((sp) => {
               const isDragging = spawnDragVis && spawnDragVis.id === sp.id;
-              const col = isDragging ? spawnDragVis.col : Number(sp.grid_col);
-              const row = isDragging ? spawnDragVis.row : Number(sp.grid_row);
+              const dragDx = isDragging ? (spawnDragVis.col - Number(sp.grid_col)) : 0;
+              const dragDy = isDragging ? (spawnDragVis.row - Number(sp.grid_row)) : 0;
+              const col = Number(sp.grid_col) + dragDx;
+              const row = Number(sp.grid_row) + dragDy;
               const sx = offsetX + col * gridSize;
               const sy = offsetY + row * gridSize;
               const label = sp.label || 'Spawn';
               const r = Number(sp.radius) || 0;
+              const poly = Array.isArray(sp.shape_points) ? sp.shape_points : null;
               const bubble = r > 0 ? r * gridSize : gridSize * 0.4;
+              // Polygon mode: render the closed shape with the centre
+              // dot at the stored anchor (which the DM is dragging).
+              if (poly && poly.length >= 3) {
+                // Polygon points are stored absolute; we offset them
+                // from the dragged centre by the original anchor so a
+                // drag relocates the whole shape.
+                const flat = [];
+                for (const p of poly) {
+                  const px = offsetX + (Number(p.col) + dragDx) * gridSize;
+                  const py = offsetY + (Number(p.row) + dragDy) * gridSize;
+                  flat.push(px, py);
+                }
+                // Centroid for the label position.
+                let lx = 0, ly = 0;
+                for (let i = 0; i < flat.length; i += 2) { lx += flat[i]; ly += flat[i + 1]; }
+                lx /= (flat.length / 2); ly /= (flat.length / 2);
+                const labelW = Math.max(gridSize * 1.6, gridSize * 2);
+                return (
+                  <Group key={sp.id} opacity={isDragging ? 0.7 : 1}>
+                    <Line
+                      points={flat}
+                      closed
+                      stroke="#06b6d4"
+                      strokeWidth={2}
+                      dash={[6, 4]}
+                      // Konva's `Line` ignores `fillOpacity`, so encode
+                      // the alpha channel directly. 0.5 keeps the map
+                      // visible underneath while clearly marking the
+                      // zone.
+                      fill="rgba(6,182,212,0.5)"
+                    />
+                    <Circle x={sx} y={sy} radius={4} fill="#06b6d4" />
+                    <Text
+                      text={label}
+                      fontSize={Math.max(11, gridSize * 0.28)}
+                      fill="#fff"
+                      stroke="#0e7490"
+                      strokeWidth={2.4}
+                      fillAfterStrokeEnabled
+                      x={lx - labelW / 2}
+                      y={ly - gridSize * 0.2}
+                      width={labelW}
+                      align="center"
+                    />
+                  </Group>
+                );
+              }
+              // Legacy bubble (radius) / single-tile glyph.
               const labelW = Math.max(gridSize * 1.2, bubble * 2);
               return (
                 <Group key={sp.id} x={sx} y={sy} opacity={isDragging ? 0.7 : 1}>
-                  <Circle radius={bubble} stroke="#06b6d4" strokeWidth={2} dash={[6, 4]} fill="#06b6d4" fillOpacity={r > 0 ? 0.08 : 0.18} />
+                  <Circle radius={bubble} stroke="#06b6d4" strokeWidth={2} dash={[6, 4]} fill={r > 0 ? "rgba(6,182,212,0.5)" : "rgba(6,182,212,0.5)"} />
                   <Circle radius={4} fill="#06b6d4" />
                   <Text
                     text={label}
@@ -4018,6 +4153,32 @@ export default function MapStage({
                 </Group>
               );
             })}
+            {/* In-progress polygon preview while the DM places vertices
+                with the spawn-named tool. */}
+            {spawnPolyPreview && spawnPolyPreview.points.length >= 2 && (() => {
+              const pts = spawnPolyPreview.points;
+              const cur = [...pts];
+              if (spawnPolyPreview.cursorX != null) {
+                cur.push(spawnPolyPreview.cursorX, spawnPolyPreview.cursorY);
+              }
+              const dots = [];
+              for (let i = 0; i < pts.length; i += 2) {
+                dots.push(<Circle key={i} x={pts[i]} y={pts[i + 1]} radius={3.5} fill="#06b6d4" />);
+              }
+              return (
+                <Group>
+                  <Line
+                    points={cur}
+                    closed={pts.length >= 6}
+                    stroke="#06b6d4"
+                    strokeWidth={1.5}
+                    dash={[5, 4]}
+                    fill={pts.length >= 6 ? "rgba(6,182,212,0.5)" : null}
+                  />
+                  {dots}
+                </Group>
+              );
+            })()}
           </Layer>
         )}
 

@@ -1258,15 +1258,12 @@ function TokenContextMenu({ menu, tokens, maps, currentMapId, spawnPointsByMapId
 // socket emit; we only collect the label and call back.
 function SpawnPointLabelModal({ onCancel, onSubmit }) {
   const [label, setLabel] = useState('');
-  // Radius in grid units. 0 = single tile (legacy point); 2-3 is a
-  // sensible default for "scatter the party" use cases.
-  const [radius, setRadius] = useState(2);
   const inputRef = useRef(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
   function submit() {
     const trimmed = label.trim();
     if (!trimmed) return;
-    onSubmit(trimmed, Math.max(0, Math.floor(Number(radius) || 0)));
+    onSubmit(trimmed);
   }
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50">
@@ -1285,23 +1282,8 @@ function SpawnPointLabelModal({ onCancel, onSubmit }) {
           placeholder="e.g. Front Entrance"
           className="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 text-gray-100 focus:border-cyan-500 outline-none"
         />
-        <div className="mt-4">
-          <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-            <span>Bubble radius</span>
-            <span className="text-gray-200 tabular-nums">{radius} sq</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="10"
-            step="1"
-            value={radius}
-            onChange={(e) => setRadius(Number(e.target.value))}
-            className="w-full accent-cyan-500"
-          />
-          <div className="text-[11px] text-gray-500 leading-snug mt-1">
-            Tokens sent here scatter inside this radius, avoiding existing tokens. Set to 0 for a single tile.
-          </div>
+        <div className="text-[11px] text-gray-500 leading-snug mt-3">
+          Tokens sent here scatter inside the polygon you drew, avoiding existing tokens.
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <button
@@ -2910,8 +2892,38 @@ export default function DMView() {
             tokenNameFontSize={tokenNameFontSize}
             onTokenContextMenu={(tokenId, x, y) => setTokenContextMenu({ tokenId, x, y })}
             spawnPoints={allSpawnPoints[session?.map_id] || []}
-            onSpawnNamedAdd={(col, row) => setPendingSpawnPoint({ col, row })}
-            onSpawnPointMove={(id, col, row) => socket.emit('update_spawn_point', { id, gridCol: col, gridRow: row })}
+            onSpawnNamedAdd={(shapePoints) => setPendingSpawnPoint({ shapePoints })}
+            onSpawnPointMove={(id, col, row) => {
+              // Optimistic local update so the glyph stays at the
+              // dropped position instead of flickering back to the
+              // server-stored anchor while the round-trip lands.
+              // Polygon vertices are translated by the same delta so
+              // the whole shape moves with the centre dot.
+              setAllSpawnPoints((prev) => {
+                const out = { ...prev };
+                for (const k of Object.keys(out)) {
+                  const list = out[k];
+                  const idx = list.findIndex((s) => s.id === id);
+                  if (idx === -1) continue;
+                  const sp = list[idx];
+                  const dCol = col - Number(sp.grid_col);
+                  const dRow = row - Number(sp.grid_row);
+                  const updated = { ...sp, grid_col: col, grid_row: row };
+                  if (Array.isArray(sp.shape_points)) {
+                    updated.shape_points = sp.shape_points.map((p) => ({
+                      col: Number(p.col) + dCol,
+                      row: Number(p.row) + dRow,
+                    }));
+                  }
+                  const next = list.slice();
+                  next[idx] = updated;
+                  out[k] = next;
+                  break;
+                }
+                return out;
+              });
+              socket.emit('update_spawn_point', { id, gridCol: col, gridRow: row });
+            }}
           />
 
           {tokenContextMenu && (
@@ -2932,13 +2944,20 @@ export default function DMView() {
           {pendingSpawnPoint && (
             <SpawnPointLabelModal
               onCancel={() => setPendingSpawnPoint(null)}
-              onSubmit={(label, radius) => {
+              onSubmit={(label) => {
+                const pts = pendingSpawnPoint.shapePoints || [];
+                // Centroid as the anchor — used as the grid_col/grid_row
+                // fallback and for drag-to-relocate maths.
+                let sx = 0, sy = 0;
+                for (const p of pts) { sx += Number(p.col); sy += Number(p.row); }
+                const cx = pts.length ? sx / pts.length : 0;
+                const cy = pts.length ? sy / pts.length : 0;
                 socket.emit('add_spawn_point', {
                   mapId: session.map_id,
                   label,
-                  gridCol: pendingSpawnPoint.col,
-                  gridRow: pendingSpawnPoint.row,
-                  radius,
+                  gridCol: cx,
+                  gridRow: cy,
+                  shapePoints: pts,
                 });
                 setPendingSpawnPoint(null);
               }}
@@ -2961,6 +2980,12 @@ export default function DMView() {
               </div>
             );
           })()}
+          {activeTool === 'spawn-named' && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-cyan-700 text-white px-4 py-2 rounded-xl font-semibold text-sm shadow-lg z-30 flex items-center gap-2">
+              <span>Click to place vertices · <kbd className="px-1.5 py-0.5 bg-cyan-900 rounded">Enter</kbd> to finish · <kbd className="px-1.5 py-0.5 bg-cyan-900 rounded">Esc</kbd> to cancel</span>
+              <button onClick={() => setActiveTool('pan')} className="ml-2 opacity-70 hover:opacity-100"><XIcon /></button>
+            </div>
+          )}
 
           <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-2 bg-gradient-to-b from-black/70 to-transparent pointer-events-none">
             <div className="flex items-center gap-2 pointer-events-auto">
@@ -3516,22 +3541,28 @@ export default function DMView() {
                               title="Delete spawn point"
                             >×</button>
                           </div>
-                          <div className="flex items-center gap-2 pl-1">
-                            <span className="text-[10px] text-gray-500 w-12">Radius</span>
-                            <input
-                              type="range"
-                              min="0"
-                              max="10"
-                              step="1"
-                              defaultValue={sp.radius ?? 0}
-                              onChange={(e) => {
-                                const v = Math.max(0, Math.floor(Number(e.target.value) || 0));
-                                socket.emit('update_spawn_point', { id: sp.id, radius: v });
-                              }}
-                              className="flex-1 accent-cyan-500"
-                            />
-                            <span className="text-[10px] text-gray-300 tabular-nums w-8 text-right">{sp.radius ?? 0} sq</span>
-                          </div>
+                          {Array.isArray(sp.shape_points) && sp.shape_points.length >= 3 ? (
+                            <div className="text-[10px] text-gray-500 pl-1">
+                              {sp.shape_points.length}-vertex polygon · drag glyph to relocate
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 pl-1">
+                              <span className="text-[10px] text-gray-500 w-12">Radius</span>
+                              <input
+                                type="range"
+                                min="0"
+                                max="10"
+                                step="1"
+                                defaultValue={sp.radius ?? 0}
+                                onChange={(e) => {
+                                  const v = Math.max(0, Math.floor(Number(e.target.value) || 0));
+                                  socket.emit('update_spawn_point', { id: sp.id, radius: v });
+                                }}
+                                className="flex-1 accent-cyan-500"
+                              />
+                              <span className="text-[10px] text-gray-300 tabular-nums w-8 text-right">{sp.radius ?? 0} sq</span>
+                            </div>
+                          )}
                         </div>
                       ))
                     )}

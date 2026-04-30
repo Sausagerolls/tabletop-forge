@@ -193,6 +193,7 @@ db.query(`
   )
 `)
   .then(() => db.query(`ALTER TABLE map_spawn_points ADD COLUMN IF NOT EXISTS radius INTEGER DEFAULT 0`))
+  .then(() => db.query(`ALTER TABLE map_spawn_points ADD COLUMN IF NOT EXISTS shape_points JSONB`))
   .catch(err => console.error('map_spawn_points migration error:', err));
 
 db.query(`ALTER TABLE maps ADD COLUMN IF NOT EXISTS spawn_radius INTEGER DEFAULT 0`)
@@ -225,22 +226,59 @@ const sessionUserColors = {}; // sessionCode -> { name: color }
 // Stop clears every map for the session (a "stop everything" button).
 const sessionAmbients = {}; // sessionCode -> { [mapId]: { filename, volume } }
 
-// Pick a random tile inside a circular spawn bubble, avoiding tiles
-// already occupied by existing tokens. Tokens are treated as 1x1 for
-// the avoidance check — larger creatures are rare and worst case the
-// new token visually overlaps a flank tile, which the DM can fix by
-// dragging. Falls back to the bubble centre if every random attempt
-// collides with another token, so a tightly-packed bubble still
+// Pick a random tile inside a spawn area, avoiding tiles already
+// occupied by existing tokens. The area is either a polygon (when
+// shape_points is provided — an array of { col, row } vertices) or
+// a circular bubble (legacy radius). Tokens are treated as 1x1 for
+// avoidance — larger creatures are rare and worst case the new token
+// visually overlaps a flank tile.
+//
+// Falls back to the centroid (or original centre) if every random
+// attempt collides with another token, so a tightly-packed area still
 // produces a valid landing tile.
-function scatterSpawnPosition(centerCol, centerRow, radius, occupiedTiles) {
+function pointInPolygon(col, row, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = Number(poly[i].col), yi = Number(poly[i].row);
+    const xj = Number(poly[j].col), yj = Number(poly[j].row);
+    const intersect = ((yi > row) !== (yj > row)) &&
+      (col < (xj - xi) * (row - yi) / ((yj - yi) || 1e-9) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+function scatterSpawnPosition(centerCol, centerRow, radius, occupiedTiles, polygon = null) {
   const cx = Math.round(Number(centerCol) || 0);
   const cy = Math.round(Number(centerRow) || 0);
-  const r  = Math.max(0, Math.floor(Number(radius) || 0));
-  if (r === 0) return { col: cx, row: cy };
   const blocked = new Set();
   for (const t of occupiedTiles) {
     blocked.add(`${Math.round(Number(t.col) || 0)},${Math.round(Number(t.row) || 0)}`);
   }
+  // Polygon mode: rejection-sample inside the polygon's bounding box.
+  if (Array.isArray(polygon) && polygon.length >= 3) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let sumX = 0, sumY = 0;
+    for (const p of polygon) {
+      const x = Number(p.col), y = Number(p.row);
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      sumX += x; sumY += y;
+    }
+    const centroidCol = Math.round(sumX / polygon.length);
+    const centroidRow = Math.round(sumY / polygon.length);
+    const lo = (v) => Math.floor(v), hi = (v) => Math.ceil(v);
+    for (let i = 0; i < 60; i++) {
+      const col = lo(minX) + Math.floor(Math.random() * (hi(maxX) - lo(minX) + 1));
+      const row = lo(minY) + Math.floor(Math.random() * (hi(maxY) - lo(minY) + 1));
+      if (!pointInPolygon(col + 0.5, row + 0.5, polygon)) continue;
+      if (blocked.has(`${col},${row}`)) continue;
+      return { col, row };
+    }
+    return { col: centroidCol, row: centroidRow };
+  }
+  // Legacy circle mode.
+  const r = Math.max(0, Math.floor(Number(radius) || 0));
+  if (r === 0) return { col: cx, row: cy };
   for (let i = 0; i < 40; i++) {
     const dx = Math.floor((Math.random() * 2 - 1) * r);
     const dy = Math.floor((Math.random() * 2 - 1) * r);
@@ -478,15 +516,17 @@ io.on('connection', (socket) => {
       let centerCol = m.spawn_col ?? 0;
       let centerRow = m.spawn_row ?? 0;
       let radius = m.spawn_radius ?? 0;
+      let polygon = null;
       if (spawnPointId != null) {
         const sp = await db.query(
-          'SELECT grid_col, grid_row, radius FROM map_spawn_points WHERE id=$1 AND map_id=$2',
+          'SELECT grid_col, grid_row, radius, shape_points FROM map_spawn_points WHERE id=$1 AND map_id=$2',
           [spawnPointId, mapId]
         );
         if (sp.rows.length) {
           centerCol = sp.rows[0].grid_col;
           centerRow = sp.rows[0].grid_row;
           radius = sp.rows[0].radius ?? 0;
+          polygon = Array.isArray(sp.rows[0].shape_points) ? sp.rows[0].shape_points : null;
         }
       }
       // Skip the moving token's own current tile when computing
@@ -496,7 +536,7 @@ io.on('connection', (socket) => {
         'SELECT grid_col AS col, grid_row AS row FROM session_tokens WHERE session_id=$1 AND map_id=$2 AND id<>$3',
         [sessionId, mapId, tokenId]
       );
-      const { col: sc, row: sr } = scatterSpawnPosition(centerCol, centerRow, radius, occupiedRows.rows);
+      const { col: sc, row: sr } = scatterSpawnPosition(centerCol, centerRow, radius, occupiedRows.rows, polygon);
       await db.query(
         'UPDATE session_tokens SET map_id=$1, grid_col=$2, grid_row=$3 WHERE id=$4',
         [mapId, sc, sr, tokenId]
@@ -1172,14 +1212,35 @@ io.on('connection', (socket) => {
   // Named spawn points per map. The right-click "Send to map → spawn point"
   // submenu pulls labels from here, and `dm_send_token_to_map` accepts an
   // optional spawnPointId that overrides the map's default landing tile.
-  socket.on('add_spawn_point', async ({ mapId, label, gridCol, gridRow, radius }) => {
+  // Sanitise a polygon coming from the client into the JSONB shape we
+  // store. Drops bad rows; returns null when fewer than 3 valid
+  // vertices remain (a polygon needs at least a triangle).
+  function sanitisePolygon(raw) {
+    if (!Array.isArray(raw)) return null;
+    const out = [];
+    for (const p of raw) {
+      if (p == null) continue;
+      const c = Number(p.col), r = Number(p.row);
+      if (Number.isFinite(c) && Number.isFinite(r)) out.push({ col: c, row: r });
+    }
+    return out.length >= 3 ? out : null;
+  }
+  socket.on('add_spawn_point', async ({ mapId, label, gridCol, gridRow, radius, shapePoints }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
     try {
+      const poly = sanitisePolygon(shapePoints);
       const r = await db.query(
-        'INSERT INTO map_spawn_points (map_id, label, grid_col, grid_row, radius) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-        [mapId, String(label || '').slice(0, 100), gridCol, gridRow, Math.max(0, Math.floor(Number(radius) || 0))]
+        'INSERT INTO map_spawn_points (map_id, label, grid_col, grid_row, radius, shape_points) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+        [
+          mapId,
+          String(label || '').slice(0, 100),
+          gridCol,
+          gridRow,
+          Math.max(0, Math.floor(Number(radius) || 0)),
+          poly ? JSON.stringify(poly) : null,
+        ]
       );
       io.to(sessionCode).emit('spawn_point_added', { spawnPoint: r.rows[0] });
     } catch (err) {
@@ -1187,22 +1248,51 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('update_spawn_point', async ({ id, label, gridCol, gridRow, radius }) => {
+  socket.on('update_spawn_point', async ({ id, label, gridCol, gridRow, radius, shapePoints }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
     try {
-      const fields = [];
-      const values = [];
-      if (label !== undefined)   { values.push(String(label).slice(0, 100)); fields.push(`label=$${values.length}`); }
-      if (gridCol !== undefined) { values.push(gridCol); fields.push(`grid_col=$${values.length}`); }
-      if (gridRow !== undefined) { values.push(gridRow); fields.push(`grid_row=$${values.length}`); }
-      if (radius !== undefined)  { values.push(Math.max(0, Math.floor(Number(radius) || 0))); fields.push(`radius=$${values.length}`); }
-      if (!fields.length) return;
-      values.push(id);
+      const oldRes = await db.query(
+        'SELECT grid_col, grid_row, label, radius, shape_points FROM map_spawn_points WHERE id=$1',
+        [id]
+      );
+      if (!oldRes.rows.length) return;
+      const old = oldRes.rows[0];
+      const next = {
+        label:        label    !== undefined ? String(label).slice(0, 100) : old.label,
+        grid_col:     gridCol  !== undefined ? Number(gridCol) : Number(old.grid_col),
+        grid_row:     gridRow  !== undefined ? Number(gridRow) : Number(old.grid_row),
+        radius:       radius   !== undefined ? Math.max(0, Math.floor(Number(radius) || 0)) : (old.radius ?? 0),
+        shape_points: old.shape_points,
+      };
+      if (shapePoints !== undefined) {
+        next.shape_points = sanitisePolygon(shapePoints);
+      } else if ((gridCol !== undefined || gridRow !== undefined) && Array.isArray(old.shape_points)) {
+        // Drag-to-relocate: translate the polygon by the same delta as
+        // the anchor so the shape moves with the centre dot.
+        const dCol = next.grid_col - Number(old.grid_col);
+        const dRow = next.grid_row - Number(old.grid_row);
+        if (dCol !== 0 || dRow !== 0) {
+          next.shape_points = old.shape_points.map(p => ({
+            col: Number(p.col) + dCol,
+            row: Number(p.row) + dRow,
+          }));
+        }
+      }
       const r = await db.query(
-        `UPDATE map_spawn_points SET ${fields.join(', ')} WHERE id=$${values.length} RETURNING *`,
-        values
+        `UPDATE map_spawn_points
+            SET label=$1, grid_col=$2, grid_row=$3, radius=$4, shape_points=$5
+          WHERE id=$6
+          RETURNING *`,
+        [
+          next.label,
+          next.grid_col,
+          next.grid_row,
+          next.radius,
+          next.shape_points ? JSON.stringify(next.shape_points) : null,
+          id,
+        ]
       );
       if (!r.rows.length) return;
       io.to(sessionCode).emit('spawn_point_updated', { spawnPoint: r.rows[0] });

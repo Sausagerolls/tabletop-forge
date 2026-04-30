@@ -604,6 +604,17 @@ export default function PlayerView() {
   const [playerTokenId, setPlayerTokenId] = useState(null);
   const playerTokenIdRef = useRef(null);
   useEffect(() => { playerTokenIdRef.current = playerTokenId; }, [playerTokenId]);
+  // Tracked separately from the `tokens` array because that array is
+  // filtered server-side to the session's *current* map. When the DM
+  // switches maps, our own token can drop out of the array even though
+  // the row still exists in the DB on its previous map. Without this
+  // state, the auto-follow rule loses the token's map_id and the
+  // player's view incorrectly snaps to whatever the DM is viewing.
+  const [ownTokenMapId, setOwnTokenMapId] = useState(null);
+  // Mirror to a ref so socket handlers (registered once at mount) can
+  // read the latest value without re-binding.
+  const ownTokenMapIdRef = useRef(null);
+  useEffect(() => { ownTokenMapIdRef.current = ownTokenMapId; }, [ownTokenMapId]);
   const [fullscreen, setFullscreen] = useState(false);
   const [myCreature, setMyCreature] = useState(null);
   const [showCharacterEdit, setShowCharacterEdit] = useState(false);
@@ -663,7 +674,133 @@ export default function PlayerView() {
   // native). Pinned by the DM via the Session-tab UI. Wins over the
   // auto-follow-token rule below; cleared by the DM, sent as null.
   const [dmAssignedMapId, setDmAssignedMapId] = useState(null);
+  // Cross-map transition state. Bumped opaque the moment the resolved
+  // map id changes, then faded clear ~600ms later so the new scene
+  // can mount behind the overlay before the player sees it. Skips the
+  // first resolution so the initial load doesn't flash black.
   const registryVersion = useRegistryVersion();
+  const [mapFadeOpacity, setMapFadeOpacity] = useState(0);
+  // Helper used by every code path that's about to swap the rendered
+  // map. Snaps the overlay to opaque, defers the caller's state update
+  // until the fade-out finishes (so the new scene mounts behind a
+  // fully-black overlay), then fades the overlay clear. Uses refs
+  // captured at call time so re-renders during the transition don't
+  // strand pending timeouts.
+  const startMapTransition = (applyChange) => {
+    setMapFadeOpacity(1);
+    setTimeout(() => {
+      applyChange();
+      setTimeout(() => setMapFadeOpacity(0), 100);
+    }, 350);
+  };
+
+  // Re-centre the map on the player's own token after every map
+  // transition (DM "Send to" pipeline, manual override change,
+  // auto-follow on DM map switch). The first centering is handled by
+  // the one-time center-on-load effect further down; this effect only
+  // re-centres on *subsequent* effective map changes.
+  const lastCenteredMapIdRef = useRef(null);
+  useEffect(() => {
+    if (!playerTokenId || !session) return;
+    const renderedMapId = (overrideMap?.mapId ?? session.map_id) ?? null;
+    if (renderedMapId == null) return;
+    if (lastCenteredMapIdRef.current === null) {
+      lastCenteredMapIdRef.current = renderedMapId;
+      return;
+    }
+    if (lastCenteredMapIdRef.current === renderedMapId) return;
+    lastCenteredMapIdRef.current = renderedMapId;
+    const tokenList = overrideMap ? overrideMap.tokens : tokens;
+    const own = tokenList.find((t) => t.id === playerTokenId);
+    if (!own) return;
+    const gs = (overrideMap?.map?.grid_size) || session.grid_size || 50;
+    const mW = (overrideMap?.map?.width)     || session.map_width  || 2000;
+    const mH = (overrideMap?.map?.height)    || session.map_height || 1500;
+    const offX = gs > 0 ? (mW % gs) / 2 : 0;
+    const offY = gs > 0 ? (mH % gs) / 2 : 0;
+    const sz = TOKEN_SIZES[own.size] || TOKEN_SIZES.medium;
+    setCenterOnMapPoint({
+      x: offX + Number(own.grid_col) * gs + (sz.gridW * gs) / 2,
+      y: offY + Number(own.grid_row) * gs + (sz.gridH * gs) / 2,
+    });
+  }, [overrideMap, session?.map_id, session?.grid_size, tokens, playerTokenId]);
+
+  // Override-fetch effect — placed up here above the early returns so
+  // it runs unconditionally on every render (Rules of Hooks). Reads
+  // the resolver result inline rather than via a derived const so we
+  // don't need to lift `desiredOverrideMapId` too. Bails out cleanly
+  // when there's no session yet.
+  useEffect(() => {
+    if (!session?.id) return;
+    let desired = null;
+    for (const fn of pluginRegistries.playerMapOverride.values()) {
+      try {
+        const v = fn({ sessionId: session.id, playerTokenId, defaultMapId: session.map_id });
+        if (v != null) {
+          const n = Number(v);
+          if (Number.isFinite(n) && n !== session.map_id) { desired = n; break; }
+        }
+      } catch {}
+    }
+    if (desired == null && dmAssignedMapId != null && dmAssignedMapId !== session.map_id) {
+      desired = dmAssignedMapId;
+    }
+    if (desired == null && ownTokenMapId != null && ownTokenMapId !== session.map_id) {
+      // Auto-follow our own token's map. Tracked via a dedicated state
+      // so a DM map switch (which drops our token from the broadcast
+      // `tokens` array) doesn't cause us to lose track of where our
+      // token actually lives.
+      desired = ownTokenMapId;
+    }
+    if (desired == null) {
+      // Override clears: if we were rendering an override slice that
+      // pointed somewhere other than the session map, fade through
+      // black before flipping to session-map mode. Same-map clears
+      // (e.g. plugin retracts an override that matched the session
+      // map) just drop the snapshot without a flash.
+      const hadOverride = overrideMapRef.current != null;
+      const sameAsSession = overrideMapRef.current?.mapId === session.map_id;
+      if (!hadOverride || sameAsSession) {
+        setOverrideMap(null);
+      } else {
+        startMapTransition(() => setOverrideMap(null));
+      }
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/maps/${desired}/state?session_id=${session.id}`)
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((data) => {
+        if (cancelled) return;
+        const newSlice = {
+          mapId: desired,
+          map: data.map,
+          walls: data.walls || [],
+          doors: data.doors || [],
+          lights: data.lights || [],
+          magicalDarkness: data.magicalDarkness || [],
+          dmMarkers: data.dmMarkers || [],
+          tokens: (data.tokens || []).filter((t) => !t.is_hidden),
+          spawnPoint: data.spawnPoint || { col: 0, row: 0 },
+        };
+        // Same-map refetch (token added on this map, refetch key bump,
+        // etc.) — pass through without a fade.
+        const prevId = overrideMapRef.current?.mapId ?? null;
+        const noVisibleChange = prevId === newSlice.mapId
+          || (prevId == null && session?.map_id === newSlice.mapId);
+        if (noVisibleChange) {
+          setOverrideMap(newSlice);
+        } else {
+          startMapTransition(() => setOverrideMap(newSlice));
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn('Map-override fetch failed:', err.message);
+        setOverrideMap(null);
+      });
+    return () => { cancelled = true; };
+  }, [session?.id, session?.map_id, playerTokenId, dmAssignedMapId, ownTokenMapId, registryVersion, overrideRefetchKey]);
   // ── Override snapshot patchers ─────────────────────────────────────
   // Each socket-event handler below mirrors changes into the override
   // snapshot when the event's map_id matches what the player is
@@ -881,8 +1018,9 @@ export default function PlayerView() {
       }
     });
 
-    socket.on('player_token_ready', ({ tokenId }) => {
+    socket.on('player_token_ready', ({ tokenId, mapId }) => {
       setPlayerTokenId(tokenId);
+      if (mapId !== undefined) setOwnTokenMapId(mapId == null ? null : Number(mapId));
     });
 
     socket.on('error', ({ message }) => setError(message));
@@ -911,6 +1049,9 @@ export default function PlayerView() {
     // showing the source or destination, patch it directly so it
     // doesn't go stale before the next refetch.
     socket.on('token_map_changed', ({ tokenId, fromMapId, toMapId, gridCol, gridRow }) => {
+      if (tokenId === playerTokenIdRef.current) {
+        setOwnTokenMapId(toMapId == null ? null : Number(toMapId));
+      }
       setTokens((prev) =>
         prev.map((t) => (t.id === tokenId
           ? { ...t, map_id: toMapId, grid_col: gridCol, grid_row: gridRow }
@@ -1032,7 +1173,43 @@ export default function PlayerView() {
       patchOverrideToken(tokenId, (t) => ({ ...t, nickname }));
     });
 
-    socket.on('map_changed', ({ map, walls: newWalls, doors: newDoors, lights: newLights, tokens: newTokens, magicalDarkness: newDarkness }) => {
+    socket.on('map_changed', async ({ map, walls: newWalls, doors: newDoors, lights: newLights, tokens: newTokens, magicalDarkness: newDarkness }) => {
+      // If our own token sits on a map other than the one the DM just
+      // switched to, we'll be auto-following our token's map — and
+      // visually nothing should change for us. Pre-fetch our token's
+      // map slice and install it as the override BEFORE applying the
+      // session.map_id change, so the resolver never sees an
+      // "override == null && session.map_id == new" state and the
+      // renderer never flashes through the DM's map.
+      const targetMapId = ownTokenMapIdRef.current;
+      const willAutoFollow = (
+        overrideMapRef.current == null
+        && targetMapId != null
+        && map
+        && targetMapId !== map.id
+      );
+      if (willAutoFollow) {
+        try {
+          const sid = sessionRef.current?.id;
+          if (sid) {
+            const r = await fetch(`/api/maps/${targetMapId}/state?session_id=${sid}`);
+            if (r.ok) {
+              const data = await r.json();
+              setOverrideMap({
+                mapId: targetMapId,
+                map: data.map,
+                walls: data.walls || [],
+                doors: data.doors || [],
+                lights: data.lights || [],
+                magicalDarkness: data.magicalDarkness || [],
+                dmMarkers: data.dmMarkers || [],
+                tokens: (data.tokens || []).filter((t) => !t.is_hidden),
+                spawnPoint: data.spawnPoint || { col: 0, row: 0 },
+              });
+            }
+          }
+        } catch {}
+      }
       setSession((prev) => map ? ({
         ...prev,
         map_id: map.id,
@@ -1494,76 +1671,8 @@ export default function PlayerView() {
     );
   }
 
-  // ── Per-player map override resolution ────────────────────────────
-  // Priority order:
-  //   (1) any plugin that sets the playerMapOverride registry — kept
-  //       as a public extension point for third-party plugins;
-  //   (2) the DM's native Split-the-Party assignment for this player;
-  //   (3) auto-follow our own token's map_id if it differs from the
-  //       session's current map.
-  // Plugins still win so a third-party plugin can override the DM's
-  // pin if it really wants to.
-  const desiredOverrideMapId = (() => {
-    if (!session) return null;
-    const ctx = { sessionId: session.id, playerTokenId, defaultMapId: session.map_id };
-    for (const fn of pluginRegistries.playerMapOverride.values()) {
-      try {
-        const v = fn(ctx);
-        if (v != null) {
-          const n = Number(v);
-          if (Number.isFinite(n) && n !== session.map_id) return n;
-        }
-      } catch { /* plugin error — skip */ }
-    }
-    if (dmAssignedMapId != null && dmAssignedMapId !== session.map_id) {
-      return dmAssignedMapId;
-    }
-    // Auto-follow: if our own token sits on a different map, route
-    // our view there. The token list is filtered to non-hidden tokens
-    // and may not contain our row briefly during creation; we skip
-    // the auto-follow in that window.
-    if (playerTokenId) {
-      const own = tokens.find((t) => t.id === playerTokenId);
-      if (own && own.map_id != null && own.map_id !== session.map_id) {
-        return own.map_id;
-      }
-    }
-    return null;
-  })();
-  // Re-fetch the override slice from the server when the desired id
-  // changes. Cancellation guards against stale fetches if the DM
-  // re-routes the player while a previous fetch is in-flight.
-  useEffect(() => {
-    if (!session?.id) return;
-    if (desiredOverrideMapId == null) {
-      setOverrideMap(null);
-      return;
-    }
-    let cancelled = false;
-    fetch(`/api/maps/${desiredOverrideMapId}/state?session_id=${session.id}`)
-      .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then((data) => {
-        if (cancelled) return;
-        setOverrideMap({
-          mapId: desiredOverrideMapId,
-          map: data.map,
-          walls: data.walls || [],
-          doors: data.doors || [],
-          lights: data.lights || [],
-          magicalDarkness: data.magicalDarkness || [],
-          dmMarkers: data.dmMarkers || [],
-          tokens: (data.tokens || []).filter((t) => !t.is_hidden),
-          spawnPoint: data.spawnPoint || { col: 0, row: 0 },
-        });
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.warn('Map-override fetch failed:', err.message);
-        setOverrideMap(null);
-      });
-    return () => { cancelled = true; };
-  }, [desiredOverrideMapId, session?.id, registryVersion, overrideRefetchKey]);
-
+  // Per-player map override resolution + fetch lives above the early
+  // returns so its hook count is consistent across renders.
   // Effective scene values — when an override is active, render its
   // snapshot; otherwise fall through to the session's live state.
   const effectiveMap = overrideMap
@@ -1639,6 +1748,17 @@ export default function PlayerView() {
       {/* Map area */}
       <div className="flex-1 relative overflow-hidden">
         <ToolPanel activeTool={activeTool} onToolChange={setActiveTool} />
+
+        {/* Map-swap fade overlay — opaque while the new scene mounts,
+            then transitions back to clear. Pointer-events disabled so
+            it never swallows clicks even briefly. */}
+        <div
+          className="absolute inset-0 z-30 pointer-events-none bg-black"
+          style={{
+            opacity: mapFadeOpacity,
+            transition: 'opacity 350ms ease-in-out',
+          }}
+        />
 
         <MapStage
           mapUrl={mapUrl}

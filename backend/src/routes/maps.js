@@ -98,7 +98,7 @@ router.get('/:id/state', async (req, res) => {
       dmMarkers: markersRes.rows,
       tokens: tokensRes.rows,
       spawnPoints: spawnPointsRes.rows,
-      spawnPoint: { col: map.spawn_col ?? 0, row: map.spawn_row ?? 0 },
+      spawnPoint: { col: map.spawn_col ?? 0, row: map.spawn_row ?? 0, radius: map.spawn_radius ?? 0 },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -1419,6 +1419,9 @@ export default function MapStage({
   // the parent prompts for a label and emits the socket event itself.
   spawnPoints = [],
   onSpawnNamedAdd = null,
+  // Fired when the DM drags an existing named spawn-point glyph to a
+  // new tile. Parent persists via the update_spawn_point socket event.
+  onSpawnPointMove = null,
 }) {
   const stageRef = useRef(null);
   const containerRef = useRef(null);
@@ -1516,14 +1519,14 @@ export default function MapStage({
     });
   }, [fitToMap, stageSize, mapWidth, mapHeight, mapUrl]);
 
-  // Center the view on the player token once — fires when centerOnMapPoint first
-  // becomes non-null and stageSize is known. hasCenteredRef prevents re-centering
-  // on subsequent renders.
-  const hasCenteredRef = useRef(false);
+  // Center the view on a given map point. The parent drives re-centring
+  // by setting a *new* `centerOnMapPoint` reference each time it wants
+  // a recentre — initial load AND after every map transition. Same-
+  // reference re-renders don't trigger this since the dep is the
+  // object identity.
   useEffect(() => {
-    if (!centerOnMapPoint || hasCenteredRef.current) return;
+    if (!centerOnMapPoint) return;
     if (stageSize.w <= 0 || stageSize.h <= 0) return;
-    hasCenteredRef.current = true;
     setPos({
       x: stageSize.w / 2 - centerOnMapPoint.x * scaleRef.current,
       y: stageSize.h / 2 - centerOnMapPoint.y * scaleRef.current,
@@ -2885,6 +2888,13 @@ export default function MapStage({
   useEffect(() => { spawnPointsRef.current = spawnPoints; }, [spawnPoints]);
   const onSpawnNamedAddRef = useRef(onSpawnNamedAdd);
   useEffect(() => { onSpawnNamedAddRef.current = onSpawnNamedAdd; }, [onSpawnNamedAdd]);
+  const onSpawnPointMoveRef = useRef(onSpawnPointMove);
+  useEffect(() => { onSpawnPointMoveRef.current = onSpawnPointMove; }, [onSpawnPointMove]);
+  // Live drag preview for the spawn point being moved. Stage listening
+  // is disabled at the Konva level (perf), so drag is implemented via
+  // the container's native mousedown/move/up like tokens — see the
+  // matching ref/state in the gesture block below.
+  const [spawnDragVis, setSpawnDragVis] = useState(null);
   useEffect(() => { onTokenMoveRef.current   = onTokenMove;   }, [onTokenMove]);
   useEffect(() => { onTokenSelectRef.current = onTokenSelect; }, [onTokenSelect]);
   useEffect(() => { onMapClickRef.current    = onMapClick;    }, [onMapClick]);
@@ -2938,14 +2948,67 @@ export default function MapStage({
       }) || null;
     }
 
+    // Picks the named spawn-point glyph under the given map-space
+    // coords. Hits anywhere inside the bubble (or a generous halo
+    // around a zero-radius point) so the whole glyph is grabbable.
+    // DM-only path; players are passed an empty spawnPoints list.
+    function hitSpawnPoint(mapX, mapY) {
+      const gs = gridSizeRef.current;
+      const ox = offsetXRef.current, oy = offsetYRef.current;
+      for (const sp of spawnPointsRef.current) {
+        const cx = ox + Number(sp.grid_col) * gs;
+        const cy = oy + Number(sp.grid_row) * gs;
+        const r = Number(sp.radius) || 0;
+        const hitR = r > 0 ? r * gs : Math.max(14, gs * 0.4);
+        if ((mapX - cx) * (mapX - cx) + (mapY - cy) * (mapY - cy) <= hitR * hitR) {
+          return sp;
+        }
+      }
+      return null;
+    }
+
     let downX = 0, downY = 0;
+    // Right-click drag always pans, regardless of the active tool.
+    // When `rightPanMoved` ends up true on mouseup, the contextmenu
+    // event that browsers fire next is suppressed so a drag-pan
+    // doesn't accidentally open the door-flip / token menu.
+    let rightPanning = false;
+    let rightPanStart = { cx: 0, cy: 0, sx: 0, sy: 0 };
+    let rightPanMoved = false;
+    // DM-only spawn-point drag. Captured on mousedown when the cursor
+    // is inside a spawn glyph; live preview updates on mousemove; the
+    // committed grid coords go to the parent on mouseup.
+    let spawnDrag = null; // { id, origCol, origRow }
 
     function onMouseDown(e) {
+      if (e.button === 2) {
+        rightPanning = true;
+        rightPanMoved = false;
+        rightPanStart = {
+          cx: e.clientX, cy: e.clientY,
+          sx: posRef.current.x, sy: posRef.current.y,
+        };
+        return;
+      }
       if (e.button !== 0) return;
       downX = e.clientX;
       downY = e.clientY;
       const tool = activeToolRef.current;
       const mc   = toMap(e.clientX, e.clientY);
+
+      // DM-only: if the click landed on a named spawn-point glyph,
+      // start a spawn drag and skip every other tool/dispatch path so
+      // the active tool doesn't simultaneously start panning, drawing
+      // a wall, etc. Stage listening is off (perf choice) so we do
+      // the drag bookkeeping ourselves.
+      if (!isPlayer) {
+        const sp = hitSpawnPoint(mc.x, mc.y);
+        if (sp) {
+          spawnDrag = { id: sp.id, origCol: Number(sp.grid_col), origRow: Number(sp.grid_row) };
+          setSpawnDragVis({ id: sp.id, col: spawnDrag.origCol, row: spawnDrag.origRow });
+          return;
+        }
+      }
 
       // ── Plugin click handlers ────────────────────────────────────────────
       // Plugins can intercept map clicks by registering in
@@ -3142,6 +3205,31 @@ export default function MapStage({
     function onMouseMove(e) {
       const tool = activeToolRef.current;
 
+      // Spawn-point drag preview. Updates on every mousemove so the
+      // bubble follows the cursor; final commit happens in onMouseUp.
+      if (spawnDrag) {
+        const mc = toMap(e.clientX, e.clientY);
+        const gs = gridSizeRef.current;
+        const ox = offsetXRef.current, oy = offsetYRef.current;
+        setSpawnDragVis({
+          id: spawnDrag.id,
+          col: Math.round((mc.x - ox) / gs),
+          row: Math.round((mc.y - oy) / gs),
+        });
+        return;
+      }
+
+      // Right-click drag pans regardless of tool. Tracked separately
+      // from the left-click pan tool's `panning.current` so the two
+      // can't fight for state.
+      if (rightPanning) {
+        const dx = e.clientX - rightPanStart.cx;
+        const dy = e.clientY - rightPanStart.cy;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) rightPanMoved = true;
+        setPos({ x: rightPanStart.sx + dx, y: rightPanStart.sy + dy });
+        return;
+      }
+
       // ── Wall preview update ───────────────────────────────────────────────
       if (wallDrawRef.current) {
         const mc = toMap(e.clientX, e.clientY);
@@ -3259,6 +3347,29 @@ export default function MapStage({
     }
 
     function onMouseUp(e) {
+      // Commit a spawn-point drag (or a no-move click). Either way
+      // we clear local drag state. Same-tile mouseup is a no-op for
+      // the parent so a stray click doesn't churn the DB.
+      if (spawnDrag) {
+        const mc = toMap(e.clientX, e.clientY);
+        const gs = gridSizeRef.current;
+        const ox = offsetXRef.current, oy = offsetYRef.current;
+        const col = Math.round((mc.x - ox) / gs);
+        const row = Math.round((mc.y - oy) / gs);
+        if (col !== spawnDrag.origCol || row !== spawnDrag.origRow) {
+          onSpawnPointMoveRef.current?.(spawnDrag.id, col, row);
+        }
+        spawnDrag = null;
+        setSpawnDragVis(null);
+        return;
+      }
+      // End the right-click pan-drag without falling through to any
+      // left-click finalisation logic. The contextmenu handler reads
+      // `rightPanMoved` to decide whether to suppress the menu.
+      if (e.button === 2) {
+        rightPanning = false;
+        return;
+      }
       const moved = Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5;
       const tool  = activeToolRef.current;
 
@@ -3535,6 +3646,14 @@ export default function MapStage({
 
     function onContextMenu(e) {
       e.preventDefault();
+      // If the user just finished a right-drag pan, swallow the menu —
+      // they meant to pan, not to open a door / token menu. The flag
+      // is cleared after each contextmenu so the next plain right-
+      // click without a drag opens the menu normally.
+      if (rightPanMoved) {
+        rightPanMoved = false;
+        return;
+      }
       // Token right-click takes priority over door-flip when a token is
       // under the cursor — DM-only callback; player passes a no-op.
       if (onTokenContextMenuRef.current) {
@@ -3844,15 +3963,18 @@ export default function MapStage({
           </Layer>
         )}
 
-        {/* Spawn point marker — DM-only */}
+        {/* Spawn point marker — DM-only. When the map's spawn point has
+            a radius, render the bubble that new tokens scatter into. */}
         {!isPlayer && spawnPoint != null && (
           <Layer listening={false}>
             {(() => {
               const sx = offsetX + spawnPoint.col * gridSize;
               const sy = offsetY + spawnPoint.row * gridSize;
+              const r = Number(spawnPoint.radius) || 0;
+              const bubble = r > 0 ? r * gridSize : gridSize * 0.45;
               return (
                 <Group x={sx} y={sy}>
-                  <Circle radius={gridSize * 0.45} stroke="#22c55e" strokeWidth={2} dash={[4, 3]} fill="#22c55e" fillOpacity={0.15} />
+                  <Circle radius={bubble} stroke="#22c55e" strokeWidth={2} dash={[6, 4]} fill="#22c55e" fillOpacity={r > 0 ? 0.08 : 0.15} />
                   <Circle radius={5} fill="#22c55e" />
                   <Text text="⚑" fontSize={gridSize * 0.4} fill="#22c55e" x={4} y={-gridSize * 0.45} />
                 </Group>
@@ -3862,16 +3984,24 @@ export default function MapStage({
         )}
 
         {/* Named spawn points — DM-only. Cyan to distinguish from the
-            map's default green spawn glyph; label rendered above. */}
+            map's default green spawn glyph; label rendered above. The
+            DM can drag the centre dot to relocate; on release the
+            grid-snapped col/row goes back to the parent. */}
         {!isPlayer && spawnPoints.length > 0 && (
           <Layer listening={false}>
             {spawnPoints.map((sp) => {
-              const sx = offsetX + Number(sp.grid_col) * gridSize;
-              const sy = offsetY + Number(sp.grid_row) * gridSize;
+              const isDragging = spawnDragVis && spawnDragVis.id === sp.id;
+              const col = isDragging ? spawnDragVis.col : Number(sp.grid_col);
+              const row = isDragging ? spawnDragVis.row : Number(sp.grid_row);
+              const sx = offsetX + col * gridSize;
+              const sy = offsetY + row * gridSize;
               const label = sp.label || 'Spawn';
+              const r = Number(sp.radius) || 0;
+              const bubble = r > 0 ? r * gridSize : gridSize * 0.4;
+              const labelW = Math.max(gridSize * 1.2, bubble * 2);
               return (
-                <Group key={sp.id} x={sx} y={sy}>
-                  <Circle radius={gridSize * 0.4} stroke="#06b6d4" strokeWidth={2} dash={[3, 3]} fill="#06b6d4" fillOpacity={0.18} />
+                <Group key={sp.id} x={sx} y={sy} opacity={isDragging ? 0.7 : 1}>
+                  <Circle radius={bubble} stroke="#06b6d4" strokeWidth={2} dash={[6, 4]} fill="#06b6d4" fillOpacity={r > 0 ? 0.08 : 0.18} />
                   <Circle radius={4} fill="#06b6d4" />
                   <Text
                     text={label}
@@ -3880,9 +4010,9 @@ export default function MapStage({
                     stroke="#0e7490"
                     strokeWidth={2.4}
                     fillAfterStrokeEnabled
-                    x={-gridSize * 0.6}
-                    y={-gridSize * 0.7}
-                    width={gridSize * 1.2}
+                    x={-labelW / 2}
+                    y={-(bubble + gridSize * 0.35)}
+                    width={labelW}
                     align="center"
                   />
                 </Group>

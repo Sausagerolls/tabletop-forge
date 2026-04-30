@@ -1190,7 +1190,7 @@ function TokenContextMenu({ menu, tokens, maps, currentMapId, spawnPointsByMapId
         <span className="text-gray-500">▸</span>
         {submenuOpen && (
           <div
-            className="absolute left-full top-0 ml-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl min-w-[200px] py-1"
+            className="absolute left-full top-0 bg-gray-900 border border-gray-700 rounded-lg shadow-xl min-w-[200px] py-1"
           >
             {destinationMaps.length === 0 ? (
               <div className="px-3 py-2 text-gray-500 italic">No other maps</div>
@@ -1218,7 +1218,7 @@ function TokenContextMenu({ menu, tokens, maps, currentMapId, spawnPointsByMapId
                     <span>{m.name || `Map #${m.id}`}</span>
                     {hasPts && <span className="text-gray-500">▸</span>}
                     {hasPts && hoverMapId === m.id && (
-                      <div className="absolute left-full top-0 ml-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl min-w-[180px] py-1">
+                      <div className="absolute left-full top-0 bg-gray-900 border border-gray-700 rounded-lg shadow-xl min-w-[180px] py-1">
                         <div
                           className="px-3 py-2 hover:bg-gray-800 cursor-pointer text-gray-300 italic border-b border-gray-800"
                           onClick={(e) => {
@@ -1258,12 +1258,15 @@ function TokenContextMenu({ menu, tokens, maps, currentMapId, spawnPointsByMapId
 // socket emit; we only collect the label and call back.
 function SpawnPointLabelModal({ onCancel, onSubmit }) {
   const [label, setLabel] = useState('');
+  // Radius in grid units. 0 = single tile (legacy point); 2-3 is a
+  // sensible default for "scatter the party" use cases.
+  const [radius, setRadius] = useState(2);
   const inputRef = useRef(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
   function submit() {
     const trimmed = label.trim();
     if (!trimmed) return;
-    onSubmit(trimmed);
+    onSubmit(trimmed, Math.max(0, Math.floor(Number(radius) || 0)));
   }
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50">
@@ -1282,6 +1285,24 @@ function SpawnPointLabelModal({ onCancel, onSubmit }) {
           placeholder="e.g. Front Entrance"
           className="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 text-gray-100 focus:border-cyan-500 outline-none"
         />
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
+            <span>Bubble radius</span>
+            <span className="text-gray-200 tabular-nums">{radius} sq</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="10"
+            step="1"
+            value={radius}
+            onChange={(e) => setRadius(Number(e.target.value))}
+            className="w-full accent-cyan-500"
+          />
+          <div className="text-[11px] text-gray-500 leading-snug mt-1">
+            Tokens sent here scatter inside this radius, avoiding existing tokens. Set to 0 for a single tile.
+          </div>
+        </div>
         <div className="flex justify-end gap-2 mt-4">
           <button
             onClick={onCancel}
@@ -2103,7 +2124,11 @@ export default function DMView() {
     socket.on('magical_darkness_cleared', () => setMagicalDarkness([]));
     socket.on('zone_feather_updated', ({ darknessId, featherAmount }) =>
       setMagicalDarkness(prev => prev.map(d => d.id === darknessId ? { ...d, feather_amount: featherAmount } : d)));
-    socket.on('spawn_point_set', ({ col, row }) => setSpawnPoint({ col, row }));
+    socket.on('spawn_point_set', (payload) => setSpawnPoint(prev => ({
+      col:    payload.col    !== undefined ? payload.col    : (prev?.col    ?? 0),
+      row:    payload.row    !== undefined ? payload.row    : (prev?.row    ?? 0),
+      radius: payload.radius !== undefined ? payload.radius : (prev?.radius ?? 0),
+    })));
 
     socket.on('play_sound', ({ filename, volume }) => {
       const audio = new Audio(`/sounds/${encodeURIComponent(filename)}`);
@@ -2863,6 +2888,7 @@ export default function DMView() {
             onTokenContextMenu={(tokenId, x, y) => setTokenContextMenu({ tokenId, x, y })}
             spawnPoints={allSpawnPoints[session?.map_id] || []}
             onSpawnNamedAdd={(col, row) => setPendingSpawnPoint({ col, row })}
+            onSpawnPointMove={(id, col, row) => socket.emit('update_spawn_point', { id, gridCol: col, gridRow: row })}
           />
 
           {tokenContextMenu && (
@@ -2883,12 +2909,13 @@ export default function DMView() {
           {pendingSpawnPoint && (
             <SpawnPointLabelModal
               onCancel={() => setPendingSpawnPoint(null)}
-              onSubmit={(label) => {
+              onSubmit={(label, radius) => {
                 socket.emit('add_spawn_point', {
                   mapId: session.map_id,
                   label,
                   gridCol: pendingSpawnPoint.col,
                   gridRow: pendingSpawnPoint.row,
+                  radius,
                 });
                 setPendingSpawnPoint(null);
               }}
@@ -3360,6 +3387,36 @@ export default function DMView() {
                   </div>
                 </div>
 
+                {/* Default-spawn bubble radius (current map). New players
+                    spawning into this map scatter inside the radius so
+                    a full party doesn't stack on a single tile. */}
+                <div>
+                  <h3 className="text-sm font-semibold text-dnd-gold mb-2">Default Spawn Bubble</h3>
+                  <div className="bg-gray-800 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-gray-400 w-16">Radius</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="10"
+                        step="1"
+                        value={spawnPoint?.radius ?? 0}
+                        onChange={(e) => {
+                          const v = Math.max(0, Math.floor(Number(e.target.value) || 0));
+                          setSpawnPoint(prev => ({ ...(prev || { col: 0, row: 0 }), radius: v }));
+                          if (session?.map_id) socket.emit('set_spawn_point', { mapId: session.map_id, radius: v });
+                        }}
+                        className="flex-1 accent-emerald-500"
+                      />
+                      <span className="text-[11px] text-gray-300 tabular-nums w-10 text-right">{spawnPoint?.radius ?? 0} sq</span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 leading-snug">
+                      Use the <strong>Spawn → Set Spawn</strong> tool to place the centre. Set radius to 0 to
+                      collapse it back to a single tile.
+                    </p>
+                  </div>
+                </div>
+
                 {/* Named spawn points (current map) */}
                 <div>
                   <h3 className="text-sm font-semibold text-dnd-gold mb-2">Named Spawn Points</h3>
@@ -3370,32 +3427,50 @@ export default function DMView() {
                       </div>
                     ) : (
                       (allSpawnPoints[session?.map_id] || []).map((sp) => (
-                        <div key={sp.id} className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            defaultValue={sp.label}
-                            maxLength={100}
-                            onBlur={(e) => {
-                              const v = e.target.value.trim();
-                              if (v && v !== sp.label) {
-                                socket.emit('update_spawn_point', { id: sp.id, label: v });
-                              }
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') e.target.blur();
-                              if (e.key === 'Escape') { e.target.value = sp.label; e.target.blur(); }
-                            }}
-                            className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-500"
-                          />
-                          <button
-                            onClick={() => {
-                              if (window.confirm(`Delete spawn point "${sp.label}"?`)) {
-                                socket.emit('remove_spawn_point', { id: sp.id });
-                              }
-                            }}
-                            className="px-2 py-1 text-xs rounded bg-red-700 hover:bg-red-600 text-white"
-                            title="Delete spawn point"
-                          >×</button>
+                        <div key={sp.id} className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              defaultValue={sp.label}
+                              maxLength={100}
+                              onBlur={(e) => {
+                                const v = e.target.value.trim();
+                                if (v && v !== sp.label) {
+                                  socket.emit('update_spawn_point', { id: sp.id, label: v });
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.target.blur();
+                                if (e.key === 'Escape') { e.target.value = sp.label; e.target.blur(); }
+                              }}
+                              className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-500"
+                            />
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Delete spawn point "${sp.label}"?`)) {
+                                  socket.emit('remove_spawn_point', { id: sp.id });
+                                }
+                              }}
+                              className="px-2 py-1 text-xs rounded bg-red-700 hover:bg-red-600 text-white"
+                              title="Delete spawn point"
+                            >×</button>
+                          </div>
+                          <div className="flex items-center gap-2 pl-1">
+                            <span className="text-[10px] text-gray-500 w-12">Radius</span>
+                            <input
+                              type="range"
+                              min="0"
+                              max="10"
+                              step="1"
+                              defaultValue={sp.radius ?? 0}
+                              onChange={(e) => {
+                                const v = Math.max(0, Math.floor(Number(e.target.value) || 0));
+                                socket.emit('update_spawn_point', { id: sp.id, radius: v });
+                              }}
+                              className="flex-1 accent-cyan-500"
+                            />
+                            <span className="text-[10px] text-gray-300 tabular-nums w-8 text-right">{sp.radius ?? 0} sq</span>
+                          </div>
                         </div>
                       ))
                     )}
@@ -3548,8 +3623,36 @@ export default function DMView() {
                                     <img src={`/uploads/${m.image_path}`} alt={m.name} className="w-full h-full object-cover" />
                                   </div>
                                   <div className="flex-1 min-w-0">
-                                    <div className="text-sm text-white truncate">{m.name}</div>
-                                    <div className="text-xs text-gray-400">
+                                    <input
+                                      onClick={(e) => e.stopPropagation()}
+                                      onBlur={async (e) => {
+                                        const v = e.target.value.trim();
+                                        if (!v || v === m.name) {
+                                          // Empty / unchanged: revert to the
+                                          // current name so the field never
+                                          // shows blank after a no-op edit.
+                                          e.target.value = m.name;
+                                          return;
+                                        }
+                                        try {
+                                          const res = await fetch(`/api/maps/${m.id}`, {
+                                            method: 'PATCH',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ name: v }),
+                                          });
+                                          if (res.ok) await loadMaps(session.id);
+                                        } catch {}
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') e.target.blur();
+                                        if (e.key === 'Escape') { e.target.value = m.name; e.target.blur(); }
+                                      }}
+                                      defaultValue={m.name}
+                                      maxLength={120}
+                                      title="Click to rename map"
+                                      className="w-full bg-transparent hover:bg-gray-900/40 focus:bg-gray-900/60 border border-transparent hover:border-gray-700 focus:border-dnd-gold rounded px-1.5 py-0.5 text-sm text-white truncate outline-none"
+                                    />
+                                    <div className="text-xs text-gray-400 mt-0.5 px-1.5">
                                       Grid: {m.grid_size}px
                                       {m.floor_label ? ` · ${m.floor_label}` : ''}
                                     </div>

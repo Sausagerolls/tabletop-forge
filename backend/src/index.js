@@ -190,6 +190,14 @@ db.query(`
   )
 `).catch(err => console.error('map_spawn_points migration error:', err));
 
+// Radius (in grid units) added in v1.5.x — when > 0, the spawn point
+// is treated as a bubble and tokens landing here are scattered across
+// random tiles inside, avoiding overlaps with existing tokens.
+db.query(`ALTER TABLE map_spawn_points ADD COLUMN IF NOT EXISTS radius INTEGER DEFAULT 0`)
+  .catch(err => console.error('map_spawn_points.radius migration error:', err));
+db.query(`ALTER TABLE maps ADD COLUMN IF NOT EXISTS spawn_radius INTEGER DEFAULT 0`)
+  .catch(err => console.error('maps.spawn_radius migration error:', err));
+
 // ─── DM-set per-player map overrides (Split the Party, native) ───────────────
 // One row per (session, player_name). When set, that player's view is pinned
 // to map_id regardless of which map the DM is currently viewing. Replaces
@@ -211,10 +219,46 @@ const sessionUsers = {}; // sessionCode -> Map<socketId, {name, role}>
 const sessionTemplates = {}; // sessionCode -> Array<{ id, type, points, color, label }> — DM-only
 const sessionUserColors = {}; // sessionCode -> { name: color }
 
+// Pick a random tile inside a circular spawn bubble, avoiding tiles
+// already occupied by existing tokens. Tokens are treated as 1x1 for
+// the avoidance check — larger creatures are rare and worst case the
+// new token visually overlaps a flank tile, which the DM can fix by
+// dragging. Falls back to the bubble centre if every random attempt
+// collides with another token, so a tightly-packed bubble still
+// produces a valid landing tile.
+function scatterSpawnPosition(centerCol, centerRow, radius, occupiedTiles) {
+  const cx = Math.round(Number(centerCol) || 0);
+  const cy = Math.round(Number(centerRow) || 0);
+  const r  = Math.max(0, Math.floor(Number(radius) || 0));
+  if (r === 0) return { col: cx, row: cy };
+  const blocked = new Set();
+  for (const t of occupiedTiles) {
+    blocked.add(`${Math.round(Number(t.col) || 0)},${Math.round(Number(t.row) || 0)}`);
+  }
+  for (let i = 0; i < 40; i++) {
+    const dx = Math.floor((Math.random() * 2 - 1) * r);
+    const dy = Math.floor((Math.random() * 2 - 1) * r);
+    if (dx * dx + dy * dy > r * r) continue;
+    const col = cx + dx;
+    const row = cy + dy;
+    if (blocked.has(`${col},${row}`)) continue;
+    return { col, row };
+  }
+  return { col: cx, row: cy };
+}
+
+async function loadOccupiedTiles(sessionId, mapId) {
+  const r = await db.query(
+    'SELECT grid_col AS col, grid_row AS row FROM session_tokens WHERE session_id=$1 AND map_id=$2',
+    [sessionId, mapId]
+  );
+  return r.rows;
+}
+
 async function getSessionState(sessionCode) {
   const sessionRes = await db.query(
     `SELECT s.*, m.image_path AS map_image, m.name AS map_name, m.width AS map_width, m.height AS map_height,
-            m.spawn_col AS map_spawn_col, m.spawn_row AS map_spawn_row
+            m.spawn_col AS map_spawn_col, m.spawn_row AS map_spawn_row, m.spawn_radius AS map_spawn_radius
      FROM sessions s LEFT JOIN maps m ON s.map_id = m.id
      WHERE s.session_code = $1`,
     [sessionCode]
@@ -299,7 +343,7 @@ async function getSessionState(sessionCode) {
     magicalDarkness: darknessRows,
     dmMarkers: dmMarkersRows,
     spawnPoints: typeof spawnPointsRows !== 'undefined' ? spawnPointsRows : [],
-    spawnPoint: { col: session.map_spawn_col ?? 0, row: session.map_spawn_row ?? 0 },
+    spawnPoint: { col: session.map_spawn_col ?? 0, row: session.map_spawn_row ?? 0, radius: session.map_spawn_radius ?? 0 },
     playerMapOverrides: await loadPlayerMapOverrides(session.id),
   };
 }
@@ -402,13 +446,14 @@ io.on('connection', (socket) => {
     if (!sessionCode) return;
     try {
       const prev = await db.query(
-        'SELECT map_id FROM session_tokens WHERE id=$1',
+        'SELECT map_id, session_id FROM session_tokens WHERE id=$1',
         [tokenId]
       );
       if (!prev.rows.length) return;
       const fromMapId = prev.rows[0].map_id ?? null;
+      const sessionId = prev.rows[0].session_id;
       const mapRes = await db.query(
-        'SELECT id, spawn_col, spawn_row FROM maps WHERE id=$1',
+        'SELECT id, spawn_col, spawn_row, spawn_radius FROM maps WHERE id=$1',
         [mapId]
       );
       if (!mapRes.rows.length) return;
@@ -416,19 +461,31 @@ io.on('connection', (socket) => {
       // Default landing: the map's spawn_col/spawn_row. If the DM picked
       // a named spawn point we look its coords up and use those instead;
       // a missing/foreign spawn point silently falls back to the default
-      // so a stale UI can't strand a token off-map.
-      let sc = m.spawn_col ?? 0;
-      let sr = m.spawn_row ?? 0;
+      // so a stale UI can't strand a token off-map. When the chosen
+      // landing zone has a non-zero radius we scatter inside the bubble
+      // so multiple tokens don't pile on the same tile.
+      let centerCol = m.spawn_col ?? 0;
+      let centerRow = m.spawn_row ?? 0;
+      let radius = m.spawn_radius ?? 0;
       if (spawnPointId != null) {
         const sp = await db.query(
-          'SELECT grid_col, grid_row FROM map_spawn_points WHERE id=$1 AND map_id=$2',
+          'SELECT grid_col, grid_row, radius FROM map_spawn_points WHERE id=$1 AND map_id=$2',
           [spawnPointId, mapId]
         );
         if (sp.rows.length) {
-          sc = sp.rows[0].grid_col;
-          sr = sp.rows[0].grid_row;
+          centerCol = sp.rows[0].grid_col;
+          centerRow = sp.rows[0].grid_row;
+          radius = sp.rows[0].radius ?? 0;
         }
       }
+      // Skip the moving token's own current tile when computing
+      // collisions — otherwise a same-map move could see itself as
+      // an obstacle and refuse every nearby tile.
+      const occupiedRows = await db.query(
+        'SELECT grid_col AS col, grid_row AS row FROM session_tokens WHERE session_id=$1 AND map_id=$2 AND id<>$3',
+        [sessionId, mapId, tokenId]
+      );
+      const { col: sc, row: sr } = scatterSpawnPosition(centerCol, centerRow, radius, occupiedRows.rows);
       await db.query(
         'UPDATE session_tokens SET map_id=$1, grid_col=$2, grid_row=$3 WHERE id=$4',
         [mapId, sc, sr, tokenId]
@@ -668,7 +725,7 @@ io.on('connection', (socket) => {
         );
         const enrichedTok = enrichedRes.rows[0];
         io.to(sessionCode).emit('token_refreshed', { token: enrichedTok });
-        socket.emit('player_token_ready', { tokenId: tok.id });
+        socket.emit('player_token_ready', { tokenId: tok.id, mapId: tok.map_id ?? null });
         return;
       }
 
@@ -684,9 +741,14 @@ io.on('connection', (socket) => {
         ?? null;
       let spawnCol = 0, spawnRow = 0;
       if (currentMapId) {
-        const mapInfo = await db.query('SELECT spawn_col, spawn_row FROM maps WHERE id=$1', [currentMapId]);
-        spawnCol = Math.floor(mapInfo.rows[0]?.spawn_col ?? 0);
-        spawnRow = Math.floor(mapInfo.rows[0]?.spawn_row ?? 0);
+        const mapInfo = await db.query('SELECT spawn_col, spawn_row, spawn_radius FROM maps WHERE id=$1', [currentMapId]);
+        const cx = Math.floor(mapInfo.rows[0]?.spawn_col ?? 0);
+        const cy = Math.floor(mapInfo.rows[0]?.spawn_row ?? 0);
+        const r  = mapInfo.rows[0]?.spawn_radius ?? 0;
+        const occupied = await loadOccupiedTiles(sessionId, currentMapId);
+        const picked = scatterSpawnPosition(cx, cy, r, occupied);
+        spawnCol = picked.col;
+        spawnRow = picked.row;
       }
 
       const tokenRes = await db.query(
@@ -704,7 +766,7 @@ io.on('connection', (socket) => {
         [newTokenId]
       );
       const token = enrichedNewRes.rows[0];
-      socket.emit('player_token_ready', { tokenId: token.id });
+      socket.emit('player_token_ready', { tokenId: token.id, mapId: token.map_id ?? null });
       io.to(sessionCode).emit('token_added', { token });
     } catch (err) {
       console.error(err);
@@ -740,7 +802,7 @@ io.on('connection', (socket) => {
         if (users) {
           for (const [sid, u] of users.entries()) {
             if (u.name === playerName) {
-              io.to(sid).emit('player_token_ready', { tokenId: tok.id });
+              io.to(sid).emit('player_token_ready', { tokenId: tok.id, mapId: tok.map_id ?? null });
               break;
             }
           }
@@ -748,12 +810,18 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Get spawn point
+      // Get spawn point — scatter inside spawn_radius if set so a
+      // re-spawned token doesn't pile back onto the original tile.
       let spawnCol = 0, spawnRow = 0;
       if (currentMapId) {
-        const mapInfo = await db.query('SELECT spawn_col, spawn_row FROM maps WHERE id=$1', [currentMapId]);
-        spawnCol = Math.floor(mapInfo.rows[0]?.spawn_col ?? 0);
-        spawnRow = Math.floor(mapInfo.rows[0]?.spawn_row ?? 0);
+        const mapInfo = await db.query('SELECT spawn_col, spawn_row, spawn_radius FROM maps WHERE id=$1', [currentMapId]);
+        const cx = Math.floor(mapInfo.rows[0]?.spawn_col ?? 0);
+        const cy = Math.floor(mapInfo.rows[0]?.spawn_row ?? 0);
+        const r  = mapInfo.rows[0]?.spawn_radius ?? 0;
+        const occupied = await loadOccupiedTiles(session.id, currentMapId);
+        const picked = scatterSpawnPosition(cx, cy, r, occupied);
+        spawnCol = picked.col;
+        spawnRow = picked.row;
       }
 
       // Try to inherit stats from a creature linked to this player's token on any map
@@ -797,7 +865,7 @@ io.on('connection', (socket) => {
       if (users) {
         for (const [sid, u] of users.entries()) {
           if (u.name === playerName) {
-            io.to(sid).emit('player_token_ready', { tokenId: token.id });
+            io.to(sid).emit('player_token_ready', { tokenId: token.id, mapId: token.map_id ?? null });
             break;
           }
         }
@@ -1082,7 +1150,7 @@ io.on('connection', (socket) => {
         tokens: tokensRes.rows,
         magicalDarkness: darknessRes.rows,
         spawnPoints: spawnPointsRes.rows,
-        spawnPoint: { col: map.spawn_col ?? 0, row: map.spawn_row ?? 0 },
+        spawnPoint: { col: map.spawn_col ?? 0, row: map.spawn_row ?? 0, radius: map.spawn_radius ?? 0 },
       });
     } catch (err) {
       console.error(err);
@@ -1093,14 +1161,14 @@ io.on('connection', (socket) => {
   // Named spawn points per map. The right-click "Send to map → spawn point"
   // submenu pulls labels from here, and `dm_send_token_to_map` accepts an
   // optional spawnPointId that overrides the map's default landing tile.
-  socket.on('add_spawn_point', async ({ mapId, label, gridCol, gridRow }) => {
+  socket.on('add_spawn_point', async ({ mapId, label, gridCol, gridRow, radius }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
     try {
       const r = await db.query(
-        'INSERT INTO map_spawn_points (map_id, label, grid_col, grid_row) VALUES ($1,$2,$3,$4) RETURNING *',
-        [mapId, String(label || '').slice(0, 100), gridCol, gridRow]
+        'INSERT INTO map_spawn_points (map_id, label, grid_col, grid_row, radius) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+        [mapId, String(label || '').slice(0, 100), gridCol, gridRow, Math.max(0, Math.floor(Number(radius) || 0))]
       );
       io.to(sessionCode).emit('spawn_point_added', { spawnPoint: r.rows[0] });
     } catch (err) {
@@ -1108,7 +1176,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('update_spawn_point', async ({ id, label, gridCol, gridRow }) => {
+  socket.on('update_spawn_point', async ({ id, label, gridCol, gridRow, radius }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
@@ -1118,6 +1186,7 @@ io.on('connection', (socket) => {
       if (label !== undefined)   { values.push(String(label).slice(0, 100)); fields.push(`label=$${values.length}`); }
       if (gridCol !== undefined) { values.push(gridCol); fields.push(`grid_col=$${values.length}`); }
       if (gridRow !== undefined) { values.push(gridRow); fields.push(`grid_row=$${values.length}`); }
+      if (radius !== undefined)  { values.push(Math.max(0, Math.floor(Number(radius) || 0))); fields.push(`radius=$${values.length}`); }
       if (!fields.length) return;
       values.push(id);
       const r = await db.query(
@@ -1385,13 +1454,25 @@ io.on('connection', (socket) => {
   });
 
   // ── Spawn point (DM only) ────────────────────────────────────────────────
-  socket.on('set_spawn_point', async ({ mapId, col, row }) => {
+  socket.on('set_spawn_point', async ({ mapId, col, row, radius }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode || !mapId) return;
     try {
-      await db.query('UPDATE maps SET spawn_col=$1, spawn_row=$2 WHERE id=$3', [col, row, mapId]);
-      io.to(sessionCode).emit('spawn_point_set', { col, row });
+      if (radius === undefined) {
+        // Coords-only update (existing tool behaviour).
+        await db.query('UPDATE maps SET spawn_col=$1, spawn_row=$2 WHERE id=$3', [col, row, mapId]);
+        io.to(sessionCode).emit('spawn_point_set', { col, row });
+      } else if (col === undefined && row === undefined) {
+        // Radius-only update from the Map tab slider.
+        const safe = Math.max(0, Math.floor(Number(radius) || 0));
+        await db.query('UPDATE maps SET spawn_radius=$1 WHERE id=$2', [safe, mapId]);
+        io.to(sessionCode).emit('spawn_point_set', { radius: safe });
+      } else {
+        const safe = Math.max(0, Math.floor(Number(radius) || 0));
+        await db.query('UPDATE maps SET spawn_col=$1, spawn_row=$2, spawn_radius=$3 WHERE id=$4', [col, row, safe, mapId]);
+        io.to(sessionCode).emit('spawn_point_set', { col, row, radius: safe });
+      }
     } catch (err) { console.error(err); }
   });
 

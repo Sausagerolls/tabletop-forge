@@ -615,6 +615,10 @@ export default function PlayerView() {
   // read the latest value without re-binding.
   const ownTokenMapIdRef = useRef(null);
   useEffect(() => { ownTokenMapIdRef.current = ownTokenMapId; }, [ownTokenMapId]);
+  // Effective rendered map id, mirrored to a ref so socket handlers
+  // (registered once) can read the latest value when filtering audio
+  // events by map.
+  const effectiveMapIdRef = useRef(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [myCreature, setMyCreature] = useState(null);
   const [showCharacterEdit, setShowCharacterEdit] = useState(false);
@@ -693,6 +697,16 @@ export default function PlayerView() {
       setTimeout(() => setMapFadeOpacity(0), 100);
     }, 350);
   };
+  // Keep the effective-map ref in sync so socket handlers below can
+  // filter audio events by map without depending on render-time state.
+  // Also tell the server which map we're rendering — backend routes
+  // per-map ambient based on this so we pick up whatever's playing on
+  // a map when we Send-to or auto-follow into it mid-session.
+  useEffect(() => {
+    const eid = (overrideMap?.mapId ?? session?.map_id) ?? null;
+    effectiveMapIdRef.current = eid;
+    if (eid != null) socket.emit('set_player_active_map_id', { mapId: eid });
+  }, [overrideMap?.mapId, session?.map_id]);
 
   // Re-centre the map on the player's own token after every map
   // transition (DM "Send to" pipeline, manual override change,
@@ -1298,6 +1312,8 @@ export default function PlayerView() {
     });
 
     socket.on('play_sound', ({ filename, volume }) => {
+      // Backend routes per-map via activeMapId — by the time this
+      // handler fires, the event was meant for this map.
       const vol = Math.max(0, Math.min(1, volume ?? 1.0));
 
       function doPlay() {
@@ -1326,6 +1342,8 @@ export default function PlayerView() {
     });
 
     socket.on('stop_sounds', () => {
+      // Always honour stop — if we weren't playing anything (because
+      // the play was filtered out by map) it's a harmless no-op.
       activeSoundsRef.current.forEach(src => { try { src.stop(); } catch (_) {} });
       activeSoundsRef.current = [];
     });

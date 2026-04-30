@@ -218,6 +218,12 @@ db.query(`
 const sessionUsers = {}; // sessionCode -> Map<socketId, {name, role}>
 const sessionTemplates = {}; // sessionCode -> Array<{ id, type, points, color, label }> — DM-only
 const sessionUserColors = {}; // sessionCode -> { name: color }
+// Per-session, per-map ambient state. When the DM starts an ambient
+// loop on a map, we remember the latest filename/volume here so a
+// player who later switches to that map (Send-to, auto-follow, DM map
+// change) can be auto-synced — see set_player_active_map_id below.
+// Stop clears every map for the session (a "stop everything" button).
+const sessionAmbients = {}; // sessionCode -> { [mapId]: { filename, volume } }
 
 // Pick a random tile inside a circular spawn bubble, avoiding tiles
 // already occupied by existing tokens. Tokens are treated as 1x1 for
@@ -406,6 +412,11 @@ io.on('connection', (socket) => {
       const colors = sessionUserColors[sessionCode] || {};
       const currentUsers = Array.from(sessionUsers[sessionCode].values());
       socket.emit('session_joined', { state: sendState, role, userColors: colors, users: currentUsers });
+      // Re-attach the DM to whatever per-map ambients are currently
+      // running so the DM panel can render the running list.
+      if (role === 'dm') {
+        socket.emit('session_ambients_changed', sessionAmbients[sessionCode] || {});
+      }
 
       // Broadcast updated user list
       io.to(sessionCode).emit('users_updated', {
@@ -1424,33 +1435,118 @@ io.on('connection', (socket) => {
   });
 
   // ── Sound effects (DM only) ─────────────────────────────────────────────
-  socket.on('play_sound', ({ filename, volume }) => {
+  // We route per-map at the server: only sockets whose activeMapId
+  // matches the source map get the play_* event. Sockets that haven't
+  // reported an activeMapId yet (older client, or pre-set_player_active
+  // race window) are included as a safety fallback so they don't go
+  // silent on a partial roll-out.
+  async function dmCurrentMapId() {
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return null;
+    try {
+      const r = await db.query(
+        'SELECT map_id FROM sessions WHERE session_code=$1',
+        [sessionCode]
+      );
+      return r.rows[0]?.map_id ?? null;
+    } catch { return null; }
+  }
+  function emitToMap(sessionCode, mapId, eventName, payload) {
+    const room = io.sockets.adapter.rooms.get(sessionCode);
+    if (!room) return;
+    const target = mapId == null ? null : Number(mapId);
+    for (const sid of room) {
+      const s = io.sockets.sockets.get(sid);
+      if (!s) continue;
+      const ami = s.data.activeMapId;
+      if (target == null || ami == null || Number(ami) === target) {
+        s.emit(eventName, payload);
+      }
+    }
+  }
+  socket.on('play_sound', async ({ filename, volume }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
-    io.to(sessionCode).emit('play_sound', { filename, volume: volume ?? 1.0 });
+    const mapId = await dmCurrentMapId();
+    emitToMap(sessionCode, mapId, 'play_sound', { filename, volume: volume ?? 1.0 });
   });
 
   socket.on('stop_sounds', () => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
+    // Stop is global — harmless no-op for clients with nothing to stop.
     io.to(sessionCode).emit('stop_sounds');
   });
 
   // ── Ambient music (DM only) ──────────────────────────────────────────────
-  socket.on('play_ambient', ({ filename, volume }) => {
+  // Push the full per-map ambient snapshot to every DM socket in this
+  // session. Players don't need it — they only hear their own map.
+  function broadcastAmbientState(sessionCode) {
+    const state = sessionAmbients[sessionCode] || {};
+    const room = io.sockets.adapter.rooms.get(sessionCode);
+    if (!room) return;
+    for (const sid of room) {
+      const s = io.sockets.sockets.get(sid);
+      if (s?.data?.role === 'dm') s.emit('session_ambients_changed', state);
+    }
+  }
+  socket.on('play_ambient', async ({ filename, volume }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
-    io.to(sessionCode).emit('play_ambient', { filename, volume: volume ?? 0.5 });
+    const mapId = await dmCurrentMapId();
+    const vol = volume ?? 0.5;
+    if (mapId != null) {
+      if (!sessionAmbients[sessionCode]) sessionAmbients[sessionCode] = {};
+      sessionAmbients[sessionCode][mapId] = { filename, volume: vol };
+    }
+    emitToMap(sessionCode, mapId, 'play_ambient', { filename, volume: vol });
+    broadcastAmbientState(sessionCode);
+  });
+
+  // Stop ambient on a specific map (DM only). The targeted map's
+  // audience hears the stop; other maps' loops keep playing.
+  socket.on('stop_ambient_on_map', ({ mapId }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode || mapId == null) return;
+    const id = Number(mapId);
+    if (sessionAmbients[sessionCode]) delete sessionAmbients[sessionCode][id];
+    emitToMap(sessionCode, id, 'stop_ambient');
+    broadcastAmbientState(sessionCode);
   });
 
   socket.on('stop_ambient', () => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
+    // Stop everything across the session.
+    delete sessionAmbients[sessionCode];
     io.to(sessionCode).emit('stop_ambient');
+    broadcastAmbientState(sessionCode);
+  });
+
+  // Each connected client (DM + players) tells the server which map
+  // it's currently rendering so the server can route per-map audio
+  // to the right sockets. Fires on session join, every Send-to /
+  // auto-follow / DM map switch.
+  socket.on('set_player_active_map_id', ({ mapId }) => {
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    const id = mapId == null ? null : Number(mapId);
+    if (socket.data.activeMapId === id) return;
+    socket.data.activeMapId = id;
+    // Always stop any locally-playing ambient — if the client wasn't
+    // playing anything the handler is a no-op. Then start the stored
+    // ambient for the new map (if any) so a player joining mid-loop
+    // picks up where the rest of that map's audience already is.
+    socket.emit('stop_ambient');
+    const target = id != null ? sessionAmbients[sessionCode]?.[id] : null;
+    if (target) {
+      socket.emit('play_ambient', { filename: target.filename, volume: target.volume, mapId: id });
+    }
   });
 
   // ── Spawn point (DM only) ────────────────────────────────────────────────

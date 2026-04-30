@@ -1469,6 +1469,11 @@ export default function DMView() {
   const [soundFiles, setSoundFiles] = useState([]);
   const [soundVolume, setSoundVolume] = useState(1.0);
   const [ambientFiles, setAmbientFiles] = useState([]);
+  // Server-mirrored snapshot of which ambient is playing on which map
+  // across the whole session. Keyed by mapId → { filename, volume }.
+  // Lets the DM see and control loops that are running on maps they
+  // aren't currently viewing.
+  const [runningAmbients, setRunningAmbients] = useState({});
   const [ambientVolume, setAmbientVolume] = useState(0.5);
   const [currentAmbient, setCurrentAmbient] = useState(null);
   const [soundUploading, setSoundUploading] = useState(false);
@@ -1579,6 +1584,12 @@ export default function DMView() {
   useEffect(() => { mapsRef.current = maps; }, [maps]);
   useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => { sessionRef.current = session; }, [session]);
+  // Tell the server which map the DM is currently viewing so it can
+  // route per-map ambient back to us when we switch maps mid-session.
+  useEffect(() => {
+    const id = session?.map_id ?? null;
+    if (id != null) socket.emit('set_player_active_map_id', { mapId: id });
+  }, [session?.map_id]);
   useEffect(() => { spawnMapIdRef.current = spawnMapId; }, [spawnMapId]);
   const dmSubsRef = useRef(new Set());
   useEffect(() => {
@@ -2179,6 +2190,10 @@ export default function DMView() {
         .catch(console.error);
     });
 
+    socket.on('session_ambients_changed', (state) => {
+      setRunningAmbients(state || {});
+    });
+
     socket.on('stop_ambient', () => {
       const ctx = audioCtxRef.current;
       if (!ctx || !ambientSrcRef.current) return;
@@ -2419,7 +2434,11 @@ export default function DMView() {
   }
 
   function handlePlayAmbient(filename) {
-    if (currentAmbient === filename) {
+    // Derive "currently playing on my map" from the server snapshot
+    // so the play list highlights the right row even after a map
+    // switch picks up a different track via auto-resync.
+    const onThisMap = runningAmbients[session?.map_id]?.filename;
+    if (onThisMap === filename) {
       handleStopAmbient();
       return;
     }
@@ -2430,6 +2449,10 @@ export default function DMView() {
   function handleStopAmbient() {
     setCurrentAmbient(null);
     socket.emit('stop_ambient');
+  }
+
+  function handleStopAmbientOnMap(mapId) {
+    socket.emit('stop_ambient_on_map', { mapId });
   }
 
   async function handleSoundUpload(file) {
@@ -3153,7 +3176,11 @@ export default function DMView() {
                       </div>
                     )}
                   </>
-                ) : (
+                ) : (() => {
+                  const playingOnThisMap = runningAmbients[session?.map_id]?.filename || null;
+                  const runningEntries = Object.entries(runningAmbients || {})
+                    .filter(([, v]) => v && v.filename);
+                  return (
                   <>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-xs text-gray-400 w-14 shrink-0">Volume</span>
@@ -3171,8 +3198,41 @@ export default function DMView() {
                       onClick={handleStopAmbient}
                       className="w-full mb-3 px-3 py-1.5 bg-red-900/60 hover:bg-red-800 border border-red-700 text-red-300 rounded-lg text-sm transition-colors"
                     >
-                      ⏹ Stop Ambience
+                      ⏹ Stop All Ambience
                     </button>
+
+                    {runningEntries.length > 0 && (
+                      <div className="mb-3">
+                        <div className="text-[11px] uppercase tracking-wider text-gray-500 mb-1.5 px-1">
+                          Currently Playing ({runningEntries.length})
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          {runningEntries.map(([mapIdStr, info]) => {
+                            const mid = Number(mapIdStr);
+                            const m = maps.find(mm => mm.id === mid);
+                            const mapLabel = m?.name || `Map #${mid}`;
+                            const onThisMap = mid === session?.map_id;
+                            return (
+                              <div
+                                key={mapIdStr}
+                                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border ${onThisMap ? 'bg-purple-900/40 border-purple-600' : 'bg-gray-800 border-gray-700'}`}
+                              >
+                                <span className="text-xs text-purple-300">▶</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs text-gray-200 truncate">{formatName(info.filename)}</div>
+                                  <div className="text-[10px] text-gray-500 truncate">{mapLabel}{onThisMap ? ' · here' : ''}</div>
+                                </div>
+                                <button
+                                  onClick={() => handleStopAmbientOnMap(mid)}
+                                  className="text-gray-500 hover:text-red-400 text-xs px-1.5 py-0.5 rounded transition-colors"
+                                  title={`Stop ambience on ${mapLabel}`}
+                                >⏹</button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {ambientFiles.length === 0 ? (
                       <div className="text-gray-500 text-xs text-center py-4">
@@ -3184,9 +3244,9 @@ export default function DMView() {
                           <div key={f} className="flex items-center gap-1">
                             <button
                               onClick={() => handlePlayAmbient(f)}
-                              className={`flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 border rounded-lg text-left transition-colors ${currentAmbient === f ? 'bg-purple-900/60 border-purple-600 text-purple-200' : 'bg-gray-800 hover:bg-purple-900/30 border-gray-700 hover:border-purple-600 text-gray-200'}`}
+                              className={`flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 border rounded-lg text-left transition-colors ${playingOnThisMap === f ? 'bg-purple-900/60 border-purple-600 text-purple-200' : 'bg-gray-800 hover:bg-purple-900/30 border-gray-700 hover:border-purple-600 text-gray-200'}`}
                             >
-                              <span className="text-xs shrink-0">{currentAmbient === f ? '▶' : '○'}</span>
+                              <span className="text-xs shrink-0">{playingOnThisMap === f ? '▶' : '○'}</span>
                               <span className="text-xs truncate">{formatName(f)}</span>
                             </button>
                             <button
@@ -3199,7 +3259,8 @@ export default function DMView() {
                       </div>
                     )}
                   </>
-                )}
+                  );
+                })()}
               </div>
             );
           })()}

@@ -242,7 +242,7 @@ db.query(`
   `))
   .then(() => db.query(`ALTER TABLE walls ADD COLUMN IF NOT EXISTS terrain_id INTEGER REFERENCES map_terrain(id) ON DELETE CASCADE`))
   .then(() => db.query(`CREATE INDEX IF NOT EXISTS idx_walls_terrain ON walls(terrain_id)`))
-  .then(() => seedTerrainDefaults())
+  .then(() => removeSeededTerrainDefaults())
   .then(() => backfillMapDimensions())
   .then(() => regenAllTerrainWallsOnce())
   .catch(err => console.error('terrain migration error:', err));
@@ -348,36 +348,28 @@ async function backfillMapDimensions() {
   }
 }
 
-const TERRAIN_DEFAULTS_SRC = path.join(__dirname, '../terrain-defaults');
-const TERRAIN_UPLOADS_DIR  = path.join(__dirname, '../uploads/terrain');
-async function seedTerrainDefaults() {
+const TERRAIN_UPLOADS_DIR = path.join(__dirname, '../uploads/terrain');
+// Earlier v1.6.0 builds auto-seeded three default terrain pieces (rock
+// wall / rubble / tree). The art wasn't ready for shipping, so the
+// library is empty out of the box now — the DM uploads pieces
+// themselves. This pass cleans up any rows + on-disk images left
+// behind by the previous seed so existing installs match new ones.
+async function removeSeededTerrainDefaults() {
   try {
-    const existing = await db.query('SELECT 1 FROM terrain_library LIMIT 1');
-    if (existing.rows.length) return; // already seeded — never reseed
-    if (!fs.existsSync(TERRAIN_UPLOADS_DIR)) fs.mkdirSync(TERRAIN_UPLOADS_DIR, { recursive: true });
-    // [filename in terrain-defaults] → row to insert. Sizes are sensible
-    // grid-unit defaults; the DM can edit width/height per-instance once
-    // placed on a map.
-    const seeds = [
-      { file: 'rock-wall.svg', name: 'Rock Wall', w: 5,   h: 1,   blocks_vision: true,  blocks_light: true,  blocks_movement: true },
-      { file: 'rubble.svg',    name: 'Rubble',    w: 2.5, h: 2.5, blocks_vision: false, blocks_light: false, blocks_movement: true },
-      { file: 'tree.svg',      name: 'Tree',      w: 3,   h: 3.5, blocks_vision: false, blocks_light: false, blocks_movement: false },
-    ];
-    for (const s of seeds) {
-      const src = path.join(TERRAIN_DEFAULTS_SRC, s.file);
-      if (!fs.existsSync(src)) continue;
-      const dst = path.join(TERRAIN_UPLOADS_DIR, s.file);
-      if (!fs.existsSync(dst)) fs.copyFileSync(src, dst);
-      await db.query(
-        `INSERT INTO terrain_library
-           (name, image_path, default_w, default_h, blocks_vision, blocks_light, blocks_movement, is_default)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
-        [s.name, `terrain/${s.file}`, s.w, s.h, s.blocks_vision, s.blocks_light, s.blocks_movement]
-      );
+    const r = await db.query('SELECT id, image_path FROM terrain_library WHERE is_default = true');
+    for (const row of r.rows) {
+      // Best-effort delete of the image file; the row goes regardless.
+      if (row.image_path) {
+        const p = path.join(__dirname, '../uploads', row.image_path);
+        fs.unlink(p, () => {});
+      }
     }
-    console.log('Seeded default terrain library pieces.');
+    if (r.rows.length) {
+      await db.query('DELETE FROM terrain_library WHERE is_default = true');
+      console.log(`Removed ${r.rows.length} previously-seeded default terrain piece${r.rows.length === 1 ? '' : 's'}.`);
+    }
   } catch (err) {
-    console.error('terrain seed error:', err);
+    console.error('terrain default cleanup error:', err);
   }
 }
 

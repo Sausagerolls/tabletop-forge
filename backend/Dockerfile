@@ -10,7 +10,6 @@ COPY package*.json ./
 RUN npm install --production
 
 COPY src ./src
-COPY terrain-defaults ./terrain-defaults
 
 RUN mkdir -p uploads/maps uploads/creatures uploads/spell-pdfs uploads/terrain
 

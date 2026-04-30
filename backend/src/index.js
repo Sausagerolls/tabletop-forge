@@ -179,6 +179,9 @@ db.query(`
 // A map can have many labelled spawn points — the "Send to map" right-click
 // flow surfaces them as a sub-submenu so the DM can land a token at a
 // specific location ("Throne Room") rather than the map's default spawn.
+// Chain CREATE → ALTER so the radius column is added only once the
+// table exists. Firing both as parallel promises raced on a fresh DB
+// and the ALTER would error with "relation does not exist".
 db.query(`
   CREATE TABLE IF NOT EXISTS map_spawn_points (
     id SERIAL PRIMARY KEY,
@@ -188,13 +191,10 @@ db.query(`
     grid_row FLOAT NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW()
   )
-`).catch(err => console.error('map_spawn_points migration error:', err));
+`)
+  .then(() => db.query(`ALTER TABLE map_spawn_points ADD COLUMN IF NOT EXISTS radius INTEGER DEFAULT 0`))
+  .catch(err => console.error('map_spawn_points migration error:', err));
 
-// Radius (in grid units) added in v1.5.x — when > 0, the spawn point
-// is treated as a bubble and tokens landing here are scattered across
-// random tiles inside, avoiding overlaps with existing tokens.
-db.query(`ALTER TABLE map_spawn_points ADD COLUMN IF NOT EXISTS radius INTEGER DEFAULT 0`)
-  .catch(err => console.error('map_spawn_points.radius migration error:', err));
 db.query(`ALTER TABLE maps ADD COLUMN IF NOT EXISTS spawn_radius INTEGER DEFAULT 0`)
   .catch(err => console.error('maps.spawn_radius migration error:', err));
 

@@ -43,6 +43,10 @@ cp backend/Dockerfile    "$RELEASE_DIR/backend/"
 cp backend/package.json  "$RELEASE_DIR/backend/"
 cp backend/package-lock.json "$RELEASE_DIR/backend/" 2>/dev/null || true
 rsync -a --exclude='node_modules' --exclude='dist' backend/src/ "$RELEASE_DIR/backend/src/"
+# Default terrain SVGs — auto-seeded into the global terrain library
+# on first startup. The Dockerfile COPYs this directory into the
+# container, so it has to ship in the release zip too.
+rsync -a backend/terrain-defaults/ "$RELEASE_DIR/backend/terrain-defaults/"
 
 # --- frontend (source + Dockerfile + config, no node_modules/dist) ---
 mkdir -p "$RELEASE_DIR/frontend"

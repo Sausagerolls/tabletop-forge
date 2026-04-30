@@ -3,7 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const { imageSizeFromFile } = require('image-size');
+const { imageSize } = require('image-size');
 const db = require('../db');
 
 const router = express.Router();
@@ -113,11 +113,14 @@ router.post('/', upload.single('image'), async (req, res) => {
     const imagePath = `maps/${req.file.filename}`;
     const filePath = req.file.path;
 
-    // Detect natural image dimensions
+    // Detect natural image dimensions. The package exports `imageSize`
+    // (sync, takes a Buffer/Uint8Array); the older `imageSizeFromFile`
+    // export was removed. Read the file, parse, fall back to defaults.
     let imgWidth = 2000, imgHeight = 1500;
     try {
-      const dims = await imageSizeFromFile(filePath);
-      if (dims.width && dims.height) {
+      const buf = fs.readFileSync(filePath);
+      const dims = imageSize(buf);
+      if (dims && dims.width && dims.height) {
         imgWidth = dims.width;
         imgHeight = dims.height;
       }

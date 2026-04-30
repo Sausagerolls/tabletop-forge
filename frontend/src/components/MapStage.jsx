@@ -351,7 +351,12 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
   const hpPct = token.max_hp > 0 ? Math.max(0, token.current_hp / token.max_hp) : 0;
   const isDead = token.is_dead;
   const fontSize = tokenNameFontSize;
-  const hpFontSize = Math.max(6, Math.round(fontSize / 2));
+  // HP text sits ~2px smaller than the bar's interior so the digits
+  // get vertical breathing room — Konva's verticalAlign 'middle' uses
+  // the full font height (ascender + descender) for centring, which
+  // visually shoves the cap-height portion toward the top edge when
+  // text height equals bar height.
+  const hpFontSize = Math.max(6, Math.round(fontSize / 2) - 2);
 
   // Position derived purely from props — no internal state to cause stale snaps
   const x = dragVisPos ? dragVisPos.x : offset.x + Number(token.grid_col) * gridSize;
@@ -455,7 +460,10 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
         const bW       = cardW - bPad * 2;
         const nameH    = fontSize + 2;
         const barOff   = nameH + 5;
-        const barH     = Math.max(4, Math.round(fontSize / 2));
+        // Bar height has 4px more than the bare font/2 so the HP text
+        // (rendered slightly smaller via hpFontSize) has room top and
+        // bottom regardless of Konva's font-box interpretation.
+        const barH     = Math.max(8, Math.round(fontSize / 2) + 4);
         const cardH    = barOff + barH + 5;
         // Filled-portion colour (green/orange/red) and the matching text
         // colour for letters that fall over it. Empty track (#1e293b) and
@@ -530,6 +538,10 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
                 boundary crosses a glyph, each half picks up the right
                 colour automatically. */}
             {hpText && (() => {
+              // Bar is ~4px taller than the text (see barH + hpFontSize
+              // above), so verticalAlign:'middle' has enough slack to
+              // visually centre regardless of how Konva measures the
+              // font box.
               const tProps = {
                 text: hpText,
                 x: barX, y: barY,
@@ -1425,6 +1437,23 @@ export default function MapStage({
   // Fired when the DM drags an existing named spawn-point glyph to a
   // new tile. Parent persists via the update_spawn_point socket event.
   onSpawnPointMove = null,
+  // Map-terrain rendering. Each item carries its library-joined
+  // metadata (lib_image_path, blocks_*, hide_until_revealed, etc.).
+  // Players never receive hidden terrain at the network layer, so
+  // every item we get here is renderable. The parent owns
+  // drag/resize/right-click callbacks below.
+  terrain = [],
+  onTerrainMove = null,
+  onTerrainResize = null,
+  onTerrainContextMenu = null,
+  // When non-null the DM is in "place from library" mode — clicking
+  // the canvas drops a piece at the click point.
+  pendingTerrain = null,
+  onTerrainPlace = null,
+  // The id of the currently-selected terrain (null = none). Used by
+  // the canvas to render resize handles around the selected piece.
+  selectedTerrainId = null,
+  onTerrainSelect = null,
 }) {
   const stageRef = useRef(null);
   const containerRef = useRef(null);
@@ -2906,6 +2935,42 @@ export default function MapStage({
   const [spawnPolyPreview, setSpawnPolyPreview] = useState(null);
   const onSpawnPointMoveRef = useRef(onSpawnPointMove);
   useEffect(() => { onSpawnPointMoveRef.current = onSpawnPointMove; }, [onSpawnPointMove]);
+  const terrainRef = useRef(terrain);
+  useEffect(() => { terrainRef.current = terrain; }, [terrain]);
+  const onTerrainMoveRef = useRef(onTerrainMove);
+  useEffect(() => { onTerrainMoveRef.current = onTerrainMove; }, [onTerrainMove]);
+  const onTerrainResizeRef = useRef(onTerrainResize);
+  useEffect(() => { onTerrainResizeRef.current = onTerrainResize; }, [onTerrainResize]);
+  const onTerrainContextMenuRef = useRef(onTerrainContextMenu);
+  useEffect(() => { onTerrainContextMenuRef.current = onTerrainContextMenu; }, [onTerrainContextMenu]);
+  const onTerrainPlaceRef = useRef(onTerrainPlace);
+  useEffect(() => { onTerrainPlaceRef.current = onTerrainPlace; }, [onTerrainPlace]);
+  const onTerrainSelectRef = useRef(onTerrainSelect);
+  useEffect(() => { onTerrainSelectRef.current = onTerrainSelect; }, [onTerrainSelect]);
+  const pendingTerrainRef = useRef(pendingTerrain);
+  useEffect(() => { pendingTerrainRef.current = pendingTerrain; }, [pendingTerrain]);
+  const selectedTerrainIdRef = useRef(selectedTerrainId);
+  useEffect(() => { selectedTerrainIdRef.current = selectedTerrainId; }, [selectedTerrainId]);
+
+  // HTMLImageElement cache keyed by lib_image_path so each terrain
+  // image only loads once across all instances.
+  const [terrainImages, setTerrainImages] = useState({});
+  useEffect(() => {
+    const need = new Set();
+    for (const t of terrain) if (t.lib_image_path) need.add(t.lib_image_path);
+    if (pendingTerrain?.lib_image_path) need.add(pendingTerrain.lib_image_path);
+    let cancelled = false;
+    for (const p of need) {
+      if (terrainImages[p]) continue;
+      const img = new window.Image();
+      img.src = `/uploads/${p}`;
+      img.onload = () => {
+        if (cancelled) return;
+        setTerrainImages((prev) => ({ ...prev, [p]: img }));
+      };
+    }
+    return () => { cancelled = true; };
+  }, [terrain, pendingTerrain]); // eslint-disable-line react-hooks/exhaustive-deps
   // Live drag preview for the spawn point being moved. Stage listening
   // is disabled at the Konva level (perf), so drag is implemented via
   // the container's native mousedown/move/up like tokens — see the
@@ -2950,6 +3015,67 @@ export default function MapStage({
         x: (clientX - rect.left - posRef.current.x) / scaleRef.current,
         y: (clientY - rect.top  - posRef.current.y) / scaleRef.current,
       };
+    }
+
+    // World → piece-local-unrotated frame transform. Reverses the
+    // Group's center-pivot rotation so we can hit-test and drag in
+    // the piece's natural [0,0]–[w,h] coordinate space. Returns the
+    // local x/y plus the piece's pixel width/height for convenience.
+    function worldToLocal(mapX, mapY, t) {
+      const gs = gridSizeRef.current;
+      const ox = offsetXRef.current, oy = offsetYRef.current;
+      const w = Number(t.width)  * gs;
+      const h = Number(t.height) * gs;
+      const cx = ox + (Number(t.grid_col) + Number(t.width)  / 2) * gs;
+      const cy = oy + (Number(t.grid_row) + Number(t.height) / 2) * gs;
+      const θ = (Number(t.rotation) || 0) * Math.PI / 180;
+      const dx = mapX - cx;
+      const dy = mapY - cy;
+      const cosA = Math.cos(-θ), sinA = Math.sin(-θ);
+      const lx = dx * cosA - dy * sinA;
+      const ly = dx * sinA + dy * cosA;
+      return { x: lx + w / 2, y: ly + h / 2, w, h };
+    }
+
+    // Resize / rotate handle hit-test for the currently-selected
+    // terrain piece. Returns 'br' / 'r' / 'b' / 'rotate' or null.
+    // All math runs in the piece's local frame via worldToLocal.
+    // Rotate handle stub-length scales with the piece's height so it
+    // shrinks alongside the artwork at zoom-out — keeps the handle
+    // visually anchored to the piece rather than floating in screen
+    // space.
+    function hitTerrainHandle(mapX, mapY) {
+      const id = selectedTerrainIdRef.current;
+      if (id == null) return null;
+      const t = (terrainRef.current || []).find((x) => x.id === id);
+      if (!t) return null;
+      const local = worldToLocal(mapX, mapY, t);
+      const r = 12 / scaleRef.current;
+      const rotOffset = Math.max(local.h * 0.18, 8);
+      const handles = [
+        { id: 'rotate', x: local.w / 2, y: -rotOffset },
+        { id: 'br',     x: local.w,     y: local.h     },
+        { id: 'r',      x: local.w,     y: local.h / 2 },
+        { id: 'b',      x: local.w / 2, y: local.h     },
+      ];
+      for (const h of handles) {
+        if (Math.abs(local.x - h.x) <= r && Math.abs(local.y - h.y) <= r) return h.id;
+      }
+      return null;
+    }
+
+    // Topmost terrain piece under the cursor. Body hit-test runs in
+    // piece-local coords so a rotated rectangle still picks up
+    // correctly — clicking the rotated artwork hits, clicking outside
+    // its actual silhouette doesn't.
+    function hitTerrain(mapX, mapY) {
+      const list = terrainRef.current || [];
+      for (let i = list.length - 1; i >= 0; i--) {
+        const t = list[i];
+        const local = worldToLocal(mapX, mapY, t);
+        if (local.x >= 0 && local.x <= local.w && local.y >= 0 && local.y <= local.h) return t;
+      }
+      return null;
     }
 
     function hitToken(mapX, mapY) {
@@ -3010,6 +3136,11 @@ export default function MapStage({
     // is inside a spawn glyph; live preview updates on mousemove; the
     // committed grid coords go to the parent on mouseup.
     let spawnDrag = null; // { id, origCol, origRow }
+    // DM-only terrain drag. Same pattern as spawnDrag — pickup on
+    // mousedown, live preview on mousemove, commit on mouseup.
+    let terrainDrag = null; // { id, startCol, startRow, offsetCol, offsetRow }
+    let terrainResize = null; // { id, mode, startW, startH, startCol, startRow, startMapX, startMapY }
+    let terrainRotate = null; // { id, cx, cy } — center used for angle math
 
     function onMouseDown(e) {
       if (e.button === 2) {
@@ -3027,6 +3158,88 @@ export default function MapStage({
       const tool = activeToolRef.current;
       const mc   = toMap(e.clientX, e.clientY);
 
+      // DM-only: clicking off the selected terrain piece deselects
+      // it. Doesn't consume the click — whatever tool was active
+      // still gets to react.
+      if (!isPlayer && selectedTerrainIdRef.current != null
+          && !pendingTerrainRef.current
+          && !hitTerrain(mc.x, mc.y)
+          && !hitTerrainHandle(mc.x, mc.y)) {
+        onTerrainSelectRef.current?.(null);
+      }
+
+      // DM-only: terrain place mode. When the parent has set
+      // `pendingTerrain` (the DM clicked a library piece), the next
+      // canvas click drops it here. Skip every other tool path.
+      if (!isPlayer && pendingTerrainRef.current) {
+        const gs = gridSizeRef.current;
+        const ox = offsetXRef.current, oy = offsetYRef.current;
+        // Centre the new piece on the click — the parent gets the
+        // top-left corner since that's how we store grid_col/grid_row.
+        const w = Number(pendingTerrainRef.current.default_w) || 1;
+        const h = Number(pendingTerrainRef.current.default_h) || 1;
+        const col = (mc.x - ox) / gs - w / 2;
+        const row = (mc.y - oy) / gs - h / 2;
+        onTerrainPlaceRef.current?.(pendingTerrainRef.current, col, row);
+        return;
+      }
+
+      // DM-only: resize / rotate handle on the selected piece —
+      // checked before body-drag so a click on a handle resizes or
+      // rotates instead of moving.
+      if (!isPlayer && !hitToken(mc.x, mc.y)) {
+        const handle = hitTerrainHandle(mc.x, mc.y);
+        if (handle) {
+          const t = (terrainRef.current || []).find((x) => x.id === selectedTerrainIdRef.current);
+          if (t) {
+            if (handle === 'rotate') {
+              const gs = gridSizeRef.current;
+              const ox = offsetXRef.current, oy = offsetYRef.current;
+              terrainRotate = {
+                id: t.id,
+                cx: ox + (Number(t.grid_col) + Number(t.width)  / 2) * gs,
+                cy: oy + (Number(t.grid_row) + Number(t.height) / 2) * gs,
+              };
+            } else {
+              terrainResize = {
+                id: t.id,
+                mode: handle,
+                startW: Number(t.width),
+                startH: Number(t.height),
+                startCol: Number(t.grid_col),
+                startRow: Number(t.grid_row),
+                startMapX: mc.x,
+                startMapY: mc.y,
+              };
+            }
+            return;
+          }
+        }
+      }
+
+      // DM-only: drag terrain. Tokens take priority over terrain
+      // (so a token standing on a terrain piece is still grabbable).
+      if (!isPlayer && !hitToken(mc.x, mc.y)) {
+        const t = hitTerrain(mc.x, mc.y);
+        if (t) {
+          const gs = gridSizeRef.current;
+          const ox = offsetXRef.current, oy = offsetYRef.current;
+          const tx = ox + Number(t.grid_col) * gs;
+          const ty = oy + Number(t.grid_row) * gs;
+          terrainDrag = {
+            id: t.id,
+            startCol: Number(t.grid_col),
+            startRow: Number(t.grid_row),
+            // Offset from the top-left of the piece to the cursor — so
+            // the piece doesn't snap its corner to the cursor on drag.
+            offsetCol: (mc.x - tx) / gs,
+            offsetRow: (mc.y - ty) / gs,
+          };
+          onTerrainSelectRef.current?.(t.id);
+          return;
+        }
+      }
+
       // DM-only: if the click landed on a named spawn-point glyph,
       // start a spawn drag and skip every other tool/dispatch path so
       // the active tool doesn't simultaneously start panning, drawing
@@ -3042,6 +3255,7 @@ export default function MapStage({
           return;
         }
       }
+
 
       // ── Plugin click handlers ────────────────────────────────────────────
       // Plugins can intercept map clicks by registering in
@@ -3243,6 +3457,61 @@ export default function MapStage({
     function onMouseMove(e) {
       const tool = activeToolRef.current;
 
+      // Terrain rotate preview. Angle from the piece's centre to the
+      // cursor — 0° = up, clockwise positive (matches Konva).
+      if (terrainRotate) {
+        const mc = toMap(e.clientX, e.clientY);
+        const dx = mc.x - terrainRotate.cx;
+        const dy = mc.y - terrainRotate.cy;
+        let deg = Math.atan2(dx, -dy) * 180 / Math.PI;
+        // Hold Shift for 15° snap — handy for orthogonal alignment.
+        if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+        terrainRotate.lastRotation = deg;
+        onTerrainResizeRef.current?.(terrainRotate.id, { rotation: deg }, /* live */ true);
+        return;
+      }
+
+      // Terrain resize preview. Cursor's position in the piece's
+      // local (unrotated) frame drives the new width/height — so a
+      // rotated piece still resizes along its own axes, not the
+      // screen's. Top-left anchored.
+      if (terrainResize) {
+        const mc = toMap(e.clientX, e.clientY);
+        const t = (terrainRef.current || []).find((x) => x.id === terrainResize.id);
+        if (!t) return;
+        const local = worldToLocal(mc.x, mc.y, t);
+        const gs = gridSizeRef.current;
+        let newW = terrainResize.startW;
+        let newH = terrainResize.startH;
+        if (terrainResize.mode === 'br') {
+          newW = Math.max(0.25, local.x / gs);
+          newH = Math.max(0.25, local.y / gs);
+        } else if (terrainResize.mode === 'r') {
+          newW = Math.max(0.25, local.x / gs);
+        } else if (terrainResize.mode === 'b') {
+          newH = Math.max(0.25, local.y / gs);
+        }
+        terrainResize.lastW = newW;
+        terrainResize.lastH = newH;
+        onTerrainResizeRef.current?.(terrainResize.id, { width: newW, height: newH }, /* live */ true);
+        return;
+      }
+
+      // Terrain drag preview — fractional coords, no grid snap.
+      if (terrainDrag) {
+        const mc = toMap(e.clientX, e.clientY);
+        const gs = gridSizeRef.current;
+        const ox = offsetXRef.current, oy = offsetYRef.current;
+        const newCol = (mc.x - ox) / gs - terrainDrag.offsetCol;
+        const newRow = (mc.y - oy) / gs - terrainDrag.offsetRow;
+        terrainDrag.lastCol = newCol;
+        terrainDrag.lastRow = newRow;
+        // Trigger a re-render via the parent's optimistic state. Cheap
+        // enough at 60Hz; throttling can come later if needed.
+        onTerrainMoveRef.current?.(terrainDrag.id, newCol, newRow, /* live */ true);
+        return;
+      }
+
       // Spawn-point drag preview. Updates on every mousemove so the
       // bubble follows the cursor; final commit happens in onMouseUp.
       // Coords stay fractional — snapping to integer cells made
@@ -3412,6 +3681,41 @@ export default function MapStage({
         }
         spawnDrag = null;
         setSpawnDragVis(null);
+        return;
+      }
+      // Terrain rotate commit.
+      if (terrainRotate) {
+        if (terrainRotate.lastRotation !== undefined) {
+          onTerrainResizeRef.current?.(terrainRotate.id, { rotation: terrainRotate.lastRotation }, /* live */ false);
+        }
+        terrainRotate = null;
+        return;
+      }
+
+      // Terrain resize commit — fires the socket emit on drop so the
+      // server stops getting per-frame updates.
+      if (terrainResize) {
+        if (terrainResize.lastW !== undefined &&
+            (Math.abs(terrainResize.lastW - terrainResize.startW) > 0.05 ||
+             Math.abs(terrainResize.lastH - terrainResize.startH) > 0.05)) {
+          onTerrainResizeRef.current?.(terrainResize.id, {
+            width: terrainResize.lastW,
+            height: terrainResize.lastH,
+          }, /* live */ false);
+        }
+        terrainResize = null;
+        return;
+      }
+
+      // Terrain drag commit — only push to the server if the piece
+      // actually moved (saves DB churn on a single-click select).
+      if (terrainDrag) {
+        if (terrainDrag.lastCol !== undefined &&
+            (Math.abs(terrainDrag.lastCol - terrainDrag.startCol) > 0.05 ||
+             Math.abs(terrainDrag.lastRow - terrainDrag.startRow) > 0.05)) {
+          onTerrainMoveRef.current?.(terrainDrag.id, terrainDrag.lastCol, terrainDrag.lastRow, /* live */ false);
+        }
+        terrainDrag = null;
         return;
       }
       // End the right-click pan-drag without falling through to any
@@ -3745,6 +4049,16 @@ export default function MapStage({
         const tk = hitToken(mc.x, mc.y);
         if (tk) {
           onTokenContextMenuRef.current(tk.id, e.clientX, e.clientY);
+          return;
+        }
+      }
+      // Terrain right-click — DM-only menu (delete / reveal / edit).
+      // Falls through to the door-flip path below if no piece is hit.
+      if (onTerrainContextMenuRef.current && !isPlayer) {
+        const mc = toMap(e.clientX, e.clientY);
+        const t = hitTerrain(mc.x, mc.y);
+        if (t) {
+          onTerrainContextMenuRef.current(t.id, e.clientX, e.clientY);
           return;
         }
       }
@@ -4181,6 +4495,79 @@ export default function MapStage({
             })()}
           </Layer>
         )}
+
+        {/* Map terrain — placed pieces from the global library. Below
+            tokens so a creature standing on a tree renders on top. The
+            DM sees pieces flagged hide_until_revealed (until revealed)
+            with reduced opacity + a dashed border; players never see
+            them at all (filtered server-side). The Group rotates
+            around the piece's visual centre (offset = w/2, h/2). */}
+        <Layer listening={false}>
+          {terrain.map((t) => {
+            const img = terrainImages[t.lib_image_path];
+            if (!img) return null;
+            const x = offsetX + Number(t.grid_col) * gridSize;
+            const y = offsetY + Number(t.grid_row) * gridSize;
+            const w = Number(t.width)  * gridSize;
+            const h = Number(t.height) * gridSize;
+            const rot = Number(t.rotation) || 0;
+            const ghosted = !isPlayer && t.hide_until_revealed && !t.is_revealed;
+            const selected = !isPlayer && selectedTerrainId === t.id;
+            // Scale the rotate handle's stub length with the piece's
+            // visible size so it shrinks at zoom-out instead of
+            // floating off in screen space. Floor at 8px so it stays
+            // grabbable on tiny pieces.
+            const rotOffsetPx = Math.max(h * 0.18, 8);
+            return (
+              <Group
+                key={t.id}
+                x={x + w / 2}
+                y={y + h / 2}
+                offsetX={w / 2}
+                offsetY={h / 2}
+                rotation={rot}
+                opacity={ghosted ? 0.45 : 1}
+              >
+                <KonvaImage image={img} width={w} height={h} />
+                {ghosted && (
+                  <Rect
+                    width={w}
+                    height={h}
+                    stroke="#a78bfa"
+                    strokeWidth={1.5}
+                    dash={[6, 4]}
+                    fill="rgba(167,139,250,0.06)"
+                  />
+                )}
+                {selected && (
+                  <Rect
+                    width={w}
+                    height={h}
+                    stroke="#06b6d4"
+                    strokeWidth={1.5}
+                    dash={[5, 3]}
+                  />
+                )}
+                {/* Resize + rotate handles — visual only; the actual
+                    hit-test runs in the DOM mousedown handler since
+                    the Stage has listening={false}. */}
+                {selected && (
+                  <>
+                    <Line
+                      points={[w / 2, 0, w / 2, -rotOffsetPx]}
+                      stroke="#06b6d4"
+                      strokeWidth={1.5 / scale}
+                    />
+                    <Circle x={w / 2} y={-rotOffsetPx} radius={6} fill="#22d3ee" stroke="#fff" strokeWidth={1.5} />
+                    <Circle x={w}     y={h}     radius={6} fill="#06b6d4" stroke="#fff" strokeWidth={1.5} />
+                    <Circle x={w}     y={h / 2} radius={5} fill="#06b6d4" stroke="#fff" strokeWidth={1.5} />
+                    <Circle x={w / 2} y={h}     radius={5} fill="#06b6d4" stroke="#fff" strokeWidth={1.5} />
+                  </>
+                )}
+              </Group>
+            );
+          })}
+        </Layer>
 
         {/* Submerged tokens — below the water canvas so they get distorted.
             DM sees them at reduced opacity to signal they are hidden from players. */}

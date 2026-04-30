@@ -666,6 +666,10 @@ export default function PlayerView() {
   // time socket events for the override map are merged into this
   // snapshot; events for any other map fall through to the session
   // state buckets above (where they're held until the override clears).
+  // Terrain pieces visible on the player's current effective map.
+  // Server filters out hidden-until-revealed pieces before they're
+  // sent here, so any item we receive is renderable.
+  const [terrain, setTerrain] = useState([]);
   const [overrideMap, setOverrideMap] = useState(null);
   const overrideMapRef = useRef(null);
   useEffect(() => { overrideMapRef.current = overrideMap; }, [overrideMap]);
@@ -992,6 +996,7 @@ export default function PlayerView() {
       // plugin manager UI; the DM resolves any issues from their side.
       loadPlugins({ context: { sessionId: state.session.id, role: 'player', socket } });
       setTokens(state.tokens.filter((t) => !t.is_hidden));
+      setTerrain(state.terrain || []);
       // Pick up our own DM-set override on join. The server keys these
       // by player name, so a reconnect with the same name re-applies
       // automatically.
@@ -1187,7 +1192,16 @@ export default function PlayerView() {
       patchOverrideToken(tokenId, (t) => ({ ...t, nickname }));
     });
 
-    socket.on('map_changed', async ({ map, walls: newWalls, doors: newDoors, lights: newLights, tokens: newTokens, magicalDarkness: newDarkness }) => {
+    // Live terrain sync — server filters hidden pieces server-side, so
+    // any update that lands here is meant for us. No-op if the piece
+    // isn't on our currently-rendered map (added/updated will still
+    // arrive after a map switch via map_changed).
+    socket.on('terrain_added',   ({ terrain: t }) => setTerrain(prev => prev.some(x => x.id === t.id) ? prev : [...prev, t]));
+    socket.on('terrain_updated', ({ terrain: t }) => setTerrain(prev => prev.map(x => x.id === t.id ? t : x)));
+    socket.on('terrain_removed', ({ id })          => setTerrain(prev => prev.filter(x => x.id !== id)));
+
+    socket.on('map_changed', async ({ map, walls: newWalls, doors: newDoors, lights: newLights, tokens: newTokens, magicalDarkness: newDarkness, terrain: newTerrain }) => {
+      setTerrain(newTerrain || []);
       // If our own token sits on a map other than the one the DM just
       // switched to, we'll be auto-following our token's map — and
       // visually nothing should change for us. Pre-fetch our token's
@@ -1807,6 +1821,7 @@ export default function PlayerView() {
           currentCombatTokenId={currentCombatTokenId}
           onMeasureChange={(meas) => socket.emit('measure_update', { meas, color: userColors[name] || '#60a5fa' })}
           remoteMeasurements={remoteMeasurements}
+          terrain={terrain}
         />
 
         {/* Top bar */}

@@ -5,11 +5,13 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const { imageSize } = require('image-size');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const db = require('./db');
 
 const mapsRouter = require('./routes/maps');
+const terrainRouter = require('./routes/terrain');
 const makeCreaturesRouter = require('./routes/creatures');
 const sessionsRouter = require('./routes/sessions');
 const aiRouter = require('./routes/ai');
@@ -133,6 +135,7 @@ app.delete('/api/sounds/*', (req, res) => {
 });
 
 app.use('/api/maps', mapsRouter);
+app.use('/api/terrain', terrainRouter);
 app.use('/api/creatures', makeCreaturesRouter(io));
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/ai', aiRouter);
@@ -198,6 +201,185 @@ db.query(`
 
 db.query(`ALTER TABLE maps ADD COLUMN IF NOT EXISTS spawn_radius INTEGER DEFAULT 0`)
   .catch(err => console.error('maps.spawn_radius migration error:', err));
+
+// ─── Terrain library + placed instances ──────────────────────────────────────
+// Library is global (not per-session) — DM-curated reusable pieces. The
+// shipping defaults (rock wall / rubble / tree) are auto-seeded on first
+// startup so a fresh install has something to drop on the map.
+// Chain CREATE map_terrain after CREATE terrain_library — the FK on
+// library_id needs terrain_library to exist first. Seed runs once both
+// are in place so the row inserts can be referenced cleanly.
+db.query(`
+  CREATE TABLE IF NOT EXISTS terrain_library (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(120) NOT NULL DEFAULT '',
+    image_path VARCHAR(500) NOT NULL,
+    default_w FLOAT NOT NULL DEFAULT 1,
+    default_h FLOAT NOT NULL DEFAULT 1,
+    blocks_vision BOOLEAN DEFAULT false,
+    blocks_light BOOLEAN DEFAULT false,
+    blocks_movement BOOLEAN DEFAULT false,
+    hide_until_revealed BOOLEAN DEFAULT false,
+    custom_walls JSONB,
+    is_default BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT NOW()
+  )
+`)
+  .then(() => db.query(`
+    CREATE TABLE IF NOT EXISTS map_terrain (
+      id SERIAL PRIMARY KEY,
+      map_id INTEGER REFERENCES maps(id) ON DELETE CASCADE,
+      library_id INTEGER REFERENCES terrain_library(id) ON DELETE SET NULL,
+      grid_col FLOAT NOT NULL DEFAULT 0,
+      grid_row FLOAT NOT NULL DEFAULT 0,
+      width FLOAT NOT NULL DEFAULT 1,
+      height FLOAT NOT NULL DEFAULT 1,
+      rotation FLOAT NOT NULL DEFAULT 0,
+      is_revealed BOOLEAN DEFAULT true,
+      z_index INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `))
+  .then(() => db.query(`ALTER TABLE walls ADD COLUMN IF NOT EXISTS terrain_id INTEGER REFERENCES map_terrain(id) ON DELETE CASCADE`))
+  .then(() => db.query(`CREATE INDEX IF NOT EXISTS idx_walls_terrain ON walls(terrain_id)`))
+  .then(() => seedTerrainDefaults())
+  .then(() => backfillMapDimensions())
+  .then(() => regenAllTerrainWallsOnce())
+  .catch(err => console.error('terrain migration error:', err));
+
+// Earlier versions stored 2000/1500 placeholder dimensions when
+// `image-size` couldn't read the file (the package's API moved from
+// `imageSizeFromFile` to `imageSize`). The frontend renders terrain
+// using the loaded image's true natural dimensions, the backend
+// computes wall offsets using these stored values — a mismatch puts
+// the walls 10–30 px off the terrain. This pass re-derives the real
+// dimensions for any map that still has the placeholder.
+// One-shot startup pass that regenerates every terrain piece's walls
+// using the freshly-backfilled map dimensions. Walls created before the
+// dimension fix were positioned with the placeholder 2000×1500 offset
+// — running this rewrites them at the correct offset matching what the
+// frontend renders. No broadcast needed: there are no connected
+// clients yet at this point in startup.
+async function regenAllTerrainWallsOnce() {
+  try {
+    const rows = await db.query(
+      `SELECT mt.*, tl.custom_walls
+         FROM map_terrain mt
+         LEFT JOIN terrain_library tl ON mt.library_id = tl.id`
+    );
+    let regen = 0;
+    for (const t of rows.rows) {
+      await regenTerrainWallsStandalone(t);
+      regen++;
+    }
+    if (rows.rows.length) {
+      console.log(`Regenerated terrain walls for ${regen} placed piece${regen === 1 ? '' : 's'}.`);
+    }
+  } catch (err) {
+    console.error('regenAllTerrainWallsOnce error:', err);
+  }
+}
+
+async function regenTerrainWallsStandalone(t) {
+  if (!t || t.map_id == null) return;
+  await db.query('DELETE FROM walls WHERE terrain_id=$1', [t.id]);
+  const hidden = !!(t.hide_until_revealed && !t.is_revealed);
+  const hasCustom = Array.isArray(t.custom_walls) && t.custom_walls.length;
+  if (hidden || !hasCustom) return;
+  const mapRes = await db.query(
+    `SELECT m.width, m.height, COALESCE(s.grid_size, m.grid_size) AS grid_size
+       FROM maps m
+       LEFT JOIN sessions s ON m.session_id = s.id
+      WHERE m.id=$1`,
+    [t.map_id]
+  );
+  if (!mapRes.rows.length) return;
+  const m = mapRes.rows[0];
+  const gs = Number(m.grid_size) || 50;
+  const offsetX = gs > 0 ? (Number(m.width || 0)  % gs) / 2 : 0;
+  const offsetY = gs > 0 ? (Number(m.height || 0) % gs) / 2 : 0;
+  const px = offsetX + Number(t.grid_col) * gs;
+  const py = offsetY + Number(t.grid_row) * gs;
+  const pw = Number(t.width)  * gs;
+  const ph = Number(t.height) * gs;
+  const cx = px + pw / 2;
+  const cy = py + ph / 2;
+  const rad = (Number(t.rotation) || 0) * Math.PI / 180;
+  const cosA = Math.cos(rad), sinA = Math.sin(rad);
+  const { v4: uuidv4 } = require('uuid');
+  for (const poly of t.custom_walls) {
+    if (!Array.isArray(poly) || poly.length < 2) continue;
+    const flat = [];
+    for (const p of poly) {
+      const lx = Number(p.col) * pw - pw / 2;
+      const ly = Number(p.row) * ph - ph / 2;
+      flat.push(cx + lx * cosA - ly * sinA, cy + lx * sinA + ly * cosA);
+    }
+    await db.query(
+      `INSERT INTO walls (id, map_id, terrain_id, type, points)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [uuidv4(), t.map_id, t.id, poly.length >= 3 ? 'polygon' : 'line', JSON.stringify(flat)]
+    );
+  }
+}
+
+async function backfillMapDimensions() {
+  try {
+    const rows = await db.query('SELECT id, image_path FROM maps WHERE width=2000 AND height=1500');
+    for (const m of rows.rows) {
+      const filePath = path.join(__dirname, '../uploads', m.image_path);
+      if (!fs.existsSync(filePath)) continue;
+      try {
+        const buf = fs.readFileSync(filePath);
+        const dims = imageSize(buf);
+        if (dims && dims.width && dims.height) {
+          await db.query(
+            'UPDATE maps SET width=$1, height=$2 WHERE id=$3',
+            [dims.width, dims.height, m.id]
+          );
+          console.log(`Backfilled map ${m.id} dimensions: ${dims.width}x${dims.height}`);
+        }
+      } catch (err) {
+        console.warn(`Backfill failed for map ${m.id}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('backfillMapDimensions error:', err);
+  }
+}
+
+const TERRAIN_DEFAULTS_SRC = path.join(__dirname, '../terrain-defaults');
+const TERRAIN_UPLOADS_DIR  = path.join(__dirname, '../uploads/terrain');
+async function seedTerrainDefaults() {
+  try {
+    const existing = await db.query('SELECT 1 FROM terrain_library LIMIT 1');
+    if (existing.rows.length) return; // already seeded — never reseed
+    if (!fs.existsSync(TERRAIN_UPLOADS_DIR)) fs.mkdirSync(TERRAIN_UPLOADS_DIR, { recursive: true });
+    // [filename in terrain-defaults] → row to insert. Sizes are sensible
+    // grid-unit defaults; the DM can edit width/height per-instance once
+    // placed on a map.
+    const seeds = [
+      { file: 'rock-wall.svg', name: 'Rock Wall', w: 5,   h: 1,   blocks_vision: true,  blocks_light: true,  blocks_movement: true },
+      { file: 'rubble.svg',    name: 'Rubble',    w: 2.5, h: 2.5, blocks_vision: false, blocks_light: false, blocks_movement: true },
+      { file: 'tree.svg',      name: 'Tree',      w: 3,   h: 3.5, blocks_vision: false, blocks_light: false, blocks_movement: false },
+    ];
+    for (const s of seeds) {
+      const src = path.join(TERRAIN_DEFAULTS_SRC, s.file);
+      if (!fs.existsSync(src)) continue;
+      const dst = path.join(TERRAIN_UPLOADS_DIR, s.file);
+      if (!fs.existsSync(dst)) fs.copyFileSync(src, dst);
+      await db.query(
+        `INSERT INTO terrain_library
+           (name, image_path, default_w, default_h, blocks_vision, blocks_light, blocks_movement, is_default)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
+        [s.name, `terrain/${s.file}`, s.w, s.h, s.blocks_vision, s.blocks_light, s.blocks_movement]
+      );
+    }
+    console.log('Seeded default terrain library pieces.');
+  } catch (err) {
+    console.error('terrain seed error:', err);
+  }
+}
 
 // ─── DM-set per-player map overrides (Split the Party, native) ───────────────
 // One row per (session, player_name). When set, that player's view is pinned
@@ -355,6 +537,16 @@ async function getSessionState(sessionCode) {
       'SELECT * FROM map_spawn_points WHERE map_id=$1 ORDER BY created_at',
       [session.map_id]
     )).rows;
+    var terrainRows = (await db.query(
+      `SELECT mt.*, tl.image_path AS lib_image_path, tl.name AS lib_name,
+              tl.blocks_vision, tl.blocks_light, tl.blocks_movement,
+              tl.hide_until_revealed, tl.custom_walls
+         FROM map_terrain mt
+         LEFT JOIN terrain_library tl ON mt.library_id = tl.id
+        WHERE mt.map_id=$1
+        ORDER BY mt.z_index, mt.id`,
+      [session.map_id]
+    )).rows;
   } else {
     // No map selected — still load player tokens that have no map association
     const tokensRes = await db.query(
@@ -387,6 +579,7 @@ async function getSessionState(sessionCode) {
     magicalDarkness: darknessRows,
     dmMarkers: dmMarkersRows,
     spawnPoints: typeof spawnPointsRows !== 'undefined' ? spawnPointsRows : [],
+    terrain: typeof terrainRows !== 'undefined' ? terrainRows : [],
     spawnPoint: { col: session.map_spawn_col ?? 0, row: session.map_spawn_row ?? 0, radius: session.map_spawn_radius ?? 0 },
     playerMapOverrides: await loadPlayerMapOverrides(session.id),
   };
@@ -444,9 +637,13 @@ io.on('connection', (socket) => {
       // players see plugin-driven AOE effects (fire/water/etc.) on the map.
       // Templates are non-interactive for players — write-side socket
       // handlers all gate on socket.data.role === 'dm'.
+      // Players only see terrain that's revealed OR not flagged as
+      // hide_until_revealed. The DM sees everything (with a ghosted
+      // tint client-side for the still-hidden ones).
+      const visibleTerrain = (state.terrain || []).filter(t => !(t.hide_until_revealed && !t.is_revealed));
       const sendState = role === 'dm'
         ? { ...state, spellTemplates: sessionTemplates[sessionCode] || [] }
-        : { ...state, spellTemplates: sessionTemplates[sessionCode] || [], dmMarkers: [] };
+        : { ...state, spellTemplates: sessionTemplates[sessionCode] || [], dmMarkers: [], terrain: visibleTerrain };
       const colors = sessionUserColors[sessionCode] || {};
       const currentUsers = Array.from(sessionUsers[sessionCode].values());
       socket.emit('session_joined', { state: sendState, role, userColors: colors, users: currentUsers });
@@ -964,6 +1161,260 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
+  // ── Map terrain CRUD (DM only) ──────────────────────────────────────────
+  // Wall regeneration for a terrain piece. Called on every lifecycle
+  // event that could change the piece's geometry or its
+  // visibility-to-players (place / move / resize / reveal). Walls are
+  // tied to the terrain via walls.terrain_id with ON DELETE CASCADE,
+  // so a remove_terrain wipes them automatically (we still emit
+  // per-wall deletion events for the FoW renderer).
+  //
+  // - hide_until_revealed && !is_revealed → no walls (the piece is
+  //   invisible to players, so its walls shouldn't be either).
+  // - blocks_vision || blocks_light || blocks_movement || custom_walls
+  //   → walls. custom_walls (normalised 0-1 vertices relative to the
+  //     piece's bbox) wins over the auto-perimeter. Otherwise we drop
+  //     a single 'rect' wall around the piece's bounding box.
+  //
+  // Returns { added: [walls], deletedIds: [ids] } so the caller can
+  // broadcast surgical wall_added / wall_deleted events.
+  async function regenerateTerrainWalls(terrainRow) {
+    const t = terrainRow;
+    if (!t) return { added: [], deletedIds: [] };
+    // Capture existing walls so we can broadcast deletions before
+    // the new walls land.
+    const existing = await db.query(
+      'SELECT id FROM walls WHERE terrain_id=$1',
+      [t.id]
+    );
+    const deletedIds = existing.rows.map((r) => r.id);
+    await db.query('DELETE FROM walls WHERE terrain_id=$1', [t.id]);
+
+    // Walls are absent for hidden pieces — players never see them
+    // and the DM doesn't need their FoW to be partially blocked by
+    // a piece nobody can see yet. Walls only ever come from the
+    // piece's custom_walls list (set in the wall-editor modal). No
+    // auto-perimeter — DM owns the geometry explicitly.
+    const hidden = !!(t.hide_until_revealed && !t.is_revealed);
+    const hasCustom = Array.isArray(t.custom_walls) && t.custom_walls.length;
+    if (hidden || !hasCustom) {
+      return { added: [], deletedIds };
+    }
+
+    // Convert grid-unit terrain coords into the map-pixel coords that
+    // walls.points use. The frontend renders using the SESSION's
+    // grid_size (the DM-tweakable per-campaign value), not the map's
+    // initial grid_size — they can diverge if the DM resized the
+    // grid after upload. Match the session here so walls land where
+    // the artwork sits.
+    const mapRes = await db.query(
+      `SELECT m.width, m.height, COALESCE(s.grid_size, m.grid_size) AS grid_size
+         FROM maps m
+         LEFT JOIN sessions s ON m.session_id = s.id
+        WHERE m.id=$1`,
+      [t.map_id]
+    );
+    if (!mapRes.rows.length) return { added: [], deletedIds };
+    const m = mapRes.rows[0];
+    const gs = Number(m.grid_size) || 50;
+    const offsetX = gs > 0 ? (Number(m.width || 0)  % gs) / 2 : 0;
+    const offsetY = gs > 0 ? (Number(m.height || 0) % gs) / 2 : 0;
+    const px = offsetX + Number(t.grid_col) * gs;
+    const py = offsetY + Number(t.grid_row) * gs;
+    const pw = Number(t.width)  * gs;
+    const ph = Number(t.height) * gs;
+
+    const { v4: uuidv4 } = require('uuid');
+    const inserts = [];
+    // custom_walls is an array of polygons, each a list of {col, row}
+    // points in 0-1 normalised space relative to the piece's bbox.
+    // Transform each polygon to map-pixel coords with the piece's
+    // rotation applied around its centre — so a rotated piece's
+    // walls rotate with it.
+    const cx = px + pw / 2;
+    const cy = py + ph / 2;
+    const rad = (Number(t.rotation) || 0) * Math.PI / 180;
+    const cosA = Math.cos(rad), sinA = Math.sin(rad);
+    for (const poly of t.custom_walls) {
+      if (!Array.isArray(poly) || poly.length < 2) continue;
+      const flat = [];
+      for (const p of poly) {
+        // Local-frame offset from piece centre, in map pixels.
+        const lx = Number(p.col) * pw - pw / 2;
+        const ly = Number(p.row) * ph - ph / 2;
+        // Rotate then translate to world coords.
+        flat.push(cx + lx * cosA - ly * sinA, cy + lx * sinA + ly * cosA);
+      }
+      const id = uuidv4();
+      inserts.push({ id, type: poly.length >= 3 ? 'polygon' : 'line', points: flat });
+    }
+    const added = [];
+    for (const w of inserts) {
+      const r = await db.query(
+        `INSERT INTO walls (id, map_id, terrain_id, type, points)
+         VALUES ($1,$2,$3,$4,$5)
+         RETURNING *`,
+        [w.id, t.map_id, t.id, w.type, JSON.stringify(w.points)]
+      );
+      added.push(r.rows[0]);
+    }
+    return { added, deletedIds };
+  }
+  // Broadcasts wall mutations from a regenerateTerrainWalls() call to
+  // every socket in the session. Walls aren't filtered per-role —
+  // they exist once the piece is revealed; before that we don't insert
+  // them at all, so there's nothing to filter.
+  function broadcastWallChanges(sessionCode, { added, deletedIds }) {
+    if (!sessionCode) return;
+    for (const id of deletedIds) {
+      io.to(sessionCode).emit('wall_deleted', { wallId: id });
+    }
+    for (const w of added) {
+      io.to(sessionCode).emit('wall_added', { wall: w });
+    }
+  }
+  // Helper that fetches a terrain row joined with its library piece
+  // (so the broadcast carries the image_path, blocks_*, etc. that the
+  // client renderer needs without an extra round-trip).
+  async function fetchTerrainRow(id) {
+    const r = await db.query(
+      `SELECT mt.*, tl.image_path AS lib_image_path, tl.name AS lib_name,
+              tl.blocks_vision, tl.blocks_light, tl.blocks_movement,
+              tl.hide_until_revealed, tl.custom_walls
+         FROM map_terrain mt
+         LEFT JOIN terrain_library tl ON mt.library_id = tl.id
+        WHERE mt.id=$1`,
+      [id]
+    );
+    return r.rows[0] || null;
+  }
+  // Broadcasts a terrain event to everyone in the session, except hidden
+  // pieces (hide_until_revealed && !is_revealed) which are sent to the
+  // DM only — players don't get a 'terrain_added' for a piece they
+  // shouldn't know exists.
+  function broadcastTerrain(sessionCode, eventName, terrainRow) {
+    const room = io.sockets.adapter.rooms.get(sessionCode);
+    if (!room) return;
+    const isHidden = terrainRow?.hide_until_revealed && !terrainRow?.is_revealed;
+    for (const sid of room) {
+      const s = io.sockets.sockets.get(sid);
+      if (!s) continue;
+      if (isHidden && s.data?.role !== 'dm') continue;
+      s.emit(eventName, { terrain: terrainRow });
+    }
+  }
+
+  socket.on('place_terrain', async ({ libraryId, gridCol, gridRow, width, height }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const sessionRes = await db.query('SELECT id, map_id FROM sessions WHERE session_code=$1', [sessionCode]);
+      if (!sessionRes.rows.length) return;
+      const mapId = sessionRes.rows[0].map_id;
+      if (!mapId) return; // can't place without an active map
+      const lib = await db.query('SELECT * FROM terrain_library WHERE id=$1', [libraryId]);
+      if (!lib.rows.length) return;
+      const piece = lib.rows[0];
+      const w = Number(width)  || piece.default_w || 1;
+      const h = Number(height) || piece.default_h || 1;
+      const r = await db.query(
+        `INSERT INTO map_terrain (map_id, library_id, grid_col, grid_row, width, height)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [mapId, libraryId, Number(gridCol) || 0, Number(gridRow) || 0, w, h]
+      );
+      const row = await fetchTerrainRow(r.rows[0].id);
+      broadcastTerrain(sessionCode, 'terrain_added', row);
+      broadcastWallChanges(sessionCode, await regenerateTerrainWalls(row));
+    } catch (err) { console.error(err); }
+  });
+
+  socket.on('move_terrain', async ({ id, gridCol, gridRow }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      await db.query(
+        'UPDATE map_terrain SET grid_col=$1, grid_row=$2 WHERE id=$3',
+        [Number(gridCol) || 0, Number(gridRow) || 0, id]
+      );
+      const row = await fetchTerrainRow(id);
+      if (row) {
+        broadcastTerrain(sessionCode, 'terrain_updated', row);
+        broadcastWallChanges(sessionCode, await regenerateTerrainWalls(row));
+      }
+    } catch (err) { console.error(err); }
+  });
+
+  socket.on('resize_terrain', async ({ id, width, height, gridCol, gridRow, rotation }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const fields = [];
+      const values = [];
+      const push = (k, v) => { values.push(v); fields.push(`${k}=$${values.length}`); };
+      if (width !== undefined)  push('width',  Math.max(0.1, Number(width) || 1));
+      if (height !== undefined) push('height', Math.max(0.1, Number(height) || 1));
+      if (gridCol !== undefined) push('grid_col', Number(gridCol) || 0);
+      if (gridRow !== undefined) push('grid_row', Number(gridRow) || 0);
+      if (rotation !== undefined) push('rotation', Number(rotation) || 0);
+      if (!fields.length) return;
+      values.push(id);
+      await db.query(`UPDATE map_terrain SET ${fields.join(', ')} WHERE id=$${values.length}`, values);
+      const row = await fetchTerrainRow(id);
+      if (row) {
+        broadcastTerrain(sessionCode, 'terrain_updated', row);
+        broadcastWallChanges(sessionCode, await regenerateTerrainWalls(row));
+      }
+    } catch (err) { console.error(err); }
+  });
+
+  socket.on('reveal_terrain', async ({ id, isRevealed }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      await db.query('UPDATE map_terrain SET is_revealed=$1 WHERE id=$2', [!!isRevealed, id]);
+      const row = await fetchTerrainRow(id);
+      if (!row) return;
+      // Reveal: send terrain_added to non-DMs (they didn't have it).
+      // Hide: send terrain_removed to non-DMs (they shouldn't see it).
+      const room = io.sockets.adapter.rooms.get(sessionCode);
+      if (!room) return;
+      for (const sid of room) {
+        const s = io.sockets.sockets.get(sid);
+        if (!s) continue;
+        if (s.data?.role === 'dm') {
+          s.emit('terrain_updated', { terrain: row });
+        } else if (row.is_revealed || !row.hide_until_revealed) {
+          s.emit('terrain_added', { terrain: row });
+        } else {
+          s.emit('terrain_removed', { id });
+        }
+      }
+      // Walls follow visibility — regenerate so reveal grows the
+      // FoW occluders and hide pulls them.
+      broadcastWallChanges(sessionCode, await regenerateTerrainWalls(row));
+    } catch (err) { console.error(err); }
+  });
+
+  socket.on('remove_terrain', async ({ id }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      // Capture wall ids first so we can broadcast deletions; the
+      // ON DELETE CASCADE on terrain_id wipes them once we delete
+      // the terrain row.
+      const wallsRes = await db.query('SELECT id FROM walls WHERE terrain_id=$1', [id]);
+      const wallIds = wallsRes.rows.map((r) => r.id);
+      await db.query('DELETE FROM map_terrain WHERE id=$1', [id]);
+      io.to(sessionCode).emit('terrain_removed', { id });
+      for (const wid of wallIds) io.to(sessionCode).emit('wall_deleted', { wallId: wid });
+    } catch (err) { console.error(err); }
+  });
+
   // ── DM sends treasure items to a player's creature inventory ────────────
   socket.on('send_treasure', async ({ creatureId, items }) => {
     const sessionCode = socket.data.sessionCode;
@@ -1193,16 +1644,37 @@ io.on('connection', (socket) => {
         'SELECT * FROM map_spawn_points WHERE map_id=$1 ORDER BY created_at',
         [mapId]
       );
-      io.to(sessionCode).emit('map_changed', {
-        map,
-        walls: wallsRes.rows,
-        doors: doorsRes.rows,
-        lights: lightsRes.rows,
-        tokens: tokensRes.rows,
-        magicalDarkness: darknessRes.rows,
-        spawnPoints: spawnPointsRes.rows,
-        spawnPoint: { col: map.spawn_col ?? 0, row: map.spawn_row ?? 0, radius: map.spawn_radius ?? 0 },
-      });
+      const terrainRes = await db.query(
+        `SELECT mt.*, tl.image_path AS lib_image_path, tl.name AS lib_name,
+                tl.blocks_vision, tl.blocks_light, tl.blocks_movement,
+                tl.hide_until_revealed, tl.custom_walls
+           FROM map_terrain mt
+           LEFT JOIN terrain_library tl ON mt.library_id = tl.id
+          WHERE mt.map_id=$1
+          ORDER BY mt.z_index, mt.id`,
+        [mapId]
+      );
+      // Per-recipient terrain filter: players don't get hidden terrain.
+      const allTerrain = terrainRes.rows;
+      const visibleTerrain = allTerrain.filter(t => !(t.hide_until_revealed && !t.is_revealed));
+      const room = io.sockets.adapter.rooms.get(sessionCode);
+      if (room) {
+        for (const sid of room) {
+          const s = io.sockets.sockets.get(sid);
+          if (!s) continue;
+          s.emit('map_changed', {
+            map,
+            walls: wallsRes.rows,
+            doors: doorsRes.rows,
+            lights: lightsRes.rows,
+            tokens: tokensRes.rows,
+            magicalDarkness: darknessRes.rows,
+            spawnPoints: spawnPointsRes.rows,
+            terrain: s.data?.role === 'dm' ? allTerrain : visibleTerrain,
+            spawnPoint: { col: map.spawn_col ?? 0, row: map.spawn_row ?? 0, radius: map.spawn_radius ?? 0 },
+          });
+        }
+      }
     } catch (err) {
       console.error(err);
     }

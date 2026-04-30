@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" preserveAspectRatio="xMidYMid meet">
+  <!--
+    Top-down rubble pile. Soft elliptical ground shadow underneath, then
+    three depth bands of stones (back / mid / fore) with slightly cooler
+    colours in the back to fake atmospheric depth. Each stone has its
+    own radial-gradient fill so the highlight reads as raised.
+  -->
+  <defs>
+    <radialGradient id="rbA" cx="35%" cy="32%" r="80%">
+      <stop offset="0%" stop-color="#bcb5a7"/>
+      <stop offset="55%" stop-color="#857f72"/>
+      <stop offset="100%" stop-color="#4d4940"/>
+    </radialGradient>
+    <radialGradient id="rbB" cx="40%" cy="35%" r="80%">
+      <stop offset="0%" stop-color="#a39d8f"/>
+      <stop offset="55%" stop-color="#736e62"/>
+      <stop offset="100%" stop-color="#3f3c34"/>
+    </radialGradient>
+    <radialGradient id="rbC" cx="35%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#cac2b3"/>
+      <stop offset="55%" stop-color="#928c7e"/>
+      <stop offset="100%" stop-color="#56524a"/>
+    </radialGradient>
+    <radialGradient id="rbD" cx="35%" cy="32%" r="80%">
+      <stop offset="0%" stop-color="#a8a293"/>
+      <stop offset="55%" stop-color="#7a7468"/>
+      <stop offset="100%" stop-color="#3a3730"/>
+    </radialGradient>
+    <radialGradient id="rbDark" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#0d0c0a" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#0d0c0a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ground shadow under the whole pile -->
+  <ellipse cx="120" cy="178" rx="98" ry="32" fill="url(#rbDark)"/>
+
+  <!-- back band: smaller, cooler, less contrast -->
+  <g stroke="#262420" stroke-width="1.2" stroke-linejoin="round" opacity="0.92">
+    <path d="M44 88 L60 78 L78 84 L82 102 L62 110 L42 100 Z" fill="#7a766d"/>
+    <path d="M84 76 L106 70 L122 78 L120 96 L96 96 Z" fill="#857f72"/>
+    <path d="M126 80 L150 74 L168 84 L162 100 L138 100 Z" fill="#7a766d"/>
+    <path d="M170 86 L192 80 L208 92 L200 108 L176 106 Z" fill="#807a6c"/>
+    <!-- hint of small chips behind -->
+    <path d="M30 110 L42 108 L50 116 L40 122 L26 116 Z" fill="#6a665d"/>
+    <path d="M210 108 L218 102 L226 116 L214 124 L204 116 Z" fill="#6a665d"/>
+  </g>
+
+  <!-- mid band -->
+  <g stroke="#1d1b18" stroke-width="1.4" stroke-linejoin="round">
+    <path d="M30 116 L52 104 L78 110 L82 134 L60 142 L34 134 Z" fill="url(#rbA)"/>
+    <path d="M82 112 L116 100 L138 114 L130 138 L100 142 L80 130 Z" fill="url(#rbB)"/>
+    <path d="M134 110 L166 100 L186 114 L182 138 L152 142 L132 130 Z" fill="url(#rbC)"/>
+    <path d="M186 116 L208 108 L224 124 L218 142 L194 144 L182 132 Z" fill="url(#rbD)"/>
+  </g>
+
+  <!-- foreground band: largest, brightest highlights, more contrast -->
+  <g stroke="#1a1815" stroke-width="1.6" stroke-linejoin="round">
+    <path d="M22 156 L46 144 L72 152 L80 178 L58 192 L30 184 L14 168 Z" fill="url(#rbC)"/>
+    <path d="M76 154 L114 142 L140 156 L142 184 L114 198 L84 188 L70 174 Z" fill="url(#rbA)"/>
+    <path d="M138 152 L174 140 L200 156 L208 178 L186 196 L156 192 L138 178 Z" fill="url(#rbB)"/>
+    <path d="M204 158 L226 152 L234 178 L218 192 L196 184 L194 168 Z" fill="url(#rbD)"/>
+  </g>
+
+  <!-- foreground pebbles -->
+  <g stroke="#1a1815" stroke-width="1.2" stroke-linejoin="round">
+    <path d="M10 200 L26 196 L34 208 L20 214 Z" fill="#a39d8f"/>
+    <path d="M44 210 L66 204 L78 216 L58 222 Z" fill="#a39d8f"/>
+    <path d="M90 208 L112 202 L122 216 L102 222 Z" fill="#9a9486"/>
+    <path d="M134 210 L160 204 L168 218 L146 222 Z" fill="#a39d8f"/>
+    <path d="M178 208 L202 202 L210 216 L186 220 Z" fill="#9a9486"/>
+    <path d="M214 200 L226 196 L232 208 L218 212 Z" fill="#a39d8f"/>
+  </g>
+
+  <!-- highlights -->
+  <g fill="#ece6d4" opacity="0.5">
+    <ellipse cx="48" cy="120" rx="8" ry="2.6"/>
+    <ellipse cx="100" cy="116" rx="9" ry="2.8"/>
+    <ellipse cx="152" cy="116" rx="8" ry="2.6"/>
+    <ellipse cx="200" cy="124" rx="7" ry="2.4"/>
+    <ellipse cx="44" cy="160" rx="10" ry="3.2"/>
+    <ellipse cx="106" cy="158" rx="11" ry="3.4"/>
+    <ellipse cx="166" cy="158" rx="10" ry="3.2"/>
+    <ellipse cx="216" cy="166" rx="7" ry="2.4"/>
+  </g>
+
+  <!-- dark cracks -->
+  <g stroke="#1f1d1a" stroke-width="1" fill="none" opacity="0.65" stroke-linecap="round">
+    <path d="M52 124 L62 130"/>
+    <path d="M104 116 L116 122"/>
+    <path d="M156 122 L168 128"/>
+    <path d="M48 168 L60 174"/>
+    <path d="M114 168 L128 174"/>
+    <path d="M174 170 L188 178"/>
+    <path d="M32 182 L42 186"/>
+    <path d="M98 188 L112 194"/>
+  </g>
+
+  <!-- spec / tiny dust motes -->
+  <g fill="#1f1d1a" opacity="0.55">
+    <circle cx="60" cy="116" r="0.9"/>
+    <circle cx="118" cy="120" r="0.9"/>
+    <circle cx="170" cy="124" r="0.9"/>
+    <circle cx="64" cy="172" r="0.9"/>
+    <circle cx="124" cy="166" r="0.9"/>
+    <circle cx="180" cy="174" r="0.9"/>
+  </g>
+</svg>

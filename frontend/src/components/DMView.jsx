@@ -113,8 +113,8 @@ function hexOpacityToRgba(hex, opacity) {
   return `rgba(${r},${g},${b},${Number(opacity).toFixed(2)})`;
 }
 
-const DEFAULT_PANEL_TABS = ['map', 'library', 'spells', 'tokens', 'markers', 'treasure', 'handouts', 'session'];
-const PANEL_LABELS = { map: 'Map', library: 'Library', spells: 'Spells', tokens: 'Tokens', markers: 'Markers', treasure: 'Treasure', handouts: 'Handouts', session: 'Session' };
+const DEFAULT_PANEL_TABS = ['map', 'library', 'terrain', 'spells', 'tokens', 'markers', 'treasure', 'handouts', 'session'];
+const PANEL_LABELS = { map: 'Map', library: 'Library', terrain: 'Terrain', spells: 'Spells', tokens: 'Tokens', markers: 'Markers', treasure: 'Treasure', handouts: 'Handouts', session: 'Session' };
 const PANEL_TAB_ORDER_KEY = 'dndvtt_dm_panel_tab_order';
 
 const DM_MARKER_TYPES = [
@@ -1301,6 +1301,386 @@ function SpawnPointLabelModal({ onCancel, onSubmit }) {
   );
 }
 
+// Right-click menu for a placed terrain piece. Stays within the
+// existing context-menu pattern used by tokens — `fixed` positioned at
+// the click's viewport coords, dismissed on outside-click or Escape.
+function TerrainContextMenu({ menu, terrain, onClose, onDelete, onToggleReveal, onResize, onRotate }) {
+  useEffect(() => {
+    function onDown(e) {
+      const root = document.getElementById('terrain-context-menu-root');
+      if (root && !root.contains(e.target)) onClose();
+    }
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+  if (!terrain) return null;
+  const left = Math.min(menu.x, window.innerWidth - 220);
+  const top  = Math.min(menu.y, window.innerHeight - 240);
+  return (
+    <div
+      id="terrain-context-menu-root"
+      className="fixed z-50 bg-gray-900 border border-gray-700 rounded-lg shadow-xl text-sm text-gray-100 min-w-[200px] py-1"
+      style={{ left, top }}
+    >
+      <div className="px-3 py-2 border-b border-gray-800 text-gray-400 text-xs">
+        {terrain.lib_name || 'Terrain'}
+      </div>
+      <button
+        onClick={() => onResize(terrain.id, 0.85)}
+        className="w-full text-left px-3 py-2 hover:bg-gray-800"
+      >Shrink ×0.85</button>
+      <button
+        onClick={() => onResize(terrain.id, 1.18)}
+        className="w-full text-left px-3 py-2 hover:bg-gray-800"
+      >Grow ×1.18</button>
+      <button
+        onClick={() => onRotate(terrain.id, 90)}
+        className="w-full text-left px-3 py-2 hover:bg-gray-800"
+      >Rotate 90°</button>
+      {terrain.hide_until_revealed && (
+        <button
+          onClick={() => onToggleReveal(terrain.id, !terrain.is_revealed)}
+          className="w-full text-left px-3 py-2 hover:bg-gray-800"
+        >{terrain.is_revealed ? 'Hide from players' : 'Reveal to players'}</button>
+      )}
+      <button
+        onClick={() => onDelete(terrain.id)}
+        className="w-full text-left px-3 py-2 hover:bg-gray-800 text-red-400 border-t border-gray-800"
+      >Delete</button>
+    </div>
+  );
+}
+
+// Upload modal for adding a new terrain piece to the global library.
+// Image upload + the same flag set you can edit later.
+function TerrainUploadModal({ onCancel, onSaved }) {
+  const [name, setName] = useState('');
+  const [file, setFile] = useState(null);
+  const [defaultW, setDefaultW] = useState(2);
+  const [defaultH, setDefaultH] = useState(2);
+  const [hideUntilRevealed, setHideUntilRevealed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  function handleFileChange(e) {
+    const f = e.target.files?.[0] || null;
+    setFile(f);
+    if (!f) return;
+    // Auto-suggest the piece name from the filename's stem so the DM
+    // doesn't have to retype it. Keeps any value they've already typed.
+    if (!name) {
+      const stem = f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ');
+      setName(stem.replace(/\b\w/g, (c) => c.toUpperCase()));
+    }
+    // Derive default size from the image's natural aspect ratio so a
+    // wide rock-wall comes in as 6×1 instead of getting squashed into
+    // the 2×2 baseline. Browsers handle SVGs (with width/height or a
+    // viewBox), PNG/JPG/WebP/GIF via the standard Image() pipeline.
+    const url = URL.createObjectURL(f);
+    const img = new window.Image();
+    img.onload = () => {
+      const nw = img.naturalWidth;
+      const nh = img.naturalHeight;
+      URL.revokeObjectURL(url);
+      if (!nw || !nh) return;
+      const aspect = nw / nh;
+      const base = 4; // grid units along the longer axis
+      if (aspect >= 1) {
+        setDefaultW(+base.toFixed(2));
+        setDefaultH(+(base / aspect).toFixed(2));
+      } else {
+        setDefaultH(+base.toFixed(2));
+        setDefaultW(+(base * aspect).toFixed(2));
+      }
+    };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  }
+  async function submit() {
+    if (!file || !name.trim()) return;
+    setBusy(true);
+    const fd = new FormData();
+    fd.append('image', file);
+    fd.append('name', name.trim());
+    fd.append('default_w', String(defaultW));
+    fd.append('default_h', String(defaultH));
+    fd.append('hide_until_revealed', String(hideUntilRevealed));
+    try {
+      const r = await fetch('/api/terrain/library', { method: 'POST', body: fd });
+      if (r.ok) onSaved(await r.json());
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-[28rem] shadow-2xl space-y-3">
+        <div className="text-lg font-semibold text-gray-100">New Terrain Piece</div>
+        <div>
+          <div className="text-xs text-gray-400 mb-1">Name</div>
+          <input
+            value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Crumbling Pillar"
+            maxLength={120}
+            className="w-full px-3 py-1.5 rounded bg-gray-800 border border-gray-700 text-gray-100 focus:border-cyan-500 outline-none"
+          />
+        </div>
+        <div>
+          <div className="text-xs text-gray-400 mb-1">Image (PNG / JPG / SVG / WebP / GIF)</div>
+          <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp,.gif" onChange={handleFileChange} className="text-xs text-gray-300" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-xs text-gray-300">Default width
+            <input type="number" min="0.25" step="0.25" value={defaultW} onChange={(e) => setDefaultW(Number(e.target.value) || 1)} className="mt-0.5 w-full px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-100"/>
+          </label>
+          <label className="text-xs text-gray-300">Default height
+            <input type="number" min="0.25" step="0.25" value={defaultH} onChange={(e) => setDefaultH(Number(e.target.value) || 1)} className="mt-0.5 w-full px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-100"/>
+          </label>
+        </div>
+        <div className="space-y-1.5 pt-1">
+          <label className="flex items-center gap-2 text-xs text-gray-200"><input type="checkbox" checked={hideUntilRevealed} onChange={(e) => setHideUntilRevealed(e.target.checked)} /> Hidden from players by default (DM reveals later)</label>
+          <p className="text-[11px] text-gray-500 leading-snug">
+            Walls are drawn manually after upload — open the piece's <em>Edit</em> from the library to paint blocking polygons over the artwork.
+          </p>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onCancel} className="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-100">Cancel</button>
+          <button
+            onClick={submit}
+            disabled={busy || !file || !name.trim()}
+            className="px-4 py-2 rounded bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:text-gray-500 text-white"
+          >{busy ? 'Uploading…' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Edit modal — same fields as Upload minus the file input. PATCHes
+// the library row in place; placed instances pick up the new flags
+// next time the broadcast goes out (delete + re-place locks in any
+// new wall config in the meantime).
+function TerrainEditModal({ piece, onCancel, onSaved }) {
+  const [name, setName] = useState(piece.name);
+  const [defaultW, setDefaultW] = useState(piece.default_w);
+  const [defaultH, setDefaultH] = useState(piece.default_h);
+  const [hideUntilRevealed, setHideUntilRevealed] = useState(!!piece.hide_until_revealed);
+  const [customWalls, setCustomWalls] = useState(
+    Array.isArray(piece.custom_walls) ? piece.custom_walls : []
+  );
+  const [showWallEditor, setShowWallEditor] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function submit() {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/terrain/library/${piece.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim() || piece.name,
+          default_w: Number(defaultW) || 1,
+          default_h: Number(defaultH) || 1,
+          hide_until_revealed: hideUntilRevealed,
+          custom_walls: customWalls.length ? customWalls : null,
+        }),
+      });
+      if (r.ok) onSaved(await r.json());
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-[28rem] shadow-2xl space-y-3">
+        <div className="text-lg font-semibold text-gray-100">Edit “{piece.name}”</div>
+        <div>
+          <div className="text-xs text-gray-400 mb-1">Name</div>
+          <input
+            value={name} onChange={(e) => setName(e.target.value)}
+            maxLength={120}
+            className="w-full px-3 py-1.5 rounded bg-gray-800 border border-gray-700 text-gray-100 focus:border-cyan-500 outline-none"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-xs text-gray-300">Default width
+            <input type="number" min="0.25" step="0.25" value={defaultW} onChange={(e) => setDefaultW(Number(e.target.value) || 1)} className="mt-0.5 w-full px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-100"/>
+          </label>
+          <label className="text-xs text-gray-300">Default height
+            <input type="number" min="0.25" step="0.25" value={defaultH} onChange={(e) => setDefaultH(Number(e.target.value) || 1)} className="mt-0.5 w-full px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-100"/>
+          </label>
+        </div>
+        <div className="space-y-1.5">
+          <label className="flex items-center gap-2 text-xs text-gray-200"><input type="checkbox" checked={hideUntilRevealed} onChange={(e) => setHideUntilRevealed(e.target.checked)} /> Hidden until revealed</label>
+        </div>
+        <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-200 font-semibold">Walls</span>
+            <span className="text-[11px] text-gray-500">{customWalls.length} polygon{customWalls.length === 1 ? '' : 's'}</span>
+          </div>
+          <p className="text-[11px] text-gray-500 leading-snug">
+            Manually paint blocking polygons over the artwork. Stored relative to the piece's bbox so they scale with width/height. Delete a piece's walls by editing them and saving with none.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowWallEditor(true)}
+            className="w-full px-3 py-1.5 text-xs rounded bg-cyan-700 hover:bg-cyan-600 text-white"
+          >Edit walls…</button>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onCancel} className="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-100">Cancel</button>
+          <button
+            onClick={submit}
+            disabled={busy}
+            className="px-4 py-2 rounded bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:text-gray-500 text-white"
+          >{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+      {showWallEditor && (
+        <TerrainWallEditor
+          piece={piece}
+          initialWalls={customWalls}
+          onCancel={() => setShowWallEditor(false)}
+          onSave={(walls) => { setCustomWalls(walls); setShowWallEditor(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Wall-painter modal. The DM clicks vertices over the artwork to draw
+// blocking polygons; coordinates are normalised to the piece's bbox so
+// the walls scale with width/height when placed.
+function TerrainWallEditor({ piece, initialWalls, onCancel, onSave }) {
+  const [polygons, setPolygons] = useState(() =>
+    (Array.isArray(initialWalls) ? initialWalls : [])
+      .map((p) => Array.isArray(p) ? p.map((v) => ({ col: Number(v.col) || 0, row: Number(v.row) || 0 })) : [])
+      .filter((p) => p.length >= 2)
+  );
+  const [draft, setDraft] = useState([]);          // current in-progress polygon
+  const [cursor, setCursor] = useState(null);      // { x, y } in 0-1 space
+  const [imgSize, setImgSize] = useState({ w: 1, h: 1 });
+  // Canvas display size — fit the image into a 480×480 box, preserving
+  // aspect. Vertex coords are computed in 0-1 normalised space so the
+  // panel is resolution-independent.
+  const MAX = 480;
+  const aspect = imgSize.w / imgSize.h || 1;
+  const W = aspect >= 1 ? MAX : MAX * aspect;
+  const H = aspect >= 1 ? MAX / aspect : MAX;
+  function onImgLoad(e) {
+    setImgSize({ w: e.target.naturalWidth || 1, h: e.target.naturalHeight || 1 });
+  }
+  function onCanvasClick(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    setDraft((prev) => [...prev, { col: x, row: y }]);
+  }
+  function onCanvasMove(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCursor({ x: (e.clientX - rect.left) / rect.width, y: (e.clientY - rect.top) / rect.height });
+  }
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Enter') {
+        if (draft.length >= 3) {
+          setPolygons((prev) => [...prev, draft]);
+          setDraft([]);
+        }
+      } else if (e.key === 'Escape') {
+        if (draft.length) setDraft([]);
+        else onCancel();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [draft, onCancel]);
+  // SVG points strings — normalised → display pixel coords.
+  function ptsStr(poly) {
+    return poly.map((p) => `${p.col * W},${p.row * H}`).join(' ');
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl p-5 shadow-2xl space-y-3" style={{ minWidth: W + 64 }}>
+        <div className="flex items-center justify-between">
+          <div className="text-lg font-semibold text-gray-100">Edit walls — {piece.name}</div>
+          <span className="text-[11px] text-gray-400">
+            Click to add vertex · <kbd className="px-1.5 py-0.5 bg-gray-800 rounded">Enter</kbd> finish polygon · <kbd className="px-1.5 py-0.5 bg-gray-800 rounded">Esc</kbd> cancel
+          </span>
+        </div>
+        <div className="relative inline-block bg-gray-800 border border-gray-700 mx-auto" style={{ width: W, height: H }}>
+          <img
+            src={`/uploads/${piece.image_path}`}
+            alt={piece.name}
+            onLoad={onImgLoad}
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+          />
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            className="absolute inset-0 w-full h-full cursor-crosshair"
+            onClick={onCanvasClick}
+            onMouseMove={onCanvasMove}
+            onMouseLeave={() => setCursor(null)}
+          >
+            {/* finalised polygons */}
+            {polygons.map((poly, i) => (
+              <polygon
+                key={i}
+                points={ptsStr(poly)}
+                fill="rgba(6,182,212,0.25)"
+                stroke="#06b6d4"
+                strokeWidth={2}
+              />
+            ))}
+            {/* in-progress polygon */}
+            {draft.length > 0 && (
+              <>
+                <polyline
+                  points={[
+                    ...draft.map((p) => `${p.col * W},${p.row * H}`),
+                    cursor ? `${cursor.x * W},${cursor.y * H}` : '',
+                  ].filter(Boolean).join(' ')}
+                  fill="none"
+                  stroke="#06b6d4"
+                  strokeWidth={1.5}
+                  strokeDasharray="5 4"
+                />
+                {draft.map((p, i) => (
+                  <circle key={i} cx={p.col * W} cy={p.row * H} r={4} fill="#06b6d4" />
+                ))}
+              </>
+            )}
+          </svg>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs text-gray-400">
+            {polygons.length} polygon{polygons.length === 1 ? '' : 's'}{draft.length ? ` · ${draft.length}-vertex draft` : ''}
+          </div>
+          <div className="flex gap-2">
+            {polygons.length > 0 && (
+              <button
+                onClick={() => setPolygons([])}
+                className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200"
+              >Clear all</button>
+            )}
+            {polygons.length > 0 && (
+              <button
+                onClick={() => setPolygons((prev) => prev.slice(0, -1))}
+                className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200"
+              >Undo last</button>
+            )}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onCancel} className="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-100">Cancel</button>
+          <button
+            onClick={() => onSave(polygons)}
+            className="px-4 py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-white"
+          >Save walls</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DMView() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1641,6 +2021,18 @@ export default function DMView() {
   // pending coords here while the label modal is open. Submit creates
   // the row; cancel discards it.
   const [pendingSpawnPoint, setPendingSpawnPoint] = useState(null);
+  // ── Terrain state ────────────────────────────────────────────────
+  // `terrain` is the placed pieces on the current map (broadcast +
+  // hydrated from session_joined). `terrainLibrary` is the global
+  // catalogue of reusable pieces (fetched via REST). `pendingTerrain`
+  // holds a library piece while the DM is in click-to-place mode.
+  const [terrain, setTerrain] = useState([]);
+  const [terrainLibrary, setTerrainLibrary] = useState([]);
+  const [pendingTerrain, setPendingTerrain] = useState(null);
+  const [selectedTerrainId, setSelectedTerrainId] = useState(null);
+  const [terrainContextMenu, setTerrainContextMenu] = useState(null);
+  const [editingTerrainPiece, setEditingTerrainPiece] = useState(null); // library row being edited
+  const [showTerrainUpload, setShowTerrainUpload] = useState(false);
   const [placingMarkerType, setPlacingMarkerType] = useState(null); // type string when placing
   const [editingMarker, setEditingMarker] = useState(null);         // marker object being edited
 
@@ -1884,6 +2276,13 @@ export default function DMView() {
       setMagicalDarkness(state.magicalDarkness || []);
       setSpellTemplates(state.spellTemplates || []);
       setDmMarkers(state.dmMarkers || []);
+      setTerrain(state.terrain || []);
+      // Library is global, fetched once on join. Re-fetch on
+      // upload/edit/delete is handled inline by those actions.
+      fetch('/api/terrain/library')
+        .then((r) => r.ok ? r.json() : [])
+        .then((rows) => setTerrainLibrary(rows || []))
+        .catch(() => {});
       setPlayerMapOverrides(state.playerMapOverrides || {});
       // Seed the current map's spawn points immediately, then pull
       // every other map's points in one shot so the right-click submenu
@@ -2007,6 +2406,10 @@ export default function DMView() {
       if (selectedToken === tokenId) setSelectedToken(null);
     });
 
+    socket.on('terrain_added',   ({ terrain: t }) => setTerrain(prev => prev.some(x => x.id === t.id) ? prev : [...prev, t]));
+    socket.on('terrain_updated', ({ terrain: t }) => setTerrain(prev => prev.map(x => x.id === t.id ? t : x)));
+    socket.on('terrain_removed', ({ id })          => setTerrain(prev => prev.filter(x => x.id !== id)));
+
     socket.on('dm_marker_added',   ({ marker }) => setDmMarkers(prev => [...prev, marker]));
     socket.on('dm_marker_removed', ({ markerId }) => setDmMarkers(prev => prev.filter(m => m.id !== markerId)));
     socket.on('dm_marker_updated', ({ marker }) => setDmMarkers(prev => prev.map(m => m.id === marker.id ? marker : m)));
@@ -2068,7 +2471,9 @@ export default function DMView() {
       setTokens((prev) => prev.map((t) => t.id === tokenId ? { ...t, nickname } : t));
     });
 
-    socket.on('map_changed', ({ map, walls: newWalls, doors: newDoors, lights: newLights, tokens: newTokens, magicalDarkness: newDarkness, spawnPoint: newSpawn, spawnPoints: newSpawnPoints }) => {
+    socket.on('map_changed', ({ map, walls: newWalls, doors: newDoors, lights: newLights, tokens: newTokens, magicalDarkness: newDarkness, spawnPoint: newSpawn, spawnPoints: newSpawnPoints, terrain: newTerrain }) => {
+      setTerrain(newTerrain || []);
+      setSelectedTerrainId(null);
       setSession((prev) => map ? ({
         ...prev, map_id: map.id,
         map_image: map.image_path, map_name: map.name,
@@ -2084,8 +2489,11 @@ export default function DMView() {
         setAllSpawnPoints(prev => ({ ...prev, [map.id]: newSpawnPoints || [] }));
       }
       setDmMarkers([]);
-      // Sync grid size from the map record (important after dd2vtt import)
-      if (map?.grid_size) setGridSize(map.grid_size);
+      // Don't override the session's grid_size with the map's stored
+      // value here — sessions.grid_size is the source of truth (set
+      // via the DM's grid-size slider) and the backend resolves
+      // terrain wall coords against it. Overriding made walls land
+      // off the artwork after a map switch.
     });
 
     socket.on('wall_added',   ({ wall })   => setWalls(prev => [...prev, wall]));
@@ -2891,6 +3299,34 @@ export default function DMView() {
             remoteMeasurements={remoteMeasurements}
             tokenNameFontSize={tokenNameFontSize}
             onTokenContextMenu={(tokenId, x, y) => setTokenContextMenu({ tokenId, x, y })}
+            terrain={terrain}
+            pendingTerrain={pendingTerrain}
+            selectedTerrainId={selectedTerrainId}
+            onTerrainSelect={setSelectedTerrainId}
+            onTerrainPlace={(piece, col, row) => {
+              socket.emit('place_terrain', {
+                libraryId: piece.id,
+                gridCol: col,
+                gridRow: row,
+                width: piece.default_w,
+                height: piece.default_h,
+              });
+              setPendingTerrain(null);
+            }}
+            onTerrainMove={(id, col, row, live) => {
+              // Optimistic local update so the piece tracks the cursor
+              // without round-tripping per frame; server fires only on
+              // commit (live === false).
+              setTerrain(prev => prev.map(t => t.id === id ? { ...t, grid_col: col, grid_row: row } : t));
+              if (!live) socket.emit('move_terrain', { id, gridCol: col, gridRow: row });
+            }}
+            onTerrainResize={(id, patch, live) => {
+              // Optimistic local update every frame for smooth visual
+              // feedback; server emit only on commit (live === false).
+              setTerrain(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+              if (!live) socket.emit('resize_terrain', { id, ...patch });
+            }}
+            onTerrainContextMenu={(id, x, y) => setTerrainContextMenu({ id, x, y })}
             spawnPoints={allSpawnPoints[session?.map_id] || []}
             onSpawnNamedAdd={(shapePoints) => setPendingSpawnPoint({ shapePoints })}
             onSpawnPointMove={(id, col, row) => {
@@ -2969,6 +3405,61 @@ export default function DMView() {
               Click on the map to place <strong>{placingCreature.name}</strong>
               <button onClick={() => setPlacingCreature(null)} className="ml-3 opacity-70 hover:opacity-100"><XIcon /></button>
             </div>
+          )}
+
+          {pendingTerrain && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-cyan-700 text-white px-4 py-2 rounded-xl font-semibold text-sm shadow-lg z-30 flex items-center gap-2">
+              <span>Click map to place <strong>{pendingTerrain.name}</strong></span>
+              <button onClick={() => setPendingTerrain(null)} className="ml-2 opacity-70 hover:opacity-100"><XIcon /></button>
+            </div>
+          )}
+
+          {terrainContextMenu && (
+            <TerrainContextMenu
+              menu={terrainContextMenu}
+              terrain={terrain.find(t => t.id === terrainContextMenu.id) || null}
+              onClose={() => setTerrainContextMenu(null)}
+              onDelete={(id) => { socket.emit('remove_terrain', { id }); setTerrainContextMenu(null); }}
+              onToggleReveal={(id, isRevealed) => { socket.emit('reveal_terrain', { id, isRevealed }); setTerrainContextMenu(null); }}
+              onResize={(id, factor) => {
+                const t = terrain.find(x => x.id === id);
+                if (!t) return;
+                const newW = Math.max(0.1, Number(t.width) * factor);
+                const newH = Math.max(0.1, Number(t.height) * factor);
+                setTerrain(prev => prev.map(x => x.id === id ? { ...x, width: newW, height: newH } : x));
+                socket.emit('resize_terrain', { id, width: newW, height: newH });
+                setTerrainContextMenu(null);
+              }}
+              onRotate={(id, deg) => {
+                const t = terrain.find(x => x.id === id);
+                if (!t) return;
+                const next = (Number(t.rotation || 0) + deg) % 360;
+                setTerrain(prev => prev.map(x => x.id === id ? { ...x, rotation: next } : x));
+                socket.emit('resize_terrain', { id, rotation: next });
+                setTerrainContextMenu(null);
+              }}
+            />
+          )}
+
+          {showTerrainUpload && (
+            <TerrainUploadModal
+              onCancel={() => setShowTerrainUpload(false)}
+              onSaved={(row) => {
+                setTerrainLibrary(prev => [...prev, row]);
+                setShowTerrainUpload(false);
+              }}
+            />
+          )}
+
+          {editingTerrainPiece && (
+            <TerrainEditModal
+              piece={editingTerrainPiece}
+              onCancel={() => setEditingTerrainPiece(null)}
+              onSaved={(row) => {
+                setTerrainLibrary(prev => prev.map(p => p.id === row.id ? row : p));
+                setEditingTerrainPiece(null);
+              }}
+            />
           )}
           {placingMarkerType && (() => {
             const mtype = DM_MARKER_TYPES.find(m => m.type === placingMarkerType);
@@ -3790,6 +4281,87 @@ export default function DMView() {
             {/* ── LIBRARY TAB ── */}
             {panelTab === 'library' && (
               <CreatureLibrary sessionId={session.id} onAddToMap={handleAddToMap} aiSettings={aiSettings} />
+            )}
+
+            {/* ── TERRAIN TAB ── */}
+            {panelTab === 'terrain' && (
+              <div className="h-full overflow-y-auto p-4 space-y-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-dnd-gold">Terrain Library</h3>
+                  <button
+                    onClick={() => setShowTerrainUpload(true)}
+                    className="px-3 py-1 text-xs rounded bg-cyan-700 hover:bg-cyan-600 text-white"
+                    title="Upload a new terrain piece"
+                  >+ Create</button>
+                </div>
+                <p className="text-[11px] text-gray-500 leading-snug">
+                  Click a piece to enter place-mode, then click the map to drop it. Right-click a placed piece for delete / hide / edit. Drag any placed piece to move it. Players see your changes live.
+                </p>
+
+                {pendingTerrain && (
+                  <div className="bg-cyan-900/40 border border-cyan-700 rounded-lg px-3 py-2 flex items-center gap-2 text-xs text-cyan-100">
+                    <span className="flex-1 truncate">Click the map to place <strong>{pendingTerrain.name}</strong></span>
+                    <button
+                      onClick={() => setPendingTerrain(null)}
+                      className="text-cyan-300 hover:text-white text-xs"
+                    >Cancel</button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  {terrainLibrary.length === 0 ? (
+                    <div className="col-span-2 text-gray-500 text-xs text-center py-6">
+                      No terrain pieces yet.
+                    </div>
+                  ) : (
+                    terrainLibrary.map((p) => (
+                      <div
+                        key={p.id}
+                        className={`bg-gray-800 border ${pendingTerrain?.id === p.id ? 'border-cyan-500' : 'border-gray-700'} hover:border-cyan-500 rounded-lg overflow-hidden transition-colors`}
+                      >
+                        <button
+                          onClick={() => setPendingTerrain(p)}
+                          className="block w-full"
+                          title={`Place ${p.name}`}
+                        >
+                          <div className="aspect-square bg-gray-900 flex items-center justify-center p-2">
+                            <img
+                              src={`/uploads/${p.image_path}`}
+                              alt={p.name}
+                              className="max-w-full max-h-full object-contain pointer-events-none"
+                            />
+                          </div>
+                          <div className="px-2 py-1.5 text-left">
+                            <div className="text-xs text-white truncate">{p.name}</div>
+                            <div className="text-[10px] text-gray-500 flex gap-1.5 flex-wrap">
+                              {Array.isArray(p.custom_walls) && p.custom_walls.length > 0 && (
+                                <span title={`${p.custom_walls.length} wall polygon${p.custom_walls.length === 1 ? '' : 's'}`}>🧱{p.custom_walls.length}</span>
+                              )}
+                              {p.hide_until_revealed && <span title="Hidden by default">🙈</span>}
+                              <span className="ml-auto">{p.default_w}×{p.default_h}</span>
+                            </div>
+                          </div>
+                        </button>
+                        <div className="flex border-t border-gray-700">
+                          <button
+                            onClick={() => setEditingTerrainPiece(p)}
+                            className="flex-1 text-[11px] py-1 text-gray-400 hover:text-cyan-300 transition-colors"
+                          >Edit</button>
+                          <button
+                            onClick={() => {
+                              if (!window.confirm(`Delete "${p.name}" from the library? Already-placed instances on maps stay put but become unlinked.`)) return;
+                              fetch(`/api/terrain/library/${p.id}`, { method: 'DELETE' })
+                                .then(r => r.ok && setTerrainLibrary(prev => prev.filter(x => x.id !== p.id)))
+                                .catch(() => {});
+                            }}
+                            className="flex-1 text-[11px] py-1 text-gray-400 hover:text-red-400 border-l border-gray-700 transition-colors"
+                          >Delete</button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             )}
 
             {/* ── SPELLS TAB (DM library) ── */}

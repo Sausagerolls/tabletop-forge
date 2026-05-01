@@ -1379,7 +1379,7 @@ function MapImage({ src, onDims }) {
 
 export default function MapStage({
   mapUrl, mapWidth, mapHeight, gridSize,
-  tokens, isPlayer,
+  tokens, isPlayer, isSpectator = false,
   onTokenMove, selectedTokenId, onTokenSelect,
   onMapClick, placingToken,
   activeTool = 'pan',
@@ -1718,24 +1718,34 @@ export default function MapStage({
   // Stable object ref — prevents Token memo from seeing a new object on every render
   const tokenOffset = useMemo(() => ({ x: offsetX, y: offsetY }), [offsetX, offsetY]);
 
-  // Derive vision origins from the player's own token using the same mW/mH/offsetX/offsetY
-  // as the token rendering — keeps the fog bubble perfectly centred on the token.
+  // Derive vision origins. Player view: just their own token. Spectator
+  // view (TV): the union of every player token on the current map — the
+  // audience-facing display reveals everything any party member can see.
   const visOrigins = useMemo(() => {
-    if (!fogOfWar || !playerTokenId || !tokens) return [];
+    if (!fogOfWar || !tokens) return [];
+    function originsForToken(t) {
+      if (!t) return [];
+      const sz = TOKEN_SIZES[t.size] || TOKEN_SIZES.medium;
+      const cx = offsetX + Number(t.grid_col) * gridSize + (sz.gridW * gridSize) / 2;
+      const cy = offsetY + Number(t.grid_row) * gridSize + (sz.gridH * gridSize) / 2;
+      const sensesArr = Array.isArray(t.senses) && t.senses.length > 0
+        ? t.senses
+        : [{ type: t.vision_type || 'normal', range: t.vision_range || 0 }];
+      return sensesArr.map(s => ({
+        x: cx, y: cy,
+        visionType: s.type || 'normal',
+        visionRangePx: (s.range || 0) > 0 ? (s.range) * (gridSize / 5) : 0,
+      }));
+    }
+    if (isSpectator) {
+      return (tokens || [])
+        .filter(t => t.is_player && !t.is_hidden)
+        .flatMap(originsForToken);
+    }
+    if (!playerTokenId) return [];
     const myToken = tokens.find(t => t.id === playerTokenId);
-    if (!myToken) return [];
-    const sz = TOKEN_SIZES[myToken.size] || TOKEN_SIZES.medium;
-    const cx = offsetX + Number(myToken.grid_col) * gridSize + (sz.gridW * gridSize) / 2;
-    const cy = offsetY + Number(myToken.grid_row) * gridSize + (sz.gridH * gridSize) / 2;
-    const sensesArr = Array.isArray(myToken.senses) && myToken.senses.length > 0
-      ? myToken.senses
-      : [{ type: myToken.vision_type || 'normal', range: myToken.vision_range || 0 }];
-    return sensesArr.map(s => ({
-      x: cx, y: cy,
-      visionType: s.type || 'normal',
-      visionRangePx: (s.range || 0) > 0 ? (s.range) * (gridSize / 5) : 0,
-    }));
-  }, [fogOfWar, playerTokenId, tokens, offsetX, offsetY, gridSize]);
+    return originsForToken(myToken);
+  }, [fogOfWar, isSpectator, playerTokenId, tokens, offsetX, offsetY, gridSize]);
 
   // Visibility polygons for fog of war — per-origin, pass-based rendering.
   //
@@ -2239,14 +2249,12 @@ export default function MapStage({
     // colour and only modulate alpha, so the visible fog tint is set
     // entirely by THIS fillStyle.
     ctx.fillStyle = fowColor;
-    if (isPlayer) {
-      // Extend fog past the map edges so players can't infer the map's
-      // bounds from where the fog stops. The LOS polygon is bounded by
-      // the map boundary segments, so destination-out below only punches
-      // holes within the map — anything beyond mW/mH stays solid fog.
-      // Compute the visible world-space rect from the current pan/scale
-      // and pad with one stageSize on each side to cover panning before
-      // the next RAF.
+    if (isPlayer || isSpectator) {
+      // Extend fog past the map edges so neither players nor TV viewers
+      // can infer the map's bounds from where the fog stops. The LOS
+      // polygon is bounded by the map boundary segments, so the
+      // destination-out below only punches holes within the map —
+      // anything beyond mW/mH stays solid fog.
       const left   = -pos.x / scale - stageSize.w / scale;
       const top    = -pos.y / scale - stageSize.h / scale;
       const right  = (stageSize.w - pos.x) / scale + stageSize.w / scale;

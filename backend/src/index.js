@@ -492,12 +492,13 @@ function scatterSpawnPosition(centerCol, centerRow, radius, occupiedTiles, polyg
   const ox = Number(offsetX) || 0;
   const oy = Number(offsetY) || 0;
   // Buffer is measured from the token's CENTRE. A 1x1 token's visible
-  // edge sits half a grid cell from its centre, so the buffer has to
-  // be just past that — otherwise the token spawns with its edge on
-  // a wall and the LoS ray-cast clips both sides. 0.55 gives a thin
-  // safety margin past the visual edge; 8px floor keeps it sensible
-  // on tiny grids.
-  const wallBufferPx = Math.max(8, gs * 0.55);
+  // edge sits half a grid cell from its centre, so the buffer needs to
+  // be JUST past that — otherwise the token spawns with its edge on a
+  // wall and the LoS ray-cast clips both sides. We sit ~1px past the
+  // half-cell line; the previous gs*0.55 (a 5% overshoot on every wall)
+  // was wide enough to invalidate most cells in corridor-sized zones,
+  // forcing tokens onto the centroid fallback. 4px floor for tiny grids.
+  const wallBufferPx = Math.max(4, gs * 0.5 + 1);
   const allWalls = Array.isArray(walls) ? walls : [];
   const others = Array.isArray(occupiedTiles) ? occupiedTiles : [];
 
@@ -716,29 +717,36 @@ io.on('connection', (socket) => {
         }
       }
 
+      // Spectator: read-only TV view. No password, no character setup.
+      // All write-side handlers gate on role === 'dm', so a spectator
+      // socket can listen to broadcasts but cannot mutate anything.
+      const safeRole = (role === 'dm' || role === 'spectator') ? role : 'player';
+
       socket.join(sessionCode);
       socket.data.sessionCode = sessionCode;
-      socket.data.role = role;
-      socket.data.name = name;
+      socket.data.role = safeRole;
+      socket.data.name = name || (safeRole === 'spectator' ? 'TV' : 'Adventurer');
 
       if (!sessionUsers[sessionCode]) sessionUsers[sessionCode] = new Map();
-      sessionUsers[sessionCode].set(socket.id, { name, role });
+      sessionUsers[sessionCode].set(socket.id, { name: socket.data.name, role: safeRole });
 
       const state = await getSessionState(sessionCode);
-      // Strip DM markers from player state but include spell templates so
-      // players see plugin-driven AOE effects (fire/water/etc.) on the map.
-      // Templates are non-interactive for players — write-side socket
-      // handlers all gate on socket.data.role === 'dm'.
+      // Strip DM markers from non-DM state but include spell templates so
+      // both players and spectators see plugin-driven AOE effects on the
+      // map. Templates are non-interactive — write-side socket handlers
+      // gate on socket.data.role === 'dm'.
       // Players only see terrain that's revealed OR not flagged as
       // hide_until_revealed. The DM sees everything (with a ghosted
-      // tint client-side for the still-hidden ones).
+      // tint client-side for the still-hidden ones). Spectators get the
+      // same filtered slice as players — they're a TV-side audience
+      // view, not a back-channel into hidden content.
       const visibleTerrain = (state.terrain || []).filter(t => !(t.hide_until_revealed && !t.is_revealed));
-      const sendState = role === 'dm'
+      const sendState = safeRole === 'dm'
         ? { ...state, spellTemplates: sessionTemplates[sessionCode] || [] }
         : { ...state, spellTemplates: sessionTemplates[sessionCode] || [], dmMarkers: [], terrain: visibleTerrain };
       const colors = sessionUserColors[sessionCode] || {};
       const currentUsers = Array.from(sessionUsers[sessionCode].values());
-      socket.emit('session_joined', { state: sendState, role, userColors: colors, users: currentUsers });
+      socket.emit('session_joined', { state: sendState, role: safeRole, userColors: colors, users: currentUsers });
       // Re-attach the DM to whatever per-map ambients are currently
       // running so the DM panel can render the running list.
       if (role === 'dm') {
@@ -2617,8 +2625,20 @@ io.on('connection', (socket) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
 
-    const sides = parseInt(dice.replace('d', ''), 10);
-    if (isNaN(sides) || sides < 2) return;
+    // Defensive: the protocol-canonical form is the string "d20" but
+    // accept a bare integer too (the iOS app emitted the int and the
+    // unguarded .replace below was throwing inside the socket handler,
+    // which propagated and bounced every other client to reconnect).
+    let sides;
+    if (typeof dice === 'string') {
+      sides = parseInt(dice.replace('d', ''), 10);
+    } else if (typeof dice === 'number') {
+      sides = Math.floor(dice);
+    }
+    if (!Number.isFinite(sides) || sides < 2) return;
+    // Echo the canonical "dN" string back so all clients see the same
+    // shape regardless of which client raised the roll.
+    const diceStr = `d${sides}`;
 
     const rolls = [];
     for (let i = 0; i < (count || 1); i++) {
@@ -2629,7 +2649,7 @@ io.on('connection', (socket) => {
     io.to(sessionCode).emit('dice_rolled', {
       userName: socket.data.name,
       role: socket.data.role,
-      dice,
+      dice: diceStr,
       count: count || 1,
       modifier: modifier || 0,
       rolls,

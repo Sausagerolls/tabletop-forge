@@ -124,6 +124,11 @@ function buildPlayerUrl(token) {
     // current asset hashes referenced from the rebuilt index.html).
     _: String(Date.now()),
   });
+  // Pass the bound character id so PlayerView's myCreature fetch
+  // lights up — without it the bottom-left quick-access controls
+  // (Actions, Character, Quick Ref, Notes, Light) all stay hidden
+  // because they gate on `!!myCreature`.
+  if (token.creature_id) params.set('creatureId', String(token.creature_id));
   return `/play?${params.toString()}`;
 }
 

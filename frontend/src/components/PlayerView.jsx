@@ -1566,15 +1566,27 @@ export default function PlayerView() {
     return inv.some(item => item.name && item.name.toLowerCase().includes(keyword));
   }
 
-  // Append any inventory items that have sheds_light: true as custom presets
+  // Append any inventory items that have sheds_light: true as custom presets.
+  // Skip items whose name already matches a base preset's required-item
+  // keyword (Candle / Torch / Lantern) — otherwise adding a "Torch" item
+  // with sheds_light=true gives you two Torch entries in the light menu:
+  // one from the base preset, one from the custom inventory loop.
   const _inv = myCreature
     ? (Array.isArray(myCreature.inventory) ? myCreature.inventory
         : (typeof myCreature.inventory === 'string'
             ? (() => { try { return JSON.parse(myCreature.inventory); } catch { return []; } })()
             : []))
     : [];
+  const _baseKeywords = BASE_TORCH_PRESETS
+    .map(p => p.requiredItem)
+    .filter(Boolean)
+    .map(k => k.toLowerCase());
   const _customPresets = _inv
-    .filter(item => item.sheds_light && item.name)
+    .filter(item => {
+      if (!item.sheds_light || !item.name) return false;
+      const lowerName = item.name.toLowerCase();
+      return !_baseKeywords.some(kw => lowerName.includes(kw));
+    })
     .map(item => ({
       label: item.name,
       Icon: LightBulbIcon,
@@ -1600,12 +1612,22 @@ export default function PlayerView() {
     }
   }, [myCreature, torchPreset]);
 
+  // Preview mode: defer the first set_token_light emit until torchPreset
+  // has been synced from the token's actual light state. Without this gate
+  // the iframe mounts with torchPreset=0 (No Light), the emit effect below
+  // fires immediately, and the real player's torch gets clobbered to 0/0
+  // before the sync effect can read the token. After the initial sync,
+  // emits flow normally so the DM can flip the player's torch from the
+  // preview just like the player would.
+  const torchSyncedRef = useRef(!previewTokenId);
+
   useEffect(() => {
     if (!playerTokenId) return;
+    if (previewTokenId && !torchSyncedRef.current) return;
     const preset = TORCH_PRESETS[torchPreset] || TORCH_PRESETS[0];
     const { brightFt, dimFt, color } = preset;
     socket.emit('set_token_light', { tokenId: playerTokenId, brightFt, dimFt, color: color || '#fbbf24' });
-  }, [torchPreset, playerTokenId]);
+  }, [torchPreset, playerTokenId, previewTokenId]);
 
   // Re-emit light state when tab becomes visible — browser may have cleared the
   // canvas or socket may have briefly disconnected while the tab was hidden.
@@ -1613,6 +1635,7 @@ export default function PlayerView() {
     if (!playerTokenId) return;
     function onVisible() {
       if (document.visibilityState === 'visible') {
+        if (previewTokenId && !torchSyncedRef.current) return;
         const preset = TORCH_PRESETS[torchPreset] || TORCH_PRESETS[0];
         const { brightFt, dimFt } = preset;
         socket.emit('set_token_light', { tokenId: playerTokenId, brightFt, dimFt });
@@ -1620,7 +1643,32 @@ export default function PlayerView() {
     }
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [torchPreset, playerTokenId]);
+  }, [torchPreset, playerTokenId, previewTokenId]);
+
+  // Preview mode: on first token + creature load, snap torchPreset to the
+  // previewed token's actual light state so the bottom-left light pip
+  // reflects what the real player has equipped. Match by brightFt + dimFt
+  // against the preset table. Waits for myCreature too because custom
+  // shed-light inventory items only join TORCH_PRESETS once the creature
+  // loads — without that wait we'd snap to 0 even when the player is
+  // holding a custom magical lantern. Once the flag flips, ongoing token
+  // updates do NOT re-sync — that would race the DM's clicks (round-trip
+  // delays would briefly snap the icon back to the old value).
+  useEffect(() => {
+    if (!previewTokenId || !playerTokenId) return;
+    if (torchSyncedRef.current) return;
+    if (creatureIdParam && !myCreature) return;
+    const tok = tokens.find((t) => t.id === playerTokenId);
+    if (!tok) return;
+    const tokBright = Number(tok.token_light_bright) || 0;
+    const tokDim    = Number(tok.token_light_dim)    || 0;
+    const matchIdx = TORCH_PRESETS.findIndex(
+      (p) => Math.round(p.brightFt) === Math.round(tokBright)
+          && Math.round(p.dimFt)    === Math.round(tokDim)
+    );
+    if (matchIdx > 0) setTorchPreset(matchIdx);
+    torchSyncedRef.current = true;
+  }, [previewTokenId, playerTokenId, tokens, TORCH_PRESETS, creatureIdParam, myCreature]);
 
   function handleTokenMove(tokenId, col, row) {
     setTokens(prev => prev.map(t => t.id === tokenId ? { ...t, grid_col: col, grid_row: row } : t));

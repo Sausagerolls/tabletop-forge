@@ -2064,15 +2064,22 @@ export default function MapStage({
     if (!fogOfWar) return;
     const canvas = glowCanvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-    ctx.translate(pos.x, pos.y);
-    ctx.scale(scale, scale);
 
-    // Collect all light sources: static lights + token-attached lights
+    // Collect all light sources: static lights + token-attached lights.
+    // Hoisted out of the RAF loop so we don't re-build the array 60×/sec.
     const allGlowLights = [
-      ...lights.map(l => ({ x: l.x, y: l.y, brightR: l.bright_radius || 60, dimR: l.dim_radius || 120, color: l.color || '#fbbf24', dir: l.direction ?? 0, spread: l.spread_angle ?? 360 })),
+      ...lights.map(l => ({
+        // Stable per-light seed for the flicker phase. Two lights with the
+        // same coords would otherwise pulse in lockstep, so we mix the id
+        // (or a derived hash if the id is missing) into the seed.
+        seed: ((l.id != null ? Number(l.id) : (l.x * 13 + l.y * 31)) * 0.1731) % (Math.PI * 2),
+        x: l.x, y: l.y,
+        brightR: l.bright_radius || 60,
+        dimR: l.dim_radius || 120,
+        color: l.color || '#fbbf24',
+        dir: l.direction ?? 0,
+        spread: l.spread_angle ?? 360,
+      })),
       ...(tokens || []).flatMap(t => {
         const brightFt = Number(t.token_light_bright) || 0;
         const dimFt    = Number(t.token_light_dim)    || 0;
@@ -2083,7 +2090,14 @@ export default function MapStage({
         const oy = gridSize > 0 ? (mH % gridSize) / 2 : 0;
         const cx = ox + Number(t.grid_col) * gridSize + (sz.gridW * gridSize) / 2;
         const cy = oy + Number(t.grid_row) * gridSize + (sz.gridH * gridSize) / 2;
-        return [{ x: cx, y: cy, brightR: brightFt * pxPerFt, dimR: (dimFt || brightFt * 2) * pxPerFt, color: t.token_light_color || '#fbbf24', dir: 0, spread: 360 }];
+        return [{
+          seed: ((Number(t.id) || 0) * 0.2389 + 1.7) % (Math.PI * 2),
+          x: cx, y: cy,
+          brightR: brightFt * pxPerFt,
+          dimR: (dimFt || brightFt * 2) * pxPerFt,
+          color: t.token_light_color || '#fbbf24',
+          dir: 0, spread: 360,
+        }];
       }),
     ];
 
@@ -2094,40 +2108,80 @@ export default function MapStage({
     }
 
     // Walls and closed doors block light. Compute each light's LOS polygon so
-    // the glow can be clipped to the area the light actually reaches.
+    // the glow can be clipped to the area the light actually reaches. The
+    // polygon is keyed by (x,y) and walls — flickering the radius doesn't
+    // invalidate it, so the per-frame work stays cheap (just gradient draws).
     const glowWallSegs = [...wallsToSegments(walls), ...doorsToSegments(doors)];
     const glowCacheKey = `${walls.length}#${walls.map(w => `${w.id || ''}:${(w.points || []).length}`).join(',')}#${doors.map(d => `${d.id}:${d.is_open}:${(d.points || []).length}`).join(',')}#${mW}x${mH}`;
 
-    for (const { x, y, brightR, dimR, color, dir, spread } of allGlowLights) {
-      const outerR = Math.max(dimR, brightR);
-      if (outerR <= 0) continue;
-      const [r, g, b] = hexToRgb(color || '#fbbf24');
+    let raf = null;
+    let running = true;
+
+    function draw() {
+      if (!running) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.save();
-      clipToWedge(ctx, x, y, outerR, dir, spread);
-      // Clip to the light's own LOS polygon so walls block the glow.
-      // Cached: shared with the fog-canvas LOS work so panning/zooming/HP
-      // ticks don't trigger a fresh raycast for every light.
-      const lp = getCachedLightPoly(x, y, glowWallSegs, glowCacheKey);
-      if (lp && lp.length >= 4) {
+      ctx.translate(pos.x, pos.y);
+      ctx.scale(scale, scale);
+
+      // Candle-flame flicker model: two slow sines (sub-Hz) for a gentle
+      // breathing, two faster sines (~3–7 Hz) for the moment-to-moment
+      // wobble that reads as a real flame, and a small per-frame jitter
+      // for the bottom-octave noise. Phase offsets are derived from each
+      // light's own seed so adjacent torches don't pulse in unison.
+      const t = performance.now() / 1000;
+
+      for (const { seed, x, y, brightR, dimR, color, dir, spread } of allGlowLights) {
+        const flickerR =
+          1
+          + Math.sin(t * 6.7  + seed)         * 0.05
+          + Math.sin(t * 3.1  + seed * 1.7)   * 0.035
+          + Math.sin(t * 11.3 + seed * 0.5)   * 0.02
+          + (Math.random() - 0.5)             * 0.015;
+        // Brightness modulates a touch more than radius — the rim shimmer
+        // comes from the radial gradient, but the perceived flame
+        // intensity comes from the alpha at the centre.
+        const flickerA =
+          1
+          + Math.sin(t * 8.9  + seed * 2.3)   * 0.10
+          + Math.sin(t * 4.2  + seed)         * 0.05
+          + (Math.random() - 0.5)             * 0.04;
+
+        const fBrightR = Math.max(0, brightR * flickerR);
+        const fDimR    = Math.max(0, dimR    * flickerR);
+        const outerR   = Math.max(fDimR, fBrightR);
+        if (outerR <= 0) continue;
+        const [r, g, b] = hexToRgb(color || '#fbbf24');
+        ctx.save();
+        clipToWedge(ctx, x, y, outerR, dir, spread);
+        const lp = getCachedLightPoly(x, y, glowWallSegs, glowCacheKey);
+        if (lp && lp.length >= 4) {
+          ctx.beginPath();
+          ctx.moveTo(lp[0], lp[1]);
+          for (let i = 2; i < lp.length; i += 2) ctx.lineTo(lp[i], lp[i + 1]);
+          ctx.closePath();
+          ctx.clip();
+        }
+        const a = Math.max(0.5, Math.min(1.4, flickerA));
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, outerR);
+        grad.addColorStop(0,                            `rgba(${r}, ${g}, ${b}, ${(0.40 * a).toFixed(3)})`);
+        grad.addColorStop(fBrightR / outerR * 0.6,      `rgba(${r}, ${g}, ${b}, ${(0.24 * a).toFixed(3)})`);
+        grad.addColorStop(fBrightR / outerR,            `rgba(${r}, ${g}, ${b}, ${(0.12 * a).toFixed(3)})`);
+        grad.addColorStop(1,                            `rgba(${r}, ${g}, ${b}, 0.00)`);
         ctx.beginPath();
-        ctx.moveTo(lp[0], lp[1]);
-        for (let i = 2; i < lp.length; i += 2) ctx.lineTo(lp[i], lp[i + 1]);
-        ctx.closePath();
-        ctx.clip();
+        ctx.arc(x, y, outerR, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.restore();
       }
-      const grad = ctx.createRadialGradient(x, y, 0, x, y, outerR);
-      grad.addColorStop(0,                           `rgba(${r}, ${g}, ${b}, 0.40)`);
-      grad.addColorStop(brightR / outerR * 0.6,      `rgba(${r}, ${g}, ${b}, 0.24)`);
-      grad.addColorStop(brightR / outerR,            `rgba(${r}, ${g}, ${b}, 0.12)`);
-      grad.addColorStop(1,                           `rgba(${r}, ${g}, ${b}, 0.00)`);
-      ctx.beginPath();
-      ctx.arc(x, y, outerR, 0, Math.PI * 2);
-      ctx.fillStyle = grad;
-      ctx.fill();
+
       ctx.restore();
+      raf = requestAnimationFrame(draw);
     }
 
-    ctx.restore();
+    draw();
+    return () => { running = false; if (raf) cancelAnimationFrame(raf); };
   }, [fogOfWar, lights, tokens, pos, scale, mW, mH, stageSize, gridSize, visibilityTick, walls, doors]);
 
   // Cache per-fog-zone LOS polygons — expensive to compute so only done when
@@ -2208,8 +2262,24 @@ export default function MapStage({
           ctx.arc(pass.ox, pass.oy, pass.r, 0, Math.PI * 2);
           ctx.fill();
         } else if (pass.kind === 'light') {
+          // Candle-flame flicker: modulate the lit-area radius per frame
+          // so the visible edge wobbles in step with the glow canvas above.
+          // Seed off (lx,ly) so two adjacent torches don't pulse in sync.
+          // Radius is the only thing flickered here — the LOS clip polygon
+          // (pass.lightPts) is fixed because re-raycasting walls every frame
+          // would be catastrophic. The clip already extends to wall edges,
+          // so a wobbling radius just expands/contracts within that envelope.
+          const tNow = performance.now() / 1000;
+          const fSeed = (pass.lx * 0.013 + pass.ly * 0.029);
+          const flickerR =
+            1
+            + Math.sin(tNow * 6.7  + fSeed)         * 0.05
+            + Math.sin(tNow * 3.1  + fSeed * 1.7)   * 0.035
+            + Math.sin(tNow * 11.3 + fSeed * 0.5)   * 0.02;
+          const flickeredLr = Math.max(0, pass.lr * flickerR);
+
           // Clip to directional cone first (no-op for full circles)
-          clipToWedge(ctx, pass.lx, pass.ly, pass.lr, pass.ldir ?? 0, pass.lspread ?? 360);
+          clipToWedge(ctx, pass.lx, pass.ly, flickeredLr, pass.ldir ?? 0, pass.lspread ?? 360);
           // Also clip to the light source's own LOS polygon so walls block the light
           if (pass.lightPts && pass.lightPts.length >= 4) {
             ctx.beginPath();
@@ -2222,11 +2292,11 @@ export default function MapStage({
           // terminate in a hard ring. Alpha plateaus across the bright/dim zone
           // then ramps to 0 across a small outer band.
           ctx.globalAlpha = 1;
-          const feather = Math.max(8, pass.lr * 0.15);
-          const outerR = pass.lr + feather;
+          const feather = Math.max(8, flickeredLr * 0.15);
+          const outerR = flickeredLr + feather;
           const grad = ctx.createRadialGradient(pass.lx, pass.ly, 0, pass.lx, pass.ly, outerR);
           grad.addColorStop(0, `rgba(0,0,0,${pass.alpha})`);
-          grad.addColorStop(pass.lr / outerR, `rgba(0,0,0,${pass.alpha})`);
+          grad.addColorStop(flickeredLr / outerR, `rgba(0,0,0,${pass.alpha})`);
           grad.addColorStop(1, 'rgba(0,0,0,0)');
           ctx.fillStyle = grad;
           ctx.beginPath();

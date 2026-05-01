@@ -1646,18 +1646,22 @@ export default function PlayerView() {
     }
   }, [myCreature, torchPreset]);
 
-  // Preview mode: defer the first set_token_light emit until torchPreset
-  // has been synced from the token's actual light state. Without this gate
-  // the iframe mounts with torchPreset=0 (No Light), the emit effect below
-  // fires immediately, and the real player's torch gets clobbered to 0/0
-  // before the sync effect can read the token. After the initial sync,
-  // emits flow normally so the DM can flip the player's torch from the
-  // preview just like the player would.
-  const torchSyncedRef = useRef(!previewTokenId);
+  // Defer the first set_token_light emit until torchPreset has been
+  // synced from the token's actual light state. Without this gate, every
+  // page mount (hard refresh, tab restore, preview iframe boot) starts
+  // with torchPreset=0 (No Light), the emit effect below fires before
+  // the token row has even arrived from the server, and the player's
+  // saved torch gets clobbered to 0/0. Server-side state was correct;
+  // the client was just overwriting it on every reload.
+  // Applies to both normal players (so the DM's stored value survives a
+  // refresh) and the preview iframe (so opening the preview doesn't snuff
+  // out the real player's torch). Once the flag flips, all subsequent
+  // preset changes emit normally.
+  const torchSyncedRef = useRef(false);
 
   useEffect(() => {
     if (!playerTokenId) return;
-    if (previewTokenId && !torchSyncedRef.current) return;
+    if (!torchSyncedRef.current) return;
     const preset = TORCH_PRESETS[torchPreset] || TORCH_PRESETS[0];
     const { brightFt, dimFt, color, flicker } = preset;
     socket.emit('set_token_light', {
@@ -1666,7 +1670,7 @@ export default function PlayerView() {
       color: color || '#fbbf24',
       flicker: flicker !== false,
     });
-  }, [torchPreset, playerTokenId, previewTokenId]);
+  }, [torchPreset, playerTokenId]);
 
   // Re-emit light state when tab becomes visible — browser may have cleared the
   // canvas or socket may have briefly disconnected while the tab was hidden.
@@ -1674,7 +1678,7 @@ export default function PlayerView() {
     if (!playerTokenId) return;
     function onVisible() {
       if (document.visibilityState === 'visible') {
-        if (previewTokenId && !torchSyncedRef.current) return;
+        if (!torchSyncedRef.current) return;
         const preset = TORCH_PRESETS[torchPreset] || TORCH_PRESETS[0];
         const { brightFt, dimFt, flicker } = preset;
         socket.emit('set_token_light', {
@@ -1686,7 +1690,7 @@ export default function PlayerView() {
     }
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [torchPreset, playerTokenId, previewTokenId]);
+  }, [torchPreset, playerTokenId]);
 
   // Preview mode: on first token + creature load, snap torchPreset to the
   // previewed token's actual light state so the bottom-left light pip
@@ -1698,8 +1702,11 @@ export default function PlayerView() {
   // updates do NOT re-sync — that would race the DM's clicks (round-trip
   // delays would briefly snap the icon back to the old value).
   useEffect(() => {
-    if (!previewTokenId || !playerTokenId) return;
+    if (!playerTokenId) return;
     if (torchSyncedRef.current) return;
+    // Wait for myCreature when the URL points at a creature — its
+    // inventory may add custom shed-light presets we'd otherwise miss
+    // on the match below.
     if (creatureIdParam && !myCreature) return;
     const tok = tokens.find((t) => t.id === playerTokenId);
     if (!tok) return;
@@ -1711,7 +1718,7 @@ export default function PlayerView() {
     );
     if (matchIdx > 0) setTorchPreset(matchIdx);
     torchSyncedRef.current = true;
-  }, [previewTokenId, playerTokenId, tokens, TORCH_PRESETS, creatureIdParam, myCreature]);
+  }, [playerTokenId, tokens, TORCH_PRESETS, creatureIdParam, myCreature]);
 
   function handleTokenMove(tokenId, col, row) {
     setTokens(prev => prev.map(t => t.id === tokenId ? { ...t, grid_col: col, grid_row: row } : t));

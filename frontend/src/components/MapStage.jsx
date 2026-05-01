@@ -2239,7 +2239,22 @@ export default function MapStage({
     // colour and only modulate alpha, so the visible fog tint is set
     // entirely by THIS fillStyle.
     ctx.fillStyle = fowColor;
-    ctx.fillRect(0, 0, mW, mH);
+    if (isPlayer) {
+      // Extend fog past the map edges so players can't infer the map's
+      // bounds from where the fog stops. The LOS polygon is bounded by
+      // the map boundary segments, so destination-out below only punches
+      // holes within the map — anything beyond mW/mH stays solid fog.
+      // Compute the visible world-space rect from the current pan/scale
+      // and pad with one stageSize on each side to cover panning before
+      // the next RAF.
+      const left   = -pos.x / scale - stageSize.w / scale;
+      const top    = -pos.y / scale - stageSize.h / scale;
+      const right  = (stageSize.w - pos.x) / scale + stageSize.w / scale;
+      const bottom = (stageSize.h - pos.y) / scale + stageSize.h / scale;
+      ctx.fillRect(left, top, right - left, bottom - top);
+    } else {
+      ctx.fillRect(0, 0, mW, mH);
+    }
     // Punch fully-transparent visibility holes using destination-out.
     // CSS filter blur is applied to the canvas element itself (works on all browsers
     // including Safari). The canvas is oversized by 2*fowBlur on each side and offset

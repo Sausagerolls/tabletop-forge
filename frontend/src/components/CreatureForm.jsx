@@ -2114,6 +2114,16 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                             onChange={(e) => updateInventoryItem(i, 'light_color', e.target.value)}
                           />
                         </label>
+                        <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            className="accent-dnd-gold"
+                            checked={item.flicker !== false}
+                            onChange={(e) => updateInventoryItem(i, 'flicker', e.target.checked)}
+                          />
+                          <span>Flicker</span>
+                          <span className="text-gray-500">(off for magical/steady glow)</span>
+                        </label>
                       </div>
                     )}
                     <textarea

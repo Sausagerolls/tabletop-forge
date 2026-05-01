@@ -1425,12 +1425,13 @@ export default function PlayerView() {
         return { ...t, vision_type: vt, vision_range: vr };
       }));
     });
-    socket.on('token_light_changed', ({ tokenId, brightFt, dimFt, color }) => {
+    socket.on('token_light_changed', ({ tokenId, brightFt, dimFt, color, flicker }) => {
       setTokens(prev => prev.map(t => t.id === tokenId ? {
         ...t,
         token_light_bright: brightFt,
         token_light_dim: dimFt,
         ...(color !== undefined ? { token_light_color: color } : {}),
+        ...(flicker !== undefined ? { token_light_flicker: flicker } : {}),
       } : t));
     });
     socket.on('token_flying_changed', ({ tokenId, isFlying }) => {
@@ -1536,10 +1537,10 @@ export default function PlayerView() {
   }, []);
 
   const BASE_TORCH_PRESETS = [
-    { label: 'No Light', Icon: NoLightIcon,  brightFt: 0,  dimFt: 0,  requiredItem: null },
-    { label: 'Candle',   Icon: CandleIcon,   brightFt: 0,  dimFt: 5,  requiredItem: 'candle' },
-    { label: 'Torch',    Icon: TorchIcon,    brightFt: 20, dimFt: 40, requiredItem: 'torch' },
-    { label: 'Lantern',  Icon: LanternIcon,  brightFt: 30, dimFt: 60, requiredItem: 'lantern' },
+    { label: 'No Light', Icon: NoLightIcon,  brightFt: 0,  dimFt: 0,  requiredItem: null,      flicker: false },
+    { label: 'Candle',   Icon: CandleIcon,   brightFt: 0,  dimFt: 5,  requiredItem: 'candle',  flicker: true  },
+    { label: 'Torch',    Icon: TorchIcon,    brightFt: 20, dimFt: 40, requiredItem: 'torch',   flicker: true  },
+    { label: 'Lantern',  Icon: LanternIcon,  brightFt: 30, dimFt: 60, requiredItem: 'lantern', flicker: true  },
   ];
 
   // Look up the matching inventory item for a base preset so we can pull its
@@ -1593,6 +1594,9 @@ export default function PlayerView() {
       brightFt: Number(item.bright_ft) || 0,
       dimFt: Number(item.dim_ft) || 0,
       color: item.light_color || '#fbbf24',
+      // Custom shed-light items default to flicker on, off only when the
+      // item explicitly opts out via the inventory editor's Flicker toggle.
+      flicker: item.flicker !== false,
       requiredItem: null,
       custom: true,
     }));
@@ -1625,8 +1629,13 @@ export default function PlayerView() {
     if (!playerTokenId) return;
     if (previewTokenId && !torchSyncedRef.current) return;
     const preset = TORCH_PRESETS[torchPreset] || TORCH_PRESETS[0];
-    const { brightFt, dimFt, color } = preset;
-    socket.emit('set_token_light', { tokenId: playerTokenId, brightFt, dimFt, color: color || '#fbbf24' });
+    const { brightFt, dimFt, color, flicker } = preset;
+    socket.emit('set_token_light', {
+      tokenId: playerTokenId,
+      brightFt, dimFt,
+      color: color || '#fbbf24',
+      flicker: flicker !== false,
+    });
   }, [torchPreset, playerTokenId, previewTokenId]);
 
   // Re-emit light state when tab becomes visible — browser may have cleared the
@@ -1637,8 +1646,12 @@ export default function PlayerView() {
       if (document.visibilityState === 'visible') {
         if (previewTokenId && !torchSyncedRef.current) return;
         const preset = TORCH_PRESETS[torchPreset] || TORCH_PRESETS[0];
-        const { brightFt, dimFt } = preset;
-        socket.emit('set_token_light', { tokenId: playerTokenId, brightFt, dimFt });
+        const { brightFt, dimFt, flicker } = preset;
+        socket.emit('set_token_light', {
+          tokenId: playerTokenId,
+          brightFt, dimFt,
+          flicker: flicker !== false,
+        });
       }
     }
     document.addEventListener('visibilitychange', onVisible);

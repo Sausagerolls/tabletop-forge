@@ -2391,12 +2391,13 @@ export default function DMView() {
       setTokens((prev) => prev.map((t) => t.id === tokenId ? { ...t, conditions } : t));
     });
 
-    socket.on('token_light_changed', ({ tokenId, brightFt, dimFt, color }) => {
+    socket.on('token_light_changed', ({ tokenId, brightFt, dimFt, color, flicker }) => {
       setTokens(prev => prev.map(t => t.id === tokenId ? {
         ...t,
         token_light_bright: brightFt,
         token_light_dim: dimFt,
         ...(color !== undefined ? { token_light_color: color } : {}),
+        ...(flicker !== undefined ? { token_light_flicker: flicker } : {}),
       } : t));
     });
 
@@ -5806,6 +5807,16 @@ export default function DMView() {
                     />
                   </div>
                 </div>
+                <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="accent-dnd-gold"
+                    checked={light.flicker !== false}
+                    onChange={e => setEditingLight(l => ({ ...l, flicker: e.target.checked }))}
+                  />
+                  <span>Flicker like a flame</span>
+                  <span className="text-gray-500 ml-auto">off for sun / magical light</span>
+                </label>
               </div>
               <div className="flex gap-2 pt-1">
                 <button
@@ -5816,6 +5827,7 @@ export default function DMView() {
                     label: light.label,
                     direction: light.direction ?? 0,
                     spreadAngle: light.spread_angle ?? 360,
+                    flicker: light.flicker !== false,
                   })}
                   className="flex-1 bg-dnd-gold/80 hover:bg-dnd-gold text-gray-900 font-semibold py-1.5 rounded-lg text-sm transition-colors"
                 >

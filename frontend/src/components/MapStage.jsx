@@ -1840,7 +1840,7 @@ export default function MapStage({
       const cx = offsetX + Number(t.grid_col) * gridSize + (sz.gridW * gridSize) / 2;
       const cy = offsetY + Number(t.grid_row) * gridSize + (sz.gridH * gridSize) / 2;
       const pxPerFt = gridSize / FEET_PER_SQUARE;
-      return [{ x: cx, y: cy, bright_radius: brightFt * pxPerFt, dim_radius: dimFt * pxPerFt }];
+      return [{ x: cx, y: cy, bright_radius: brightFt * pxPerFt, dim_radius: dimFt * pxPerFt, flicker: t.token_light_flicker !== false }];
     });
 
     // Pre-compute each light source's own LOS polygon (walls/doors block light).
@@ -1885,7 +1885,7 @@ export default function MapStage({
       const rangeR = visionRangePx > 0 ? visionRangePx : 0;
 
       function lightPass(l, lp, alpha, lr) {
-        return { kind: 'light', alpha, lx: l.x, ly: l.y, lr, lightPts: lp, ldir: l.direction ?? 0, lspread: l.spread_angle ?? 360 };
+        return { kind: 'light', alpha, lx: l.x, ly: l.y, lr, lightPts: lp, ldir: l.direction ?? 0, lspread: l.spread_angle ?? 360, flicker: l.flicker !== false };
       }
       // Read an explicit radius from a light (respecting 0 as "none") with a
       // sensible fallback only when the field is missing entirely.
@@ -2079,6 +2079,9 @@ export default function MapStage({
         color: l.color || '#fbbf24',
         dir: l.direction ?? 0,
         spread: l.spread_angle ?? 360,
+        // DM-controlled per-light: false → render as a steady glow (sun
+        // shafts, magical continual flame, daylight spell, etc).
+        flicker: l.flicker !== false,
       })),
       ...(tokens || []).flatMap(t => {
         const brightFt = Number(t.token_light_bright) || 0;
@@ -2097,6 +2100,10 @@ export default function MapStage({
           dimR: (dimFt || brightFt * 2) * pxPerFt,
           color: t.token_light_color || '#fbbf24',
           dir: 0, spread: 360,
+          // Per-token flicker flag — defaults to true for legacy tokens
+          // (torches / lanterns) and turns off for inventory items the
+          // player has marked as steady (magical light, sunblade, etc).
+          flicker: t.token_light_flicker !== false,
         }];
       }),
     ];
@@ -2132,21 +2139,25 @@ export default function MapStage({
       // light's own seed so adjacent torches don't pulse in unison.
       const t = performance.now() / 1000;
 
-      for (const { seed, x, y, brightR, dimR, color, dir, spread } of allGlowLights) {
-        const flickerR =
-          1
-          + Math.sin(t * 6.7  + seed)         * 0.05
-          + Math.sin(t * 3.1  + seed * 1.7)   * 0.035
-          + Math.sin(t * 11.3 + seed * 0.5)   * 0.02
-          + (Math.random() - 0.5)             * 0.015;
+      for (const { seed, x, y, brightR, dimR, color, dir, spread, flicker } of allGlowLights) {
+        // Lights with flicker disabled render as steady glows — useful
+        // for sun shafts, magical continual flame, daylight spell, etc.
+        const flickerR = flicker
+          ? 1
+            + Math.sin(t * 6.7  + seed)         * 0.05
+            + Math.sin(t * 3.1  + seed * 1.7)   * 0.035
+            + Math.sin(t * 11.3 + seed * 0.5)   * 0.02
+            + (Math.random() - 0.5)             * 0.015
+          : 1;
         // Brightness modulates a touch more than radius — the rim shimmer
         // comes from the radial gradient, but the perceived flame
         // intensity comes from the alpha at the centre.
-        const flickerA =
-          1
-          + Math.sin(t * 8.9  + seed * 2.3)   * 0.10
-          + Math.sin(t * 4.2  + seed)         * 0.05
-          + (Math.random() - 0.5)             * 0.04;
+        const flickerA = flicker
+          ? 1
+            + Math.sin(t * 8.9  + seed * 2.3)   * 0.10
+            + Math.sin(t * 4.2  + seed)         * 0.05
+            + (Math.random() - 0.5)             * 0.04
+          : 1;
 
         const fBrightR = Math.max(0, brightR * flickerR);
         const fDimR    = Math.max(0, dimR    * flickerR);
@@ -2269,13 +2280,17 @@ export default function MapStage({
           // (pass.lightPts) is fixed because re-raycasting walls every frame
           // would be catastrophic. The clip already extends to wall edges,
           // so a wobbling radius just expands/contracts within that envelope.
+          // Lights with flicker disabled render with their stored radius
+          // unchanged — so sun shafts and magical lights have crisp,
+          // steady edges instead of the candle wobble.
           const tNow = performance.now() / 1000;
           const fSeed = (pass.lx * 0.013 + pass.ly * 0.029);
-          const flickerR =
-            1
-            + Math.sin(tNow * 6.7  + fSeed)         * 0.05
-            + Math.sin(tNow * 3.1  + fSeed * 1.7)   * 0.035
-            + Math.sin(tNow * 11.3 + fSeed * 0.5)   * 0.02;
+          const flickerR = pass.flicker !== false
+            ? 1
+              + Math.sin(tNow * 6.7  + fSeed)         * 0.05
+              + Math.sin(tNow * 3.1  + fSeed * 1.7)   * 0.035
+              + Math.sin(tNow * 11.3 + fSeed * 0.5)   * 0.02
+            : 1;
           const flickeredLr = Math.max(0, pass.lr * flickerR);
 
           // Clip to directional cone first (no-op for full circles)

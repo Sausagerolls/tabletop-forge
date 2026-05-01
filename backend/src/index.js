@@ -1680,20 +1680,22 @@ io.on('connection', (socket) => {
   });
 
   // ── Set token light source (player: their own token; DM: any) ────────────
-  socket.on('set_token_light', async ({ tokenId, brightFt, dimFt, color }) => {
+  socket.on('set_token_light', async ({ tokenId, brightFt, dimFt, color, flicker }) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
     try {
       const safeColor = typeof color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : '#fbbf24';
+      const safeFlicker = flicker !== false;
       await db.query(
-        'UPDATE session_tokens SET token_light_bright=$1, token_light_dim=$2, token_light_color=$3 WHERE id=$4',
-        [brightFt || 0, dimFt || 0, safeColor, tokenId]
+        'UPDATE session_tokens SET token_light_bright=$1, token_light_dim=$2, token_light_color=$3, token_light_flicker=$4 WHERE id=$5',
+        [brightFt || 0, dimFt || 0, safeColor, safeFlicker, tokenId]
       );
       io.to(sessionCode).emit('token_light_changed', {
         tokenId,
         brightFt: brightFt || 0,
         dimFt: dimFt || 0,
         color: safeColor,
+        flicker: safeFlicker,
       });
     } catch (err) {
       console.error(err);
@@ -2020,16 +2022,16 @@ io.on('connection', (socket) => {
   });
 
   // ── Light source CRUD (DM only) ──────────────────────────────────────────
-  socket.on('add_light', async ({ mapId, x, y, brightRadius, dimRadius, label, color, direction, spreadAngle }) => {
+  socket.on('add_light', async ({ mapId, x, y, brightRadius, dimRadius, label, color, direction, spreadAngle, flicker }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
     try {
       const { v4: uuidv4 } = require('uuid');
       const result = await db.query(
-        `INSERT INTO light_sources (id, map_id, x, y, bright_radius, dim_radius, label, color, direction, spread_angle)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-        [uuidv4(), mapId, x, y, brightRadius || 60, dimRadius || brightRadius * 2 || 120, label || '', color || '#fbbf24', direction || 0, spreadAngle || 360]
+        `INSERT INTO light_sources (id, map_id, x, y, bright_radius, dim_radius, label, color, direction, spread_angle, flicker)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        [uuidv4(), mapId, x, y, brightRadius || 60, dimRadius || brightRadius * 2 || 120, label || '', color || '#fbbf24', direction || 0, spreadAngle || 360, flicker !== false]
       );
       io.to(sessionCode).emit('light_added', { light: result.rows[0] });
     } catch (err) { console.error(err); }
@@ -2045,14 +2047,14 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  socket.on('update_light', async ({ lightId, brightRadius, dimRadius, color, label, direction, spreadAngle }) => {
+  socket.on('update_light', async ({ lightId, brightRadius, dimRadius, color, label, direction, spreadAngle, flicker }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
     try {
       const result = await db.query(
-        `UPDATE light_sources SET bright_radius=$1, dim_radius=$2, color=$3, label=$4, direction=$5, spread_angle=$6 WHERE id=$7 RETURNING *`,
-        [brightRadius, dimRadius, color || '#fbbf24', label || '', direction || 0, spreadAngle || 360, lightId]
+        `UPDATE light_sources SET bright_radius=$1, dim_radius=$2, color=$3, label=$4, direction=$5, spread_angle=$6, flicker=$7 WHERE id=$8 RETURNING *`,
+        [brightRadius, dimRadius, color || '#fbbf24', label || '', direction || 0, spreadAngle || 360, flicker !== false, lightId]
       );
       if (result.rows.length) io.to(sessionCode).emit('light_updated', { light: result.rows[0] });
     } catch (err) { console.error(err); }
@@ -2686,6 +2688,7 @@ server.listen(PORT, async () => {
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS token_light_bright FLOAT DEFAULT 0`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS token_light_dim FLOAT DEFAULT 0`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS token_light_color VARCHAR(20) DEFAULT '#fbbf24'`);
+    await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS token_light_flicker BOOLEAN NOT NULL DEFAULT TRUE`);
     await db.query(`ALTER TABLE session_tokens ALTER COLUMN grid_col TYPE FLOAT USING grid_col::FLOAT`);
     await db.query(`ALTER TABLE session_tokens ALTER COLUMN grid_row TYPE FLOAT USING grid_row::FLOAT`);
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS inventory JSONB DEFAULT '[]'`);
@@ -2709,6 +2712,7 @@ server.listen(PORT, async () => {
     `);
     await db.query(`ALTER TABLE light_sources ADD COLUMN IF NOT EXISTS direction FLOAT NOT NULL DEFAULT 0`);
     await db.query(`ALTER TABLE light_sources ADD COLUMN IF NOT EXISTS spread_angle FLOAT NOT NULL DEFAULT 360`);
+    await db.query(`ALTER TABLE light_sources ADD COLUMN IF NOT EXISTS flicker BOOLEAN NOT NULL DEFAULT TRUE`);
     await db.query(`
       CREATE TABLE IF NOT EXISTS doors (
         id UUID PRIMARY KEY,

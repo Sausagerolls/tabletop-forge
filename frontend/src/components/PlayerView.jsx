@@ -1,6 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SpellBox } from './StatBlock.jsx';
 
+function WhisperPopup({ whisper, onClose }) {
+  useEffect(() => {
+    const id = setTimeout(onClose, 12000);
+    return () => clearTimeout(id);
+  }, [whisper.id, onClose]);
+  return (
+    <div
+      className="bg-purple-900/95 border border-purple-500 rounded-xl px-4 py-3 shadow-2xl cursor-pointer hover:bg-purple-900 transition-colors"
+      onClick={onClose}
+      title="Click to dismiss"
+    >
+      <div className="text-[10px] uppercase tracking-wider text-purple-300 mb-0.5 flex items-center gap-1.5">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        DM whispers to you
+      </div>
+      <div className="text-sm text-purple-50 whitespace-pre-wrap break-words">
+        {whisper.message}
+      </div>
+    </div>
+  );
+}
+
 function NotesModal({ creature, onClose, onSave }) {
   const [text, setText] = useState(creature.player_notes || '');
   return (
@@ -904,6 +928,7 @@ export default function PlayerView() {
   const [centerOnMapPoint, setCenterOnMapPoint] = useState(null);
   const hasCenteredRef = useRef(false);
   const [treasureNotif, setTreasureNotif] = useState(null);
+  const [whispers, setWhispers] = useState([]);
   const [remoteMeasurements, setRemoteMeasurements] = useState([]);
 
   // Create the AudioContext immediately and resume it on the first user gesture.
@@ -1478,6 +1503,11 @@ export default function PlayerView() {
     socket.on('template_updated', (tpl) => setSpellTemplates(prev => prev.map(t => t.id === tpl.id ? tpl : t)));
     socket.on('template_deleted', ({ id }) => setSpellTemplates(prev => prev.filter(t => t.id !== id)));
     socket.on('templates_cleared', () => setSpellTemplates([]));
+
+    socket.on('whisper_received', ({ message, ts }) => {
+      const id = `w-${ts}-${Math.random().toString(36).slice(2, 7)}`;
+      setWhispers((prev) => [...prev, { id, message, ts }]);
+    });
 
     socket.on('treasure_received', ({ creatureId, items, newInventory }) => {
       if (creatureId === creatureIdParam) {
@@ -2111,6 +2141,19 @@ export default function PlayerView() {
         )}
 
         <DiceRollOverlay rolls={diceRolls} />
+
+        {/* DM whispers — top-right stack, auto-dismiss after 12s, click to close. */}
+        {whispers.length > 0 && (
+          <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-auto">
+            {whispers.map((w) => (
+              <WhisperPopup
+                key={w.id}
+                whisper={w}
+                onClose={() => setWhispers((prev) => prev.filter((x) => x.id !== w.id))}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Treasure received notification */}
         {treasureNotif && (

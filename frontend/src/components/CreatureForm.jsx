@@ -645,6 +645,62 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     setImagePreview(URL.createObjectURL(file));
   }
 
+  // Player-side AI portrait generation. Availability is fetched once on
+  // mount via /api/ai/player-status — the endpoint just returns whether
+  // the DM has image gen configured, never the URLs/keys themselves.
+  // The actual generation hits /api/ai/player-generate-image which reads
+  // the DM's saved config server-side, so credentials never reach the
+  // player's browser.
+  const [aiPortraitAvailable, setAiPortraitAvailable] = useState(false);
+  const [aiPortraitLoading, setAiPortraitLoading] = useState(false);
+  const [aiPortraitError, setAiPortraitError] = useState('');
+  const [aiAppearancePrompt, setAiAppearancePrompt] = useState('');
+
+  useEffect(() => {
+    if (!isPlayerCharacter) return;
+    let cancelled = false;
+    fetch('/api/ai/player-status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (!cancelled && data?.imageEnabled) setAiPortraitAvailable(true); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isPlayerCharacter]);
+
+  async function handleGeneratePortrait() {
+    if (aiPortraitLoading) return;
+    setAiPortraitLoading(true);
+    setAiPortraitError('');
+    try {
+      const res = await fetch('/api/ai/player-generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name || 'Adventurer',
+          appearance: aiAppearancePrompt.trim() || form.subtype || form.creature_type || '',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Image gen failed (${res.status})`);
+      if (!data?.image) throw new Error('No image returned');
+      // Convert the data URL to a File so the multipart save path works
+      // identically to a manually-uploaded portrait.
+      const m = data.image.match(/^data:([^;]+);base64,(.+)$/);
+      if (!m) throw new Error('Generated image was not a data URL');
+      const bin = atob(m[2]);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], { type: m[1] });
+      const ext = m[1].split('/')[1] || 'png';
+      const file = new File([blob], `portrait.${ext}`, { type: m[1] });
+      setImageFile(file);
+      setImagePreview(data.image);
+    } catch (err) {
+      setAiPortraitError(err.message);
+    } finally {
+      setAiPortraitLoading(false);
+    }
+  }
+
   function handleCRChange(cr) {
     setForm((f) => ({ ...f, challenge_rating: cr, xp: CR_XP[cr] || 0 }));
   }
@@ -998,6 +1054,43 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 </div>
                 <input id="creature-img" type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
                 <p className="text-xs text-gray-500 text-center mt-1">Click to upload</p>
+                {isPlayerCharacter && aiPortraitAvailable && (
+                  <div className="mt-2 space-y-1.5 w-44">
+                    <input
+                      type="text"
+                      value={aiAppearancePrompt}
+                      onChange={(e) => setAiAppearancePrompt(e.target.value)}
+                      placeholder="Appearance hint (optional)"
+                      className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-purple-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleGeneratePortrait}
+                      disabled={aiPortraitLoading || !form.name?.trim()}
+                      title={!form.name?.trim() ? 'Enter a name first' : 'Generate a portrait via the DM\'s AI'}
+                      className={`w-full text-[11px] rounded px-2 py-1.5 transition-colors flex items-center justify-center gap-1.5 ${
+                        aiPortraitLoading
+                          ? 'bg-purple-900 text-purple-300'
+                          : 'bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 disabled:text-gray-500 text-purple-100'
+                      }`}
+                    >
+                      {aiPortraitLoading ? (
+                        <>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="w-3 h-3 animate-spin"><path d="M12 2a10 10 0 0 1 10 10" /></svg>
+                          Generating…
+                        </>
+                      ) : (
+                        <>
+                          <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z" /></svg>
+                          {imagePreview ? 'Re-roll portrait' : 'Generate portrait'}
+                        </>
+                      )}
+                    </button>
+                    {aiPortraitError && (
+                      <div className="text-[10px] text-red-400 leading-tight">{aiPortraitError}</div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex-1 space-y-3">
                 <div>

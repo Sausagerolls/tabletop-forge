@@ -922,6 +922,36 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── DM whisper (DM → single player) ───────────────────────────────────────
+  // Private DM-to-player text. Server-side routing is essential — broadcasting
+  // to the session room and filtering client-side would leak the message to
+  // every player via DevTools. Instead we resolve the target socket(s) from
+  // the session room (a player may have more than one tab open) and emit
+  // only to those.
+  socket.on('dm_whisper', ({ targetName, message }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    const trimmed = (typeof message === 'string' ? message : '').trim();
+    if (!trimmed) return;
+    // Cap length so a runaway paste doesn't flood the wire.
+    const safeMessage = trimmed.slice(0, 2000);
+    if (typeof targetName !== 'string' || !targetName) return;
+    const room = io.sockets.adapter.rooms.get(sessionCode);
+    if (!room) return;
+    let delivered = 0;
+    for (const sockId of room) {
+      const s = io.sockets.sockets.get(sockId);
+      if (!s) continue;
+      if (s.data.role !== 'player') continue;
+      if (s.data.name !== targetName) continue;
+      s.emit('whisper_received', { message: safeMessage, fromDm: true, ts: Date.now() });
+      delivered += 1;
+    }
+    // Echo back to the sender so the DM has a record of what was sent.
+    socket.emit('whisper_sent', { targetName, message: safeMessage, delivered, ts: Date.now() });
+  });
+
   // ── Conditions update (DM only) ───────────────────────────────────────────
   socket.on('update_token_conditions', async ({ tokenId, conditions }) => {
     if (socket.data.role !== 'dm') return;

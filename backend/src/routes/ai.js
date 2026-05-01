@@ -994,4 +994,75 @@ router.post('/generate-image', async (req, res) => {
   }
 });
 
+// ── Player-facing image generation ──────────────────────────────────────────
+// Players don't have access to the DM's AI settings (provider URLs, API
+// keys), so they can't drive /generate-image directly. These two endpoints
+// let players generate a character portrait via the DM's saved config:
+//
+//   GET  /api/ai/player-status            → { imageEnabled: bool }
+//   POST /api/ai/player-generate-image    → { image, prompt }
+//
+// The server reads the saved ai_config from app_settings, validates it,
+// and only exposes whether image gen is *available* (not the URL/key).
+// The image is generated server-side with the DM's credentials so secrets
+// never leave the host.
+
+async function loadDmAiConfig() {
+  const r = await db.query(`SELECT value FROM app_settings WHERE key='ai_config'`);
+  if (!r.rows.length) return null;
+  const v = r.rows[0].value;
+  return v && typeof v === 'object' ? v : null;
+}
+
+router.get('/player-status', async (req, res) => {
+  try {
+    const cfg = await loadDmAiConfig();
+    const enabled = !!(cfg && cfg.imageEnabled && cfg.imageBaseUrl && String(cfg.imageBaseUrl).trim());
+    res.json({ imageEnabled: enabled });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/player-generate-image', async (req, res) => {
+  try {
+    const cfg = await loadDmAiConfig();
+    if (!cfg || !cfg.imageEnabled || !cfg.imageBaseUrl) {
+      return res.status(503).json({ error: 'Image generation is not configured by the DM.' });
+    }
+    const { name, appearance } = req.body || {};
+    if (!name && !appearance) {
+      return res.status(400).json({ error: 'name or appearance is required' });
+    }
+    const provider = cfg.imageProvider || 'swarmui';
+    const adapter = IMAGE_PROVIDERS[provider];
+    if (!adapter) return res.status(400).json({ error: `Unknown image provider: ${provider}` });
+    if (adapter.needsApiKey && !cfg.imageApiKey) {
+      return res.status(503).json({ error: `${adapter.label} requires an API key but the DM hasn't set one.` });
+    }
+    const prompt = buildImagePrompt(cfg.imagePromptTemplate || '', name || '', appearance || '');
+    let finalNeg = '';
+    if (adapter.supportsNegativePrompt) {
+      finalNeg = cfg.imageAllowNsfw
+        ? (cfg.imageNegativePrompt || DEFAULT_NEG_NSFW)
+        : `${cfg.imageNegativePrompt ? cfg.imageNegativePrompt + ', ' : ''}${DEFAULT_NEG_SFW}`;
+    }
+    const image = await adapter.generate({
+      baseUrl: cfg.imageBaseUrl,
+      apiKey: cfg.imageApiKey,
+      model: cfg.imageModel || '',
+      prompt,
+      negativePrompt: finalNeg,
+      width: cfg.imageWidth,
+      height: cfg.imageHeight,
+      steps: cfg.imageSteps,
+      cfgScale: cfg.imageCfgScale,
+    });
+    res.json({ image, prompt });
+  } catch (err) {
+    console.error('AI player-generate-image error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

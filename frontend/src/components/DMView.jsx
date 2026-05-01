@@ -149,6 +149,70 @@ const CONDITION_COLORS = {
   submerged: '#06b6d4',
 };
 
+function WhisperToast({ toast, onClose }) {
+  useEffect(() => {
+    const id = setTimeout(onClose, 5000);
+    return () => clearTimeout(id);
+  }, [toast.ts, onClose]);
+  const offline = toast.delivered === 0;
+  return (
+    <div
+      className="fixed top-4 right-4 z-50 bg-purple-900/95 border border-purple-500 rounded-xl px-4 py-3 shadow-2xl max-w-sm cursor-pointer"
+      onClick={onClose}
+      title="Click to dismiss"
+    >
+      <div className="text-[10px] uppercase tracking-wider text-purple-300 mb-0.5">
+        {offline ? `Whisper queued — ${toast.targetName} offline` : `Whisper → ${toast.targetName}`}
+      </div>
+      <div className="text-sm text-purple-50 whitespace-pre-wrap break-words">
+        {toast.message}
+      </div>
+    </div>
+  );
+}
+
+function WhisperComposer({ onSend, onCancel }) {
+  const [text, setText] = useState('');
+  const ref = useRef(null);
+  useEffect(() => { if (ref.current) ref.current.focus(); }, []);
+  function send() {
+    const v = text.trim();
+    if (!v) return;
+    onSend(v);
+  }
+  return (
+    <div className="space-y-1.5">
+      <textarea
+        ref={ref}
+        rows={2}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+          if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+        }}
+        placeholder="Whisper privately… (Enter to send, Shift+Enter for newline)"
+        className="w-full bg-gray-900 border border-purple-700/60 rounded px-2 py-1.5 text-sm text-white resize-none focus:outline-none focus:border-purple-400"
+      />
+      <div className="flex items-center justify-end gap-2">
+        <button
+          onClick={onCancel}
+          className="text-xs text-gray-400 hover:text-white px-2 py-0.5"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={send}
+          disabled={!text.trim()}
+          className="text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 disabled:text-gray-500 text-purple-100 px-2.5 py-0.5 rounded"
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function HPControl({ token, onChange, onTempHpChange }) {
   const [val, setVal] = useState(token.current_hp);
   const [tempVal, setTempVal] = useState(token.temp_hp || 0);
@@ -2006,6 +2070,10 @@ export default function DMView() {
   const [statBlockCreature, setStatBlockCreature] = useState(null);
   const [statBlockTab, setStatBlockTab] = useState('stats');
   const [showActionsRef, setShowActionsRef] = useState(false);
+  const [whisperOpen, setWhisperOpen] = useState(null);
+  const [whisperToast, setWhisperToast] = useState(null);
+  const [showWhisperBar, setShowWhisperBar] = useState(false);
+  const [whisperBarTarget, setWhisperBarTarget] = useState(null);
   const [lightColor, setLightColor] = useState('#fbbf24');
   const [lightShape, setLightShape] = useState('circle');
   const [editingLight, setEditingLight] = useState(null);
@@ -2666,6 +2734,10 @@ export default function DMView() {
 
     socket.on('users_updated', ({ users: u }) => {
       setUsers(u);
+    });
+
+    socket.on('whisper_sent', ({ targetName, message, delivered }) => {
+      setWhisperToast({ targetName, message, delivered, ts: Date.now() });
     });
 
     socket.on('dice_rolled', (data) => {
@@ -3529,6 +3601,13 @@ export default function DMView() {
               >
                 Dice
               </button>
+              <button
+                onClick={() => { setShowWhisperBar(v => !v); setShowDice(false); setShowSounds(false); }}
+                className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${showWhisperBar ? 'bg-purple-700 border-purple-500 text-white' : 'bg-dnd-panel/90 text-white border-gray-600 hover:border-purple-400'}`}
+                title="Whisper privately to a player"
+              >
+                💬 Whisper
+              </button>
               {/* Plugin-registered top-bar buttons — each plugin
                   renders its own button + flyout via the
                   dmTopBarButtons registry. */}
@@ -3549,6 +3628,50 @@ export default function DMView() {
               <DiceRoller rolls={diceRolls} />
             </div>
           )}
+
+          {showWhisperBar && (() => {
+            const playerUsers = users.filter(u => u.role !== 'dm');
+            const target = whisperBarTarget && playerUsers.some(u => u.name === whisperBarTarget)
+              ? whisperBarTarget
+              : (playerUsers[0]?.name || null);
+            return (
+              <div className="absolute top-14 right-4 z-40 bg-dnd-panel border border-purple-700/60 rounded-xl p-4 w-80 shadow-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-purple-300 font-semibold flex items-center gap-2">
+                    <span>💬</span><span>Whisper</span>
+                  </h3>
+                  <button onClick={() => setShowWhisperBar(false)} className="text-gray-400 hover:text-white flex items-center"><XIcon /></button>
+                </div>
+                {playerUsers.length === 0 ? (
+                  <div className="text-xs text-gray-400 italic bg-gray-800 border border-gray-700 rounded-lg p-3 text-center">
+                    No players connected.
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Send to</label>
+                      <select
+                        value={target || ''}
+                        onChange={(e) => setWhisperBarTarget(e.target.value)}
+                        className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-purple-400"
+                      >
+                        {playerUsers.map((u) => (
+                          <option key={u.name} value={u.name}>{u.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <WhisperComposer
+                      onSend={(msg) => {
+                        if (!target) return;
+                        socket.emit('dm_whisper', { targetName: target, message: msg });
+                      }}
+                      onCancel={() => setShowWhisperBar(false)}
+                    />
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {showSounds && (() => {
             // Strip extension, remove common prefixes, title-case words,
@@ -5144,35 +5267,56 @@ export default function DMView() {
                     <div className="space-y-2">
                       {users.map((u) => {
                         const hasToken = tokens.some(t => t.is_player && t.player_name === u.name);
+                        const isWhispering = whisperOpen === u.name;
                         return (
-                          <div key={u.name} className="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2">
-                            <div
-                              className="w-2 h-2 rounded-full shrink-0"
-                              style={{ background: u.role === 'dm' ? '#f59e0b' : '#22d3ee' }}
-                            />
-                            <span
-                              className="text-sm flex-1"
-                              style={{ color: userColors[u.name] || 'white' }}
-                            >
-                              {u.name}
-                            </span>
-                            <span className="text-xs text-gray-500">{u.role}</span>
-                            {u.role !== 'dm' && !hasToken && (
-                              <button
-                                onClick={() => socket.emit('dm_respawn_player_token', { playerName: u.name })}
-                                className="text-xs bg-yellow-700 hover:bg-yellow-600 text-yellow-100 px-2 py-0.5 rounded"
-                                title="Spawn token onto map"
+                          <div key={u.name} className="bg-gray-800 rounded-lg px-3 py-2 space-y-2">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="w-2 h-2 rounded-full shrink-0"
+                                style={{ background: u.role === 'dm' ? '#f59e0b' : '#22d3ee' }}
+                              />
+                              <span
+                                className="text-sm flex-1"
+                                style={{ color: userColors[u.name] || 'white' }}
                               >
-                                + Token
-                              </button>
-                            )}
-                            {u.role !== 'dm' && (
-                              <input
-                                type="color"
-                                value={userColors[u.name] || '#ffffff'}
-                                onChange={(e) => handleSetUserColor(u.name, e.target.value)}
-                                className="w-7 h-7 rounded cursor-pointer border border-gray-600 bg-transparent"
-                                title="Set player color"
+                                {u.name}
+                              </span>
+                              <span className="text-xs text-gray-500">{u.role}</span>
+                              {u.role !== 'dm' && !hasToken && (
+                                <button
+                                  onClick={() => socket.emit('dm_respawn_player_token', { playerName: u.name })}
+                                  className="text-xs bg-yellow-700 hover:bg-yellow-600 text-yellow-100 px-2 py-0.5 rounded"
+                                  title="Spawn token onto map"
+                                >
+                                  + Token
+                                </button>
+                              )}
+                              {u.role !== 'dm' && (
+                                <button
+                                  onClick={() => setWhisperOpen(isWhispering ? null : u.name)}
+                                  className={`text-xs px-2 py-0.5 rounded ${isWhispering ? 'bg-purple-700 text-purple-100' : 'bg-gray-700 hover:bg-gray-600 text-gray-200'}`}
+                                  title="Whisper privately"
+                                >
+                                  💬
+                                </button>
+                              )}
+                              {u.role !== 'dm' && (
+                                <input
+                                  type="color"
+                                  value={userColors[u.name] || '#ffffff'}
+                                  onChange={(e) => handleSetUserColor(u.name, e.target.value)}
+                                  className="w-7 h-7 rounded cursor-pointer border border-gray-600 bg-transparent"
+                                  title="Set player color"
+                                />
+                              )}
+                            </div>
+                            {isWhispering && (
+                              <WhisperComposer
+                                onSend={(msg) => {
+                                  socket.emit('dm_whisper', { targetName: u.name, message: msg });
+                                  setWhisperOpen(null);
+                                }}
+                                onCancel={() => setWhisperOpen(null)}
                               />
                             )}
                           </div>
@@ -5648,6 +5792,13 @@ export default function DMView() {
 
       {/* Actions reference modal */}
       {showActionsRef && <ActionsReference onClose={() => setShowActionsRef(false)} />}
+
+      {whisperToast && (
+        <WhisperToast
+          toast={whisperToast}
+          onClose={() => setWhisperToast(null)}
+        />
+      )}
 
       {/* Spell template edit popup */}
       {editingTemplateId && (() => {

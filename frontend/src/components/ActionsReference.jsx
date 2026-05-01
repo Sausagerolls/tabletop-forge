@@ -84,7 +84,7 @@ function Section({ title, items }) {
 
 export default function ActionsReference({ onClose }) {
   return (
-    <div className="absolute inset-0 bg-black/80 z-50 flex items-end justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
         className="bg-dnd-panel border border-gray-700 rounded-xl w-full max-w-lg flex flex-col shadow-2xl"
         style={{ maxHeight: '75vh' }}

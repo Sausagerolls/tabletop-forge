@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Option 3: Dragon sigil. A heraldic dragon-head silhouette in profile,
+  gold on near-black. Flat, bold, no fine detail — keeps it legible at
+  60pt. Most "dungeon" of the five options.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"  stop-color="#1a1a1a"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </linearGradient>
+    <linearGradient id="goldFill" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"  stop-color="#f4d488"/>
+      <stop offset="50%" stop-color="#c9a84c"/>
+      <stop offset="100%" stop-color="#7a5a1c"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- Stylised dragon head, profile facing right. Built from a single
+       compound path: head + jaw + eye + horn arc + tongue/flame. -->
+  <g transform="translate(512 512)">
+    <!-- Outer ring so the head sits in a coin-like badge. -->
+    <circle r="370" fill="none" stroke="url(#goldFill)" stroke-width="16"/>
+    <circle r="345" fill="none" stroke="url(#goldFill)" stroke-width="3" opacity="0.5"/>
+
+    <g fill="url(#goldFill)">
+      <!-- Skull arc + back horn. -->
+      <path d="M -240 -130
+               Q -260 -250 -120 -270
+               Q 60 -300 180 -210
+               L 230 -260
+               L 250 -180
+               L 260 -90
+               Q 280 -40 250 0
+               L 220 30
+               Q 240 80 210 130
+               L 80 220
+               L 60 280
+               L 0 240
+               L -60 280
+               L -80 220
+               L -200 130
+               Q -260 60 -240 -130 Z"/>
+
+      <!-- Jaw / lower mouth. -->
+      <path d="M -180 60
+               Q -100 200 80 200
+               Q 220 200 240 80
+               Q 200 130 80 130
+               Q -60 130 -120 60 Z"
+            fill="#7a5a1c"/>
+
+      <!-- Tongue / breath flicker. -->
+      <path d="M 220 110
+               L 320 60
+               L 280 130
+               L 360 130
+               L 280 180
+               L 340 220
+               L 250 180
+               Z" fill="#f4d488"/>
+
+      <!-- Eye socket. -->
+      <circle cx="-50" cy="-130" r="32" fill="#0a0a0a"/>
+      <circle cx="-50" cy="-130" r="14" fill="#f4d488"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,5 @@
+Ability,Description,Category,Notes
+Ability Score Increase,Intelligence +1,,
+Elf Weapon Training,"You have proficiency with the longsword, shortsword, shortbow, and longbow.",Special Abilities,
+Cantrip,You know one cantrip of your choice from the wizard spell list. Intelligence is your spellcasting ability for it.,Special Abilities,Auto adds the listed cantrip to known spells
+Extra Language,"You can speak, read, and write one extra language of your choice.",Special Abilities,

@@ -1,0 +1,9 @@
+# Authored from the 2024 PHB SRD (CC-BY 4.0). Spot-check against the printed PHB — wording may have been adjusted in errata.,,,
+Ability,Description,Category,Notes
+Creature Type,You are a Humanoid.,Special Abilities,
+Size,You are Medium or Small. You choose the size when you select this race.,,Restrict size choices to Medium or Small
+Speed,Your Speed is 30 feet.,,Set walking speed to 30ft
+Resourceful,You gain Heroic Inspiration whenever you finish a Long Rest.,Special Abilities,Auto grants Heroic Inspiration on each Long Rest
+Skillful,You gain proficiency in one skill of your choice.,Special Abilities,
+Versatile,You gain an Origin feat of your choice (see chapter 5).,Special Abilities,
+Languages,"You can speak, read, and write Common and one other language that you and your DM agree is appropriate for your character.",,Auto adds Common to languages (player + DM pick the second)

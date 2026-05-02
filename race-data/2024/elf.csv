@@ -1,0 +1,11 @@
+# Authored from the 2024 PHB SRD (CC-BY 4.0). Spot-check against the printed PHB — wording may have been adjusted in errata.,,,
+Ability,Description,Category,Notes
+Creature Type,You are a Humanoid.,Special Abilities,
+Size,You are Medium.,,Set size to Medium
+Speed,Your Speed is 30 feet.,,Set walking speed to 30ft
+Darkvision,You have Darkvision with a range of 60 feet.,Special Abilities,Set Darkvision to 60ft
+Elven Lineage,"You are part of an elven lineage that grants you supernatural abilities. Choose a lineage from the Elven Lineages table: Drow, High Elf, or Wood Elf. You gain the level 1 benefit of that lineage. When you reach character levels 3 and 5, you learn a higher-level spell as listed in the table. You always have the listed spell prepared. Once you cast a spell with this trait without expending a spell slot, you can't cast that spell with this trait again until you finish a Long Rest. You can also cast the spell using any spell slots you have. Your spellcasting ability for these spells is the one you chose for the Elven Lineage.",Special Abilities,
+Fey Ancestry,You have Advantage on saving throws you make to avoid or end the Charmed condition.,Special Abilities,Adds advantage on saves vs the Charmed condition
+Keen Senses,You have proficiency in the Perception skill.,Special Abilities,Adds proficiency in Perception skill
+Trance,"You don't need to sleep, and magic can't put you to sleep. You can finish a Long Rest in 4 hours if you spend those hours in a trancelike meditation, during which you retain consciousness.",Special Abilities,
+Languages,"You can speak, read, and write Common and Elvish.",,"Auto adds Common, Elvish to languages"

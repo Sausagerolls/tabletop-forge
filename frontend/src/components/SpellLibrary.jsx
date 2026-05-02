@@ -3,7 +3,7 @@ import { useAllClasses } from '../utils/classes.js';
 
 const LEVEL_LABELS = ['Cantrip', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'];
 
-export default function SpellLibrary({ aiSettings }) {
+export default function SpellLibrary({ aiSettings, activeSrdEdition = 'both', onChangeActiveSrdEdition }) {
   const CLASSES = useAllClasses();
   const [spells, setSpells] = useState([]);
   // Scan-PDF panel collapse state. Persisted under the same key shape as
@@ -86,6 +86,32 @@ export default function SpellLibrary({ aiSettings }) {
       setLoading(false);
     }
   }
+
+  // Visible-spell derivation: applies the DM's active-SRD filter
+  // client-side. Anything whose `source` doesn't start with "SRD " is
+  // treated as a manually-added spell and stays visible regardless
+  // of the toggle — that's how a DM keeps their homebrew always in
+  // view even when they're filtering the SRD set.
+  function isManualSpell(s) {
+    return !s.source || !String(s.source).startsWith('SRD ');
+  }
+  const visibleSpells = (() => {
+    if (activeSrdEdition === '2014') {
+      return spells.filter((s) => isManualSpell(s) || s.edition === '2014');
+    }
+    if (activeSrdEdition === '2024') {
+      return spells.filter((s) => isManualSpell(s) || s.edition === '2024');
+    }
+    return spells;
+  })();
+  // Counts driving the toggle's pip badges so the DM can see how
+  // many spells are in each edition before flipping.
+  const editionCounts = spells.reduce((acc, s) => {
+    if (s.edition === '2014') acc.c2014 += 1;
+    else if (s.edition === '2024') acc.c2024 += 1;
+    if (isManualSpell(s)) acc.manual += 1;
+    return acc;
+  }, { c2014: 0, c2024: 0, manual: 0 });
 
   useEffect(() => { load(); }, []);
   // Debounce search input
@@ -601,8 +627,48 @@ export default function SpellLibrary({ aiSettings }) {
 
       {/* Browse */}
       <div className="space-y-2">
+        {/* SRD edition filter — applies to BOTH the DM's view and the
+            players' view via the same active_srd_edition session
+            field. Manual / homebrew spells (source not starting with
+            "SRD ") stay visible regardless so the DM never loses
+            sight of their custom entries. */}
+        {onChangeActiveSrdEdition && (
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-2">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">SRD Edition</span>
+              <span className="text-[10px] text-gray-500">
+                Manual entries always shown · {editionCounts.manual} custom
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {[
+                { val: 'both', label: 'All',  count: editionCounts.c2014 + editionCounts.c2024 },
+                { val: '2014', label: '2014', count: editionCounts.c2014 },
+                { val: '2024', label: '2024', count: editionCounts.c2024 },
+              ].map(({ val, label, count }) => (
+                <button
+                  key={val}
+                  onClick={() => onChangeActiveSrdEdition(val)}
+                  title={
+                    val === 'both' ? 'Show every SRD edition.'
+                    : val === '2014' ? 'Show only 2014 SRD 5.1 spells (and your manual entries).'
+                    : 'Show only 2024 SRD 5.2 spells (and your manual entries).'
+                  }
+                  className={`py-1.5 px-1 rounded border text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${
+                    activeSrdEdition === val
+                      ? 'bg-dnd-gold/20 border-dnd-gold text-dnd-gold'
+                      : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500 hover:text-gray-200'
+                  }`}
+                >
+                  {label}
+                  <span className="text-[10px] font-mono opacity-70">{count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between">
-          <h4 className="text-sm font-semibold text-dnd-gold">Library {spells.length > 0 && <span className="text-xs text-gray-500 font-normal">({spells.length})</span>}</h4>
+          <h4 className="text-sm font-semibold text-dnd-gold">Library {spells.length > 0 && <span className="text-xs text-gray-500 font-normal">({visibleSpells.length}{visibleSpells.length !== spells.length ? ` of ${spells.length}` : ''})</span>}</h4>
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={startCreate}
@@ -733,8 +799,13 @@ export default function SpellLibrary({ aiSettings }) {
         {!loading && spells.length === 0 && (
           <p className="text-xs text-gray-500 italic">No spells in the library yet.</p>
         )}
+        {!loading && spells.length > 0 && visibleSpells.length === 0 && (
+          <p className="text-xs text-gray-500 italic">
+            {spells.length} spell{spells.length === 1 ? '' : 's'} hidden by the SRD edition filter. Switch to <em>All</em> above to see them.
+          </p>
+        )}
         <div className="space-y-1">
-          {spells.map(s => (
+          {visibleSpells.map(s => (
             <div key={s.id} className="bg-gray-800 border border-gray-700 rounded-lg p-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">

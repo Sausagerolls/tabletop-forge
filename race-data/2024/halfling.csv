@@ -1,0 +1,10 @@
+# Authored from the 2024 PHB SRD (CC-BY 4.0). Spot-check against the printed PHB — wording may have been adjusted in errata.,,,
+Ability,Description,Category,Notes
+Creature Type,You are a Humanoid.,Special Abilities,
+Size,You are Small.,,Set size to Small
+Speed,Your Speed is 30 feet.,,Set walking speed to 30ft
+Brave,You have Advantage on saving throws you make to avoid or end the Frightened condition.,Special Abilities,Adds advantage on saves vs the Frightened condition
+Halfling Nimbleness,"You can move through the space of any creature that is a size larger than you, but you can't stop in the same space.",Special Abilities,Adds 'move through larger creatures' movement option
+Luck,"When you roll a 1 on the d20 of a D20 Test, you can reroll the die, and you must use the new roll.",Special Abilities,Adds Halfling Luck reroll on natural 1s on D20 Tests
+Naturally Stealthy,You can take the Hide action even when you are obscured only by a creature that is at least one size larger than you.,Special Abilities,Adds Hide-while-obscured option (Naturally Stealthy)
+Languages,"You can speak, read, and write Common and Halfling.",,"Auto adds Common, Halfling to languages"

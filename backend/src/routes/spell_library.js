@@ -1181,7 +1181,7 @@ router.post('/import', spellImportUpload.single('file'), async (req, res) => {
 
 router.get('/', async (req, res) => {
   try {
-    const { search, level, klass } = req.query;
+    const { search, level, klass, sessionCode, role } = req.query;
     const params = [];
     const conds = [];
     if (search) {
@@ -1193,9 +1193,23 @@ router.get('/', async (req, res) => {
       conds.push(`level = $${params.length}`);
     }
     if (klass) {
-      // Case-insensitive match against any element of the allowed_classes JSONB array.
       params.push(String(klass));
       conds.push(`EXISTS (SELECT 1 FROM jsonb_array_elements_text(allowed_classes) AS c WHERE LOWER(c) = LOWER($${params.length}))`);
+    }
+    // Edition filter: when a sessionCode + non-dm role is provided we
+    // honour the DM's active SRD setting so the player's spell picker
+    // only shows what the DM has greenlit. The DM's own queries
+    // ignore the filter so they can still browse / edit any edition.
+    if (sessionCode && role && role !== 'dm') {
+      const sessRes = await db.query(
+        'SELECT active_srd_edition FROM sessions WHERE session_code=$1',
+        [sessionCode]
+      );
+      const ed = sessRes.rows[0]?.active_srd_edition || 'both';
+      if (ed === '2014' || ed === '2024') {
+        params.push(ed);
+        conds.push(`edition = $${params.length}`);
+      }
     }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const rows = (await db.query(`SELECT * FROM spell_library ${where} ORDER BY name`, params)).rows;

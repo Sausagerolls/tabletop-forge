@@ -1,0 +1,9 @@
+# Authored from the 2024 PHB SRD (CC-BY 4.0). Spot-check against the printed PHB — wording may have been adjusted in errata.,,,
+Ability,Description,Category,Notes
+Creature Type,You are a Humanoid.,Special Abilities,
+Size,You are Medium.,,Set size to Medium
+Speed,Your Speed is 30 feet.,,Set walking speed to 30ft
+Adrenaline Rush,"You can take the Dash action as a Bonus Action. When you do so, you gain a number of Temporary Hit Points equal to your Proficiency Bonus. You can use this trait a number of times equal to your Proficiency Bonus, and you regain all expended uses when you finish a Short or Long Rest.",Bonus Action,
+Darkvision,You have Darkvision with a range of 120 feet.,Special Abilities,Set Darkvision to 120ft
+Relentless Endurance,"When you are reduced to 0 Hit Points but not killed outright, you can drop to 1 Hit Point instead. Once you use this trait, you can't use it again until you finish a Long Rest.",Special Abilities,
+Languages,"You can speak, read, and write Common and Orc.",,"Auto adds Common, Orc to languages"

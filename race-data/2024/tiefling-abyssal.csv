@@ -1,0 +1,4 @@
+# Authored from the 2024 PHB SRD (CC-BY 4.0). Spot-check against the printed PHB — wording may have been adjusted in errata.,,,
+Ability,Description,Category,Notes
+Legacy Spells,Level 1: Poison Spray cantrip. Level 3: Ray of Sickness. Level 5: Hold Person.,Special Abilities,Auto adds the listed spells to known spells at the matching character level
+Damage Resistance,Resistance to Poison damage.,Special Abilities,Auto adds resistance to poison damage

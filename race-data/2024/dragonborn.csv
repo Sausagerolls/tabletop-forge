@@ -1,0 +1,10 @@
+# Authored from the 2024 PHB SRD (CC-BY 4.0). Spot-check against the printed PHB — wording may have been adjusted in errata.,,,
+Ability,Description,Category,Notes
+Creature Type,You are a Humanoid.,Special Abilities,
+Size,You are Medium.,,Set size to Medium
+Speed,Your Speed is 30 feet.,,Set walking speed to 30ft
+Draconic Ancestry,"Your lineage stems from a dragon progenitor. Choose the kind of dragon from the Draconic Ancestry table — Black/Copper (Acid), Blue/Bronze (Lightning), Brass/Gold/Red (Fire), Green (Poison), Silver/White (Cold). Your choice affects your Breath Weapon and Damage Resistance traits.",Special Abilities,
+Breath Weapon,"When you take the Attack action on your turn, you can replace one of your attacks with an exhalation of magical energy in either a 15-foot Cone or a 30-foot Line that is 5 feet wide (your choice). Each creature in that area must make a Dexterity saving throw (DC = 8 + your Constitution modifier + your Proficiency Bonus). On a failed save, the target takes 1d10 damage of the type associated with your Draconic Ancestry. On a successful save, it takes half as much damage. This damage increases by 1d10 when you reach character levels 5 (2d10), 11 (3d10), and 17 (4d10). You can use this Breath Weapon a number of times equal to your Proficiency Bonus, and you regain all expended uses when you finish a Long Rest.",Action,
+Darkvision,You have Darkvision with a range of 60 feet.,Special Abilities,Set Darkvision to 60ft
+Draconic Flight,"When you reach character level 5, you can channel draconic magic to give yourself temporary flight. As a Bonus Action, you sprout spectral wings on your back that last for 10 minutes or until you retract the wings (no action required) or have the Incapacitated condition. During that time, you have a Fly Speed equal to your Speed. Your wings appear to be made of the same energy as your Breath Weapon. Once you use this trait, you can't use it again until you finish a Long Rest.",Bonus Action,
+Languages,"You can speak, read, and write Common and Draconic.",,"Auto adds Common, Draconic to languages"

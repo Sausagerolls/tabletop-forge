@@ -1,0 +1,4 @@
+# Authored from the 2024 PHB SRD (CC-BY 4.0). Spot-check against the printed PHB — wording may have been adjusted in errata.,,,
+Ability,Description,Category,Notes
+Legacy Spells,Level 1: Chill Touch cantrip. Level 3: False Life. Level 5: Ray of Enfeeblement.,Special Abilities,Auto adds the listed spells to known spells at the matching character level
+Damage Resistance,Resistance to Necrotic damage.,Special Abilities,Auto adds resistance to necrotic damage

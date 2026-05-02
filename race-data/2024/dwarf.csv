@@ -1,0 +1,10 @@
+# Authored from the 2024 PHB SRD (CC-BY 4.0). Spot-check against the printed PHB — wording may have been adjusted in errata.,,,
+Ability,Description,Category,Notes
+Creature Type,You are a Humanoid.,Special Abilities,
+Size,You are Medium.,,Set size to Medium
+Speed,Your Speed is 30 feet.,,Set walking speed to 30ft
+Darkvision,You have Darkvision with a range of 120 feet.,Special Abilities,Set Darkvision to 120ft
+Dwarven Resilience,You have Resistance to Poison damage. You also have Advantage on saving throws you make to avoid or end the Poisoned condition.,Special Abilities,Auto adds resistance to poison damage
+Dwarven Toughness,"Your Hit Point maximum increases by 1, and it increases by 1 again whenever you gain a level.",Special Abilities,"Auto increases max HP by 1, plus another +1 per character level"
+Stonecunning,"As a Bonus Action, you gain Tremorsense with a range of 60 feet for 10 minutes. You must be on a stone surface or touching such a surface to use this Tremorsense. The stone can be natural or worked. You can use this Bonus Action a number of times equal to your Proficiency Bonus, and you regain all expended uses when you finish a Long Rest.",Bonus Action,Set Tremorsense to 60ft (active for 10 minutes; uses Bonus Action)
+Languages,"You can speak, read, and write Common and Dwarvish.",,"Auto adds Common, Dwarvish to languages"

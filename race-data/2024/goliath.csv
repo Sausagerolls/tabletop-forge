@@ -1,0 +1,9 @@
+# Authored from the 2024 PHB SRD (CC-BY 4.0). Spot-check against the printed PHB — wording may have been adjusted in errata.,,,
+Ability,Description,Category,Notes
+Creature Type,You are a Humanoid.,Special Abilities,
+Size,You are Medium.,,Set size to Medium
+Speed,Your Speed is 35 feet.,,Set walking speed to 35ft
+Giant Ancestry,"You are descended from giants. Choose one of the supernatural boons from the Giant Ancestries table — Cloud's Jaunt, Fire's Burn, Frost's Chill, Hill's Tumble, Stone's Endurance, Storm's Thunder. You can use the chosen boon a number of times equal to your Proficiency Bonus, and you regain all expended uses when you finish a Long Rest.",Special Abilities,
+Large Form,"Starting at character level 5, you can change your size to Large as a Bonus Action if you're Medium and your space has room to make you Large. This transformation lasts for 10 minutes or until you end it (no action required). For that duration, you have Advantage on Strength checks, and your Speed increases by 10 feet. Once you use this trait, you can't use it again until you finish a Long Rest.",Bonus Action,
+Powerful Build,"You have Advantage on any ability check you make to end the Grappled condition. You also count as one size larger when determining your carrying capacity and the weight you can push, drag, or lift.",Special Abilities,Counts as one size larger for carrying capacity / push / drag / lift
+Languages,"You can speak, read, and write Common and Giant.",,"Auto adds Common, Giant to languages"

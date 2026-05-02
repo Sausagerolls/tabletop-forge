@@ -20,6 +20,8 @@ const doorsRouter = require('./routes/doors');
 const lightsRouter = require('./routes/lights');
 const dd2vttRouter = require('./routes/dd2vtt');
 const spellLibraryRouter = require('./routes/spell_library');
+const itemLibraryRouter = require('./routes/item_library');
+const customOriginsRouter = require('./routes/custom_origins');
 const languagesRouter = require('./routes/languages');
 const settingsRouter = require('./routes/settings');
 const { router: pluginsRouter, reconcilePluginsTable } = require('./routes/plugins');
@@ -144,6 +146,8 @@ app.use('/api/doors', doorsRouter);
 app.use('/api/lights', lightsRouter);
 app.use('/api/dd2vtt', dd2vttRouter);
 app.use('/api/spell-library', spellLibraryRouter);
+app.use('/api/item-library',  itemLibraryRouter);
+app.use('/api/custom',        customOriginsRouter);
 
 // Read once at startup — package.json doesn't change at runtime.
 const APP_VERSION = (() => {
@@ -664,6 +668,7 @@ async function getSessionState(sessionCode) {
       ambient_light: session.ambient_light || 'bright',
       token_name_font_size: session.token_name_font_size ?? 45,
       spawn_map_id: session.spawn_map_id ?? null,
+      active_srd_edition: session.active_srd_edition || 'both',
     },
     tokens: tokensRows,
     walls: wallsRows,
@@ -2311,6 +2316,21 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
+  // ── Active SRD edition for the spell library (DM only) ────────────────
+  // Drives whether players see 2014, 2024, or every spell when they
+  // browse the spell library. Stored on the session row so it can be
+  // changed mid-session and surveyed by the spell-library REST query.
+  socket.on('set_active_srd_edition', async ({ sessionId, edition }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    const safe = (edition === '2014' || edition === '2024' || edition === 'both') ? edition : 'both';
+    try {
+      await db.query('UPDATE sessions SET active_srd_edition=$1 WHERE id=$2', [safe, sessionId]);
+      io.to(sessionCode).emit('active_srd_edition_changed', { edition: safe });
+    } catch (err) { console.error(err); }
+  });
+
   // ── Toggle fog of war (DM only) ───────────────────────────────────────────
   socket.on('toggle_fow', async ({ sessionId }) => {
     if (socket.data.role !== 'dm') return;
@@ -2735,6 +2755,51 @@ server.listen(PORT, async () => {
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS vision_range INTEGER DEFAULT 0`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS senses JSONB`);
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS passive_perception INTEGER DEFAULT 10`);
+    // Tracks what the race picker auto-applied (senses, spells,
+    // resistances, languages) so a race-swap can revert just those
+    // values without nuking anything the user added by hand. Shape:
+    //   { race_id, sub_id, added: {senses, spells, resistances, languages, cantrips} }
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS race_state JSONB DEFAULT '{}'`);
+    // Player background (SRD 2024 backgrounds: Acolyte, Criminal,
+    // Sage, Soldier). `background` stores the canonical id; the
+    // jsonb tracks every value the picker auto-applied (skills,
+    // ability bumps, feat name, equipment items appended) so a
+    // background swap reverts exactly those without touching the
+    // player's own picks.
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS background VARCHAR(60) DEFAULT ''`);
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS background_state JSONB DEFAULT '{}'`);
+    // CSV of tool / instrument / vehicle proficiencies. Edited
+    // free-form on the character sheet and auto-populated by the
+    // background picker.
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS tool_proficiencies TEXT DEFAULT ''`);
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS weapon_proficiencies TEXT DEFAULT ''`);
+
+    // ── Custom DM-authored races + backgrounds ──
+    // Free-form JSONB so the editor can grow without migrations. The
+    // shape mirrors frontend/src/data/races.js / backgrounds.js so the
+    // race / background pickers can merge static SRD content with these.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS custom_races (
+        id UUID PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        edition VARCHAR(16) DEFAULT 'custom',
+        parent_id UUID NULL REFERENCES custom_races(id) ON DELETE CASCADE,
+        data JSONB NOT NULL DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT now(),
+        updated_at TIMESTAMP DEFAULT now()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_custom_races_parent ON custom_races(parent_id)`);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS custom_backgrounds (
+        id UUID PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        data JSONB NOT NULL DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT now(),
+        updated_at TIMESTAMP DEFAULT now()
+      )
+    `);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS token_light_bright FLOAT DEFAULT 0`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS token_light_dim FLOAT DEFAULT 0`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS token_light_color VARCHAR(20) DEFAULT '#fbbf24'`);
@@ -2897,6 +2962,75 @@ server.listen(PORT, async () => {
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_spell_library_level ON spell_library(level)`);
     await db.query(`ALTER TABLE spell_library ADD COLUMN IF NOT EXISTS allowed_classes JSONB DEFAULT '[]'`);
+
+    // Item library — analog of spell_library for equipment + magic
+    // items. Same shape: per-edition rows, idempotent imports keyed
+    // by (name, edition), DM session toggles which edition the
+    // players see via the same active_srd_edition session column the
+    // spell library already reads from.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS item_library (
+        id UUID PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        item_type VARCHAR(20) NOT NULL DEFAULT 'item',
+        description TEXT DEFAULT '',
+        source VARCHAR(200) DEFAULT '',
+        edition VARCHAR(8) NOT NULL DEFAULT '2014',
+        weight FLOAT DEFAULT 0,
+        cost VARCHAR(40) DEFAULT '',
+        damage_entries JSONB DEFAULT '[]',
+        weapon_range VARCHAR(80) DEFAULT '',
+        attack_stat VARCHAR(8) DEFAULT 'STR',
+        attack_bonus_misc INTEGER DEFAULT 0,
+        properties VARCHAR(400) DEFAULT '',
+        mastery VARCHAR(40) DEFAULT '',
+        ac_base INTEGER DEFAULT 0,
+        armor_category VARCHAR(20) DEFAULT '',
+        str_req INTEGER,
+        stealth_disadvantage BOOLEAN DEFAULT false,
+        ac_bonus INTEGER DEFAULT 0,
+        attunement BOOLEAN DEFAULT false,
+        attunement_req VARCHAR(200) DEFAULT '',
+        rarity VARCHAR(20) DEFAULT '',
+        created_at TIMESTAMP DEFAULT NOW(),
+        CONSTRAINT item_library_name_edition_key UNIQUE (name, edition)
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_item_library_type    ON item_library(item_type)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_item_library_edition ON item_library(edition)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_item_library_rarity  ON item_library(rarity)`);
+    // edition: tags each spell with the SRD it came from. Lets the
+    // DM toggle which set of spells players see (2014 vs 2024 SRD).
+    // Existing rows default to '2014' since the historical plugin/
+    // import path only ever loaded the 2014 SRD set.
+    await db.query(`ALTER TABLE spell_library ADD COLUMN IF NOT EXISTS edition VARCHAR(8) NOT NULL DEFAULT '2014'`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_spell_library_edition ON spell_library(edition)`);
+    // Widen the freeform-string columns — the original sizes were
+    // tuned against hand-entered spells. Open5e's SRD payloads have
+    // longer casting_time strings ("1 reaction, which you take when
+    // you see a creature within 60 feet of you casting a spell")
+    // and material-component descriptions ("a tiny pearl worth at
+    // least 100 gp and a piece of polymorph paper") that exceeded
+    // the historical 80 / 200 char limits and broke the importer on
+    // 5 spells (Counterspell / Hellish Rebuke / Clone / Imprisonment
+    // / Simulacrum).
+    await db.query(`ALTER TABLE spell_library ALTER COLUMN casting_time TYPE VARCHAR(200)`);
+    await db.query(`ALTER TABLE spell_library ALTER COLUMN comp_m_text TYPE TEXT`);
+    // Drop the old name-only UNIQUE in favour of (name, edition) so a
+    // spell that appears in both SRDs (e.g. Fireball) can have a row
+    // for each edition with edition-specific text. Wrapped in a try
+    // because the constraint name varies by Postgres install history.
+    try { await db.query(`ALTER TABLE spell_library DROP CONSTRAINT IF EXISTS spell_library_name_key`); } catch {}
+    try {
+      await db.query(`ALTER TABLE spell_library ADD CONSTRAINT spell_library_name_edition_key UNIQUE (name, edition)`);
+    } catch (e) {
+      // Constraint already exists from a prior run — fine.
+      if (!String(e.message || '').includes('already exists')) throw e;
+    }
+    // Per-session "active SRD" filter the DM controls. 'both' shows
+    // every edition; '2014' / '2024' show only that set. Players see
+    // whatever the DM has selected.
+    await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_srd_edition VARCHAR(8) NOT NULL DEFAULT 'both'`);
 
     // Plugin system. `plugins` tracks installed plugins and their enabled
     // state; `plugin_data` is a generic JSONB KV store keyed by plugin id

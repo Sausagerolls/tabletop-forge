@@ -1,6 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import LanguagePicker from './LanguagePicker.jsx';
 import { useAllClasses, useAllSubclasses } from '../utils/classes.js';
+import { formatDamageWithMod, formatDamageType } from '../utils/damage.js';
+import {
+  RACE_EDITIONS,
+  raceTypesForEdition,
+  racesForType,
+  findRace,
+  combinedRaceTraits,
+} from '../data/races.js';
+import { BACKGROUNDS_2024, findBackground, SKILL_LABELS } from '../data/backgrounds.js';
 
 const XIcon = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="w-3.5 h-3.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>);
 const DragonIcon = () => (<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10 text-gray-500"><path d="M44 12c4-2 8 0 10 4s0 10-4 12l-4 2" /><path d="M20 12c-4-2-8 0-10 4s0 10 4 12l4 2" /><ellipse cx="32" cy="32" rx="14" ry="10" fill="currentColor" stroke="none" opacity="0.15" /><path d="M18 28c0 10 6 18 14 18s14-8 14-18" /><path d="M26 24c0-2 2-4 6-4s6 2 6 4" /><circle cx="27" cy="26" r="1.5" fill="currentColor" stroke="none" /><circle cx="37" cy="26" r="1.5" fill="currentColor" stroke="none" /><path d="M28 36c1 2 3 3 4 3s3-1 4-3" /></svg>);
@@ -68,6 +77,94 @@ const SAVES = [
 function mod(score) {
   return Math.floor((score - 10) / 2);
 }
+
+// computeAcFromGear — reads the equipped armor / shield / magic-item
+// AC bonuses out of the form's inventory and returns the rolled-up
+// total + a printable breakdown. Returns null when there's nothing
+// to compute (no equipped gear AND no shield), so the caller can
+// hide the readout entirely on creatures with manual AC only.
+//
+// Rules (5e standard, 2024 SRD wording):
+//   • Light armor:  base + DEX mod (no cap)
+//   • Medium armor: base + min(DEX mod, 2)
+//   • Heavy armor:  base (DEX ignored)
+//   • Shield:       +2 (from creature.shield_equipped OR an equipped
+//                   armor item with armor_category='shield')
+//   • Magic items:  +N from each equipped item with ac_bonus set
+//   • No body armor: 10 + DEX mod (the unarmored default)
+function computeAcFromGear(form) {
+  const inv = Array.isArray(form?.inventory) ? form.inventory : [];
+  const equippedArmor = inv.filter(
+    (it) => it && it.item_type === 'armor' && it.equipped
+              && (it.armor_category || '') !== 'shield'
+              && Number(it.ac_base) > 0
+  );
+  // Shield: either via an equipped shield-category armor item OR the
+  // legacy shield_equipped boolean.
+  const equippedShield = inv.some(
+    (it) => it && it.item_type === 'armor' && it.equipped
+              && (it.armor_category || '') === 'shield'
+  ) || !!form?.shield_equipped;
+  const acBonusItems = inv.filter(
+    (it) => it && it.equipped && Number(it.ac_bonus) > 0
+  );
+
+  if (equippedArmor.length === 0 && !equippedShield && acBonusItems.length === 0) {
+    return null;
+  }
+
+  const dex = mod(Number(form?.dexterity) || 10);
+  const parts = [];
+  let total = 0;
+
+  if (equippedArmor.length > 0) {
+    // If multiple armor items are flagged equipped (shouldn't happen
+    // but the form allows it), use the highest-AC one.
+    const armor = equippedArmor.reduce((best, it) =>
+      Number(it.ac_base) > Number(best.ac_base) ? it : best
+    );
+    const cat = armor.armor_category || 'light';
+    const base = Number(armor.ac_base) || 10;
+    // ac_bonus on a body-armor row represents enchantment (+1 plate,
+    // +2 plate). Folded into the armor's contribution so it doesn't
+    // get double-counted in the magic-bonus loop below.
+    const armorMagic = Number(armor.ac_bonus) || 0;
+    let dexAdded = 0;
+    if (cat === 'light') dexAdded = dex;
+    else if (cat === 'medium') dexAdded = Math.min(dex, 2);
+    // heavy: dexAdded stays 0
+    total += base + dexAdded + armorMagic;
+    parts.push(`${base} (${armor.name || 'armor'})`);
+    if (armorMagic > 0) parts.push(`+${armorMagic} magic`);
+    if (dexAdded !== 0) {
+      parts.push(`${dexAdded >= 0 ? '+' : ''}${dexAdded} DEX`);
+    }
+  } else {
+    total += 10 + dex;
+    parts.push(`10 (unarmored)`);
+    if (dex !== 0) parts.push(`${dex >= 0 ? '+' : ''}${dex} DEX`);
+  }
+
+  if (equippedShield) {
+    total += 2;
+    parts.push('+2 shield');
+  }
+
+  for (const it of acBonusItems) {
+    // Body armor's ac_bonus is already counted above as the armor's
+    // enchantment. Shield ac_bonus (e.g. a +1 shield) and any other
+    // equipped item's ac_bonus (cloak / ring / amulet of protection)
+    // get added here.
+    if (it.item_type === 'armor' && (it.armor_category || '') !== 'shield') continue;
+    const b = Number(it.ac_bonus) || 0;
+    if (b === 0) continue;
+    total += b;
+    parts.push(`+${b} ${it.name || 'magic'}`);
+  }
+
+  return { total, parts };
+}
+
 function fmtMod(m) {
   return m >= 0 ? `+${m}` : `${m}`;
 }
@@ -96,6 +193,10 @@ const defaultForm = {
   hit_dice_used: 0,
   char_class: '',
   char_subclass: '',
+  background: '',
+  background_state: {},
+  tool_proficiencies: '',
+  weapon_proficiencies: '',
   heroic_inspiration: false,
   death_save_successes: 0,
   death_save_failures: 0,
@@ -153,6 +254,10 @@ const defaultForm = {
   spells: [],
   spell_slots: {},
   loot: [],
+  // Tracks what the race picker auto-applied so a future race-swap
+  // can revert just those values without disturbing manually-added
+  // ones. Persisted to creatures.race_state on save.
+  race_state: {},
 };
 
 const SPELL_SCHOOLS = ['Abjuration','Conjuration','Divination','Enchantment','Evocation','Illusion','Necromancy','Transmutation'];
@@ -705,6 +810,784 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     setForm((f) => ({ ...f, challenge_rating: cr, xp: CR_XP[cr] || 0 }));
   }
 
+  // ── Race picker state ───────────────────────────────────────────────
+  // Cascade: edition → (Type from form.creature_type) → race → sub-race.
+  // Type is reused from the existing form field above so the picker
+  // always reflects whatever the user already chose.
+  const [raceEdition, setRaceEdition] = useState('srd2024');
+  const [raceId, setRaceId] = useState('');
+  const [subraceId, setSubraceId] = useState('');
+
+  // Item-library picker modal — opened by "+ From library" in inventory.
+  // Background picker state — modal opens from "Set Background" on
+  // the Basic tab. The user picks one of four SRD-2024 backgrounds,
+  // chooses how to allocate the +2/+1 (or +1/+1/+1) ability bumps,
+  // and an equipment package (A or B = 50 GP).
+  const [showBackgroundModal, setShowBackgroundModal] = useState(false);
+  const [bgPickedId, setBgPickedId] = useState('');           // selected card
+  const [bgAsiKind, setBgAsiKind]   = useState('2-1');        // '2-1' | '1-1-1'
+  const [bgAsiPlus2, setBgAsiPlus2] = useState('');           // stat key
+  const [bgAsiPlus1, setBgAsiPlus1] = useState('');           // stat key
+  const [bgEquipment, setBgEquipment] = useState('a');         // 'a' | 'b'
+
+  const [showItemLibrary, setShowItemLibrary] = useState(false);
+  const [itemLibraryRows, setItemLibraryRows] = useState([]);
+  const [itemLibrarySearch, setItemLibrarySearch] = useState('');
+  const [itemLibraryType, setItemLibraryType] = useState('');
+  const [itemLibraryLoaded, setItemLibraryLoaded] = useState(false);
+  useEffect(() => {
+    if (!showItemLibrary || itemLibraryLoaded) return;
+    fetch('/api/item-library')
+      .then(r => (r.ok ? r.json() : []))
+      .then(rows => { setItemLibraryRows(rows); setItemLibraryLoaded(true); })
+      .catch(() => setItemLibraryLoaded(true));
+  }, [showItemLibrary, itemLibraryLoaded]);
+
+  // Convert a library row into an inventory item shape, then push.
+  // Field names must match the inventory editor's expectations
+  // exactly — the editor reads `desc` not `description`, `qty` not
+  // `quantity`, and `damage_entries` (array) not the legacy
+  // `damage_dice` / `damage_type` scalar pair. Earlier picker copied
+  // into the wrong fields, so weapons came in with no damage,
+  // properties or mastery showing.
+  function pickItemFromLibrary(row) {
+    // Only weapons should land as item_type='weapon' so the editor's
+    // weapon-specific block (Range / Damage / Properties / Mastery)
+    // appears for them. Magic ammunition has no damage of its own,
+    // so it stays a generic magic item. Mundane gear like Arrows
+    // maps to plain 'item' (the dropdown only has item / weapon /
+    // armor / magic_item).
+    const TYPE_MAP = {
+      weapon: 'weapon',
+      armor: 'armor',
+      magic_item: 'magic_item',
+      gear: 'item',
+    };
+    const item_type = TYPE_MAP[row.item_type] || 'item';
+
+    // Damage entries — copy the full array (some weapons have multiple
+    // damage lines). Fall back to a blank slot so the editor still
+    // shows the damage row even when the library has none.
+    const damage_entries = Array.isArray(row.damage_entries) && row.damage_entries.length
+      ? row.damage_entries.map((d) => ({
+          damage: d.damage || '',
+          damage_type: d.damage_type || '',
+        }))
+      : [{ damage: '', damage_type: '' }];
+
+    const next = {
+      id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      item_type,
+      name: row.name,
+      qty: 1,
+      desc: row.description || '',
+      weight: Number(row.weight) || '',
+      equipped: false,
+      sheds_light: false,
+      bright_ft: 20,
+      dim_ft: 40,
+
+      // Weapon fields (canonical inventory shape).
+      damage_entries,
+      weapon_range: row.weapon_range || '',
+      attack_stat: row.attack_stat || 'STR',
+      attack_bonus_misc: Number(row.attack_bonus_misc) || 0,
+      properties: row.properties || '',
+      mastery: row.mastery || '',
+
+      // Armor fields.
+      ac_base: Number(row.ac_base) || 0,
+      armor_category: row.armor_category || '',
+      str_req: row.str_req ?? null,
+      stealth_disadvantage: !!row.stealth_disadvantage,
+
+      // Magic-item fields (also valid on +N armor / weapons).
+      ac_bonus: Number(row.ac_bonus) || 0,
+      rarity: row.rarity || '',
+      attunement_required: !!row.attunement,
+      attunement_req: row.attunement_req || '',
+
+      _source: `library:${row.edition}:${row.name}`,
+    };
+    setForm(prev => ({ ...prev, inventory: [...(prev.inventory || []), next] }));
+    setShowItemLibrary(false);
+  }
+
+  // Custom DM-authored races + backgrounds — fetched once on mount,
+  // merged with the static SRD lists so the existing picker sees them
+  // as if they were always there.
+  const [customRaces, setCustomRaces] = useState([]);
+  const [customBackgrounds, setCustomBackgrounds] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const [r, b] = await Promise.all([
+          fetch('/api/custom/races').then((r) => r.ok ? r.json() : []),
+          fetch('/api/custom/backgrounds').then((r) => r.ok ? r.json() : []),
+        ]);
+        if (cancelled) return;
+        setCustomRaces(Array.isArray(r) ? r : []);
+        setCustomBackgrounds(Array.isArray(b) ? b : []);
+      } catch {}
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Reshape custom-race rows into the same shape `data/races.js` exports,
+  // so the picker logic and applyRacePicker work without branching. Each
+  // sub-race row is grafted under its parent.
+  const customRacesShaped = useMemo(() => {
+    const byParent = new Map();
+    for (const row of customRaces) {
+      if (!row.parent_id) continue;
+      const arr = byParent.get(row.parent_id) || [];
+      arr.push({ id: row.id, name: row.name, ...(row.data || {}) });
+      byParent.set(row.parent_id, arr);
+    }
+    const out = [];
+    for (const row of customRaces) {
+      if (row.parent_id) continue;
+      out.push({
+        id: row.id,
+        name: row.name,
+        edition: row.edition || 'custom',
+        ...(row.data || {}),
+        subraces: byParent.get(row.id) || [],
+      });
+    }
+    return out;
+  }, [customRaces]);
+
+  // Helpers that merge static + custom for the active edition.
+  const allRacesMerged = useMemo(() =>
+    [...customRacesShaped]
+  , [customRacesShaped]);
+
+  const findRaceMerged = (id) => findRace(id) || allRacesMerged.find((r) => r.id === id) || null;
+
+  // Reshape custom-background rows so the picker UI sees them with
+  // the same fields as the SRD entries (id, name, description,
+  // abilities[], feat{name,desc}, skills[], tool, equipment_*).
+  const customBackgroundsShaped = useMemo(() =>
+    customBackgrounds.map((row) => ({ id: row.id, name: row.name, ...(row.data || {}) }))
+  , [customBackgrounds]);
+
+  const allBackgroundsMerged = useMemo(() =>
+    [...BACKGROUNDS_2024, ...customBackgroundsShaped]
+  , [customBackgroundsShaped]);
+
+  const findBackgroundMerged = (id) =>
+    findBackground(id) || customBackgroundsShaped.find((b) => b.id === id) || null;
+
+  const racePickerRaces = useMemo(() => {
+    const stat = racesForType(form.creature_type, raceEdition);
+    const custom = allRacesMerged.filter((r) =>
+      (r.creature_type || 'Humanoid') === form.creature_type &&
+      (raceEdition === 'custom' || r.edition === raceEdition || r.edition === 'custom')
+    );
+    return [...stat, ...custom];
+  }, [form.creature_type, raceEdition, allRacesMerged]);
+
+  const racePickerHasTypes = useMemo(() => {
+    if (raceTypesForEdition(raceEdition).includes(form.creature_type)) return true;
+    return allRacesMerged.some((r) => (r.creature_type || 'Humanoid') === form.creature_type);
+  }, [raceEdition, form.creature_type, allRacesMerged]);
+
+  const selectedRaceObj = raceId ? findRaceMerged(raceId) : null;
+  const selectedSubraceObj = (selectedRaceObj && subraceId)
+    ? (selectedRaceObj.subraces || []).find((s) => s.id === subraceId) || null
+    : null;
+
+  // Reset chained selections when the upstream dropdown changes.
+  useEffect(() => { setRaceId(''); setSubraceId(''); }, [raceEdition, form.creature_type]);
+  useEffect(() => { setSubraceId(''); }, [raceId]);
+
+  // Apply the picked race + sub-race to the form. Two layers of
+  // change:
+  //   1. Trait rows are appended to special_abilities / actions /
+  //      bonus_actions / reactions, each stamped with __source so a
+  //      race-swap reverts them.
+  //   2. Mechanical side-effects declared in the catalogue (senses,
+  //      spells, resistances, languages, cantrips) are merged into
+  //      the matching creature columns. The exact list of values the
+  //      picker added lands in form.race_state.added so a later race
+  //      change knows what to peel back without touching things the
+  //      user typed in themselves.
+  async function applyRacePicker() {
+    if (!selectedRaceObj) return;
+    if ((selectedRaceObj.subraces || []).length > 0 && !selectedSubraceObj) return;
+
+    const race = selectedRaceObj;
+    const sub = selectedSubraceObj;
+    const traits = combinedRaceTraits(race, sub);
+    const subtypeLabel = sub ? `${race.name} (${sub.name})` : race.name;
+    const sourceTag = sub ? `race:${race.id}+${sub.id}` : `race:${race.id}`;
+
+    // ── Build the full intended spell list (parent + sub, in catalogue
+    // order) so we can level-gate it now AND remember the complete
+    // list for the level-up watcher to back-fill later as the
+    // character advances. Each ref keeps its minLevel so subsequent
+    // re-evaluation is purely level-based.
+    const allSpellRefs = [
+      ...(race.addsSpells || []),
+      ...((sub && sub.addsSpells) || []),
+    ];
+    const charLevel = Number(form.char_level) || 1;
+    const eligibleNow = allSpellRefs.filter((ref) => (ref.minLevel ?? 1) <= charLevel);
+    const fetchedSpells = await fetchSpellsByRef(eligibleNow);
+    const castingAbility = (sub && sub.castingAbility) || race.castingAbility || '';
+
+    // race_state keeps two lists: spells_pending (the FULL race spell
+    // catalogue with minLevels) so the level-up watcher knows what's
+    // still to come, and spells (the names actually written into
+    // creature.spells right now) so revert can strip exactly those.
+    const added = {
+      senses:         [...(race.setsSenses || []), ...(sub?.setsSenses || [])],
+      spells:         fetchedSpells.map((s) => s.name),
+      spells_pending: allSpellRefs,
+      resistances:    [...(race.addsResistances || []), ...(sub?.addsResistances || [])],
+      languages:      [...(race.addsLanguages   || []), ...(sub?.addsLanguages   || [])],
+      // Skills — DM-authored races can grant proficiency or expertise
+      // through addsSkills: [{ skill, level }]. SRD races leave this
+      // blank.
+      skills:         [...((race.addsSkills || [])), ...((sub?.addsSkills || []))],
+      casting_ability: castingAbility,
+      // Speed: sub-race overrides parent (e.g. Wood Elf 35ft).
+      speed: (sub && sub.setsSpeed) || race.setsSpeed || null,
+      // Custom races may carry non-walk speeds.
+      speed_fly:    (sub && sub.speed_fly)    || race.speed_fly    || 0,
+      speed_swim:   (sub && sub.speed_swim)   || race.speed_swim   || 0,
+      speed_climb:  (sub && sub.speed_climb)  || race.speed_climb  || 0,
+      speed_burrow: (sub && sub.speed_burrow) || race.speed_burrow || 0,
+      // Size: parent fixes most races (Goliath = Medium); sub may
+      // override though no SRD race currently does.
+      size:  (sub && sub.setsSize)  || race.setsSize  || null,
+      // Dragonborn — sub-race tells us the breath weapon damage type.
+      breath_weapon_type: (sub && sub.breathWeaponType) || null,
+    };
+    const newRaceState = { race_id: race.id, sub_id: sub?.id || null, added };
+
+    setForm((f) => {
+      const prevState = f.race_state || {};
+      const prevAdded = prevState.added || {};
+
+      // Strip the previous race's auto-added items from the live
+      // columns so a swap doesn't accumulate.
+      const stripList = (rows, removeSet) =>
+        (rows || []).filter((r) => !removeSet.has(r));
+      const stripCSV = (txt, remove) => {
+        const parts = String(txt || '')
+          .split(/\s*,\s*/)
+          .map((p) => p.trim())
+          .filter(Boolean);
+        const removeLower = new Set((remove || []).map((s) => String(s).toLowerCase()));
+        return parts.filter((p) => !removeLower.has(p.toLowerCase())).join(', ');
+      };
+      // Senses: identity by `type` field — stripping anything whose
+      // type appears in the previous added list.
+      const stripSenses = (arr, types) => {
+        const t = new Set((types || []).map((s) => s.type));
+        return (arr || []).filter((s) => !t.has(s.type));
+      };
+      // Spells: identity by name.
+      const stripSpells = (arr, names) => {
+        const n = new Set((names || []).map((s) => String(s).toLowerCase()));
+        return (arr || []).filter((s) => !n.has(String(s.name || '').toLowerCase()));
+      };
+
+      // Trait stripping (existing behaviour) for the four stat-block arrays.
+      const stripTraits = (rows) =>
+        (rows || []).filter((r) => !(typeof r?.__source === 'string' && r.__source.startsWith('race:')));
+
+      const next = { ...f };
+      next.subtype = subtypeLabel;
+      next.creature_type = race.creature_type;
+
+      // Append trait rows, tagged for revertability.
+      const appendTraits = (key, items) => {
+        next[key] = [
+          ...stripTraits(f[key]),
+          ...items.map((it) => ({ ...it, __source: sourceTag })),
+        ];
+      };
+      appendTraits('special_abilities', traits.filter((t) => t.category === 'specialAbility').map(({ name, desc }) => ({ name, desc })));
+      appendTraits('actions',           traits.filter((t) => t.category === 'action').map(({ name, desc }) => ({ name, desc })));
+      appendTraits('bonus_actions',     traits.filter((t) => t.category === 'bonusAction').map(({ name, desc }) => ({ name, desc })));
+      appendTraits('reactions',         traits.filter((t) => t.category === 'reaction').map(({ name, desc }) => ({ name, desc })));
+
+      // Senses — strip prev, append new (deduped).
+      const sensesAfterStrip = stripSenses(f.senses, prevAdded.senses);
+      const newSenseTypes = new Set(sensesAfterStrip.map((s) => s.type));
+      next.senses = [
+        ...sensesAfterStrip,
+        ...added.senses.filter((s) => !newSenseTypes.has(s.type)),
+      ];
+
+      // Spells — strip prev, append new (each tagged with casting_ability + prepared).
+      next.spells = [
+        ...stripSpells(f.spells, prevAdded.spells),
+        ...fetchedSpells.map((s) => ({
+          ...s,
+          casting_ability: castingAbility || s.casting_ability || '',
+          prepared: true,
+          __source: sourceTag,
+        })),
+      ];
+
+      // Resistances — comma-separated text. Strip prev, append new.
+      const resistancesAfterStrip = stripCSV(f.damage_resistances, prevAdded.resistances);
+      const resistancesParts = [
+        ...resistancesAfterStrip.split(/\s*,\s*/).filter(Boolean),
+        ...added.resistances.filter((r) =>
+          !resistancesAfterStrip.toLowerCase().split(/\s*,\s*/).includes(r.toLowerCase())
+        ),
+      ];
+      next.damage_resistances = resistancesParts.join(', ');
+
+      // Languages — same shape.
+      const languagesAfterStrip = stripCSV(f.languages, prevAdded.languages);
+      const languagesParts = [
+        ...languagesAfterStrip.split(/\s*,\s*/).filter(Boolean),
+        ...added.languages.filter((l) =>
+          !languagesAfterStrip.toLowerCase().split(/\s*,\s*/).includes(l.toLowerCase())
+        ),
+      ];
+      next.languages = languagesParts.join(', ');
+
+      // Speed — sub-race wins over parent. Only overwrite when the
+      // race specifies a value, so creatures the user has tweaked
+      // manually keep their custom speed.
+      if (added.speed) {
+        next.speed_walk = added.speed;
+      }
+      // Custom races may also grant fly / swim / climb / burrow.
+      // Don't blank existing values — only set when the race adds
+      // a positive number.
+      if (added.speed_fly)    next.speed_fly    = added.speed_fly;
+      if (added.speed_swim)   next.speed_swim   = added.speed_swim;
+      if (added.speed_climb)  next.speed_climb  = added.speed_climb;
+      if (added.speed_burrow) next.speed_burrow = added.speed_burrow;
+
+      // Skills — DM-authored races may grant proficiency / expertise.
+      // Strip prev race's skill grants first (handled above for senses
+      // etc., now do it here).
+      if (Array.isArray(prevAdded.skills) && prevAdded.skills.length > 0) {
+        const expert = { ...(next.skill_expertise || {}) };
+        for (const raw of prevAdded.skills) {
+          const sk = typeof raw === 'string' ? raw : raw.skill;
+          if (sk) { next[sk] = null; delete expert[sk]; }
+        }
+        next.skill_expertise = expert;
+      }
+      if (Array.isArray(added.skills) && added.skills.length > 0) {
+        const profBonus = next.proficiency_bonus ?? 2;
+        const expert = { ...(next.skill_expertise || {}) };
+        for (const raw of added.skills) {
+          const sk = typeof raw === 'string' ? raw : raw.skill;
+          const lvl = typeof raw === 'string' ? 'proficient' : (raw.level || 'proficient');
+          if (!sk) continue;
+          const stat = STAT_OF_SKILL[sk] || 'strength';
+          const m = Math.floor(((next[stat] ?? 10) - 10) / 2);
+          const mult = lvl === 'expertise' ? 2 : 1;
+          next[sk] = m + profBonus * mult;
+          if (lvl === 'expertise') expert[sk] = true;
+        }
+        next.skill_expertise = expert;
+      }
+
+      // Size — only set when the race fixes a single value. When the
+      // race offers a choice (Tiefling: Medium or Small) we leave the
+      // form's existing value alone; the picker UI's size dropdown
+      // is the path the player uses to constrain it.
+      if (added.size) {
+        next.size = added.size.toLowerCase();
+      } else if (race.sizeChoices && race.sizeChoices.length > 0) {
+        // Reset to first allowed choice when the previous value isn't
+        // in the new constraint set.
+        const allowed = race.sizeChoices.map((s) => s.toLowerCase());
+        if (!allowed.includes(String(f.size || '').toLowerCase())) {
+          next.size = allowed[0];
+        }
+      }
+
+      // Dragonborn breath weapon damage type — patch the inherited
+      // Breath Weapon trait so the description names the right damage
+      // type instead of "the type associated with your ancestry".
+      if (added.breath_weapon_type) {
+        next.special_abilities = (next.special_abilities || []).map((row) => {
+          if (row?.name === 'Breath Weapon') {
+            return {
+              ...row,
+              desc: String(row.desc || '').replace(
+                /damage of the type associated with your (?:Draconic )?Ancestry/gi,
+                `${added.breath_weapon_type} damage`
+              ),
+            };
+          }
+          return row;
+        });
+      }
+
+      next.race_state = newRaceState;
+      return next;
+    });
+
+    setRaceId('');
+    setSubraceId('');
+  }
+
+  // Level-up watcher — when char_level rises and the creature has a
+  // race applied, scan race_state.added.spells_pending for any spell
+  // whose minLevel is now satisfied AND isn't already on
+  // creature.spells. Fetch + append those, and update the
+  // race_state.added.spells list so a future revert finds them. Runs
+  // once per char_level change; no-op when no race is set.
+  useEffect(() => {
+    const rs = form.race_state;
+    const pending = rs?.added?.spells_pending || [];
+    if (!rs?.race_id || pending.length === 0) return;
+    const charLevel = Number(form.char_level) || 1;
+    const haveNames = new Set(
+      (form.spells || []).map((s) => String(s.name || '').toLowerCase())
+    );
+    const newlyEligible = pending.filter(
+      (ref) => (ref.minLevel ?? 1) <= charLevel
+        && !haveNames.has(String(ref.name).toLowerCase())
+    );
+    if (newlyEligible.length === 0) return;
+    const sourceTag = rs.sub_id
+      ? `race:${rs.race_id}+${rs.sub_id}`
+      : `race:${rs.race_id}`;
+    const castingAbility = rs.added?.casting_ability || '';
+    let cancelled = false;
+    (async () => {
+      const fetched = await fetchSpellsByRef(newlyEligible);
+      if (cancelled || fetched.length === 0) return;
+      setForm((f) => {
+        const prevSpells = f.spells || [];
+        // Final dedupe (in case the user added the same spell by
+        // hand between fetch start and apply).
+        const have = new Set(prevSpells.map((s) => String(s.name || '').toLowerCase()));
+        const toAdd = fetched
+          .filter((s) => !have.has(String(s.name || '').toLowerCase()))
+          .map((s) => ({
+            ...s,
+            casting_ability: castingAbility || s.casting_ability || '',
+            prepared: true,
+            __source: sourceTag,
+          }));
+        if (toAdd.length === 0) return f;
+        const prevAddedSpells = f.race_state?.added?.spells || [];
+        return {
+          ...f,
+          spells: [...prevSpells, ...toAdd],
+          race_state: {
+            ...(f.race_state || {}),
+            added: {
+              ...(f.race_state?.added || {}),
+              spells: [...prevAddedSpells, ...toAdd.map((s) => s.name)],
+            },
+          },
+        };
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [form.char_level, form.race_state?.race_id, form.race_state?.sub_id]);
+
+  // AC auto-sync — whenever equipped gear or DEX changes, recompute
+  // and write the result into form.armor_class so the stat block /
+  // iOS / web spectator all read the same value. Skips when the
+  // computer has nothing to say (no equipped gear and no shield),
+  // because that path leaves the manual armor_class alone for non-PC
+  // creatures and edge cases like Unarmored Defense.
+  useEffect(() => {
+    const calc = computeAcFromGear(form);
+    if (!calc) return;
+    if (Number(form.armor_class) === calc.total) return;
+    setField('armor_class', calc.total);
+  }, [
+    form.dexterity,
+    form.shield_equipped,
+    // The inventory drives the bulk of the change; encode just the
+    // bits that affect AC math so we don't recompute when the user
+    // edits an item's description / qty / weight.
+    JSON.stringify(
+      (form.inventory || []).map((it) => ({
+        t: it.item_type,
+        e: !!it.equipped,
+        ab: it.ac_base,
+        bn: it.ac_bonus,
+        cat: it.armor_category,
+      }))
+    ),
+  ]);
+
+  // Look up spells by name+edition in the live library. Returns the
+  // full rows so the picker can copy them into creature.spells with
+  // damage_entries / school / etc. populated. Skips silently when a
+  // spell isn't in the library so a typo in races.js doesn't break
+  // the entire apply.
+  async function fetchSpellsByRef(refs) {
+    if (!refs || refs.length === 0) return [];
+    const out = [];
+    for (const ref of refs) {
+      try {
+        const params = new URLSearchParams({ search: ref.name });
+        const res = await fetch(`/api/spell-library?${params}`);
+        if (!res.ok) continue;
+        const list = await res.json();
+        // Match by exact name + matching edition when supplied.
+        const exact = (list || []).find((s) =>
+          String(s.name).toLowerCase() === String(ref.name).toLowerCase()
+          && (!ref.edition || String(s.edition) === String(ref.edition))
+        ) || (list || []).find((s) =>
+          String(s.name).toLowerCase() === String(ref.name).toLowerCase()
+        );
+        if (exact) out.push(exact);
+      } catch (err) {
+        console.warn('race spell fetch failed for', ref.name, err);
+      }
+    }
+    return out;
+  }
+
+  // Clear the racially-sourced entries without applying a new race —
+  // surfaced in the picker as "Remove current race" for cases where
+  // the player wants to go back to a blank slate. Same revert logic
+  // as applyRacePicker but without writing a new race in.
+  function clearRacePickerContribution() {
+    const stripTraits = (rows) =>
+      (rows || []).filter((r) => !(typeof r?.__source === 'string' && r.__source.startsWith('race:')));
+    setForm((f) => {
+      const prevAdded = (f.race_state && f.race_state.added) || {};
+      const sensesTypes = new Set((prevAdded.senses || []).map((s) => s.type));
+      const spellNames  = new Set((prevAdded.spells || []).map((s) => String(s).toLowerCase()));
+      const resistsLow  = new Set((prevAdded.resistances || []).map((s) => String(s).toLowerCase()));
+      const langsLow    = new Set((prevAdded.languages   || []).map((s) => String(s).toLowerCase()));
+
+      const stripCSV = (txt, removeLower) =>
+        String(txt || '')
+          .split(/\s*,\s*/)
+          .map((p) => p.trim())
+          .filter(Boolean)
+          .filter((p) => !removeLower.has(p.toLowerCase()))
+          .join(', ');
+
+      return {
+        ...f,
+        subtype: '',
+        special_abilities: stripTraits(f.special_abilities),
+        actions:           stripTraits(f.actions),
+        bonus_actions:     stripTraits(f.bonus_actions),
+        reactions:         stripTraits(f.reactions),
+        senses:  (f.senses || []).filter((s) => !sensesTypes.has(s.type)),
+        spells:  (f.spells || []).filter((s) => !spellNames.has(String(s.name || '').toLowerCase())),
+        damage_resistances: stripCSV(f.damage_resistances, resistsLow),
+        languages:          stripCSV(f.languages, langsLow),
+        // Speed / size aren't strictly reverted because we don't
+        // know the player's intent — they may have been customising
+        // a base value. Only the race_state metadata gets cleared.
+        race_state: {},
+      };
+    });
+  }
+
+  // ── Background picker ────────────────────────────────────────
+  // Each form field touched is also recorded in `background_state`
+  // so a future swap or removal can revert exactly those values
+  // (mirror of how the race picker uses race_state.added).
+  const STAT_OF_SKILL = {
+    skill_acrobatics: 'dexterity',     skill_animal_handling: 'wisdom',
+    skill_arcana: 'intelligence',      skill_athletics: 'strength',
+    skill_deception: 'charisma',       skill_history: 'intelligence',
+    skill_insight: 'wisdom',           skill_intimidation: 'charisma',
+    skill_investigation: 'intelligence', skill_medicine: 'wisdom',
+    skill_nature: 'intelligence',      skill_perception: 'wisdom',
+    skill_performance: 'charisma',     skill_persuasion: 'charisma',
+    skill_religion: 'intelligence',    skill_sleight_of_hand: 'dexterity',
+    skill_stealth: 'dexterity',        skill_survival: 'wisdom',
+  };
+
+  function applyBackground(bg, asi /* { kind, plus2, plus1 } */, equipKey /* 'a' | 'b' */) {
+    if (!bg) return;
+    const sourceTag = `background:${bg.id}`;
+    const profBonus = form.proficiency_bonus ?? 2;
+
+    // Build the ability-bump map up front so prev/next are symmetric.
+    const newBumps = {};
+    if (asi.kind === '2-1' && asi.plus2 && asi.plus1 && asi.plus2 !== asi.plus1) {
+      newBumps[asi.plus2] = 2;
+      newBumps[asi.plus1] = 1;
+    } else {
+      // +1 / +1 / +1 across all three listed abilities.
+      for (const a of bg.abilities) newBumps[a] = 1;
+    }
+
+    setForm((f) => {
+      const prevAdded = (f.background_state && f.background_state.added) || {};
+      const next = { ...f };
+
+      // Strip previous-background tagged rows.
+      const stripBg = (rows) => (rows || []).filter((r) =>
+        !(typeof r?.__source === 'string' && r.__source.startsWith('background:'))
+      );
+      next.feats = stripBg(f.feats);
+      next.special_abilities = stripBg(f.special_abilities);
+      next.inventory = (f.inventory || []).filter((it) =>
+        !(typeof it?._source === 'string' && it._source.startsWith('background:'))
+      );
+
+      // Roll back previous ability bumps and skill flags.
+      if (prevAdded.abilities) {
+        for (const [stat, n] of Object.entries(prevAdded.abilities)) {
+          next[stat] = Math.max(1, (next[stat] || 10) - n);
+        }
+      }
+      // Strip previously-added skills + any expertise flags they
+      // bumped on. Skills can be plain strings (legacy SRD shape) or
+      // { skill, level } objects.
+      if (Array.isArray(prevAdded.skills)) {
+        const expert = { ...(next.skill_expertise || {}) };
+        for (const raw of prevAdded.skills) {
+          const skill = typeof raw === 'string' ? raw : raw.skill;
+          if (skill) {
+            next[skill] = null;
+            delete expert[skill];
+          }
+        }
+        next.skill_expertise = expert;
+      }
+      // Roll back previous currency.
+      if (prevAdded.currency_gp) {
+        next.currency_gp = Math.max(0, (f.currency_gp || 0) - prevAdded.currency_gp);
+      }
+
+      // Apply new background.
+      next.feats = [...next.feats, { ...bg.feat, __source: sourceTag }];
+
+      // Tool prof — append to the CSV. Strip the previous-background
+      // tool entry first so a swap doesn't leave the old one behind.
+      const toolCsvParts = String(f.tool_proficiencies || '')
+        .split(/\s*,\s*/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      const cleanTools = prevAdded.tool
+        ? toolCsvParts.filter((p) => p.toLowerCase() !== String(prevAdded.tool).toLowerCase())
+        : toolCsvParts;
+      if (bg.tool && !cleanTools.some((p) => p.toLowerCase() === bg.tool.toLowerCase())) {
+        cleanTools.push(bg.tool);
+      }
+      next.tool_proficiencies = cleanTools.join(', ');
+
+      for (const [stat, n] of Object.entries(newBumps)) {
+        next[stat] = Math.min(20, (next[stat] || 10) + n);
+      }
+      // Skills entry can be either a plain string (= proficient) or
+      // { skill, level: 'proficient' | 'expertise' } so DM-authored
+      // backgrounds can grant expertise. Expertise doubles the prof
+      // bonus on that skill AND flips the skill_expertise flag.
+      const newExpertise = { ...(next.skill_expertise || {}) };
+      for (const raw of bg.skills) {
+        const skill = typeof raw === 'string' ? raw : raw.skill;
+        const level = typeof raw === 'string' ? 'proficient' : (raw.level || 'proficient');
+        if (!skill) continue;
+        const stat = STAT_OF_SKILL[skill] || 'strength';
+        const m = Math.floor(((next[stat] ?? 10) - 10) / 2);
+        const mult = level === 'expertise' ? 2 : 1;
+        next[skill] = m + profBonus * mult;
+        if (level === 'expertise') newExpertise[skill] = true;
+      }
+      next.skill_expertise = newExpertise;
+
+      // Equipment + starting currency.
+      const gpAdded = equipKey === 'a' ? bg.equipment_a_gp : bg.equipment_b_gp;
+      next.currency_gp = (next.currency_gp || 0) + gpAdded;
+      if (equipKey === 'a') {
+        for (const it of bg.equipment_a_items) {
+          next.inventory = [
+            ...next.inventory,
+            {
+              id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              item_type: 'item',
+              name: it.name,
+              qty: it.qty,
+              desc: '',
+              weight: '',
+              equipped: false,
+              sheds_light: false,
+              bright_ft: 20,
+              dim_ft: 40,
+              damage_entries: [{ damage: '', damage_type: '' }],
+              properties: '',
+              _source: sourceTag,
+            },
+          ];
+        }
+      }
+
+      next.background = bg.id;
+      next.background_state = {
+        id: bg.id,
+        added: {
+          feat: bg.feat?.name || '',
+          skills: [...bg.skills],
+          abilities: newBumps,
+          tool: bg.tool,
+          equipment: equipKey,
+          currency_gp: gpAdded,
+        },
+      };
+      return next;
+    });
+  }
+
+  function removeBackground() {
+    setForm((f) => {
+      const prevAdded = (f.background_state && f.background_state.added) || {};
+      const next = { ...f };
+      const stripBg = (rows) => (rows || []).filter((r) =>
+        !(typeof r?.__source === 'string' && r.__source.startsWith('background:'))
+      );
+      next.feats = stripBg(f.feats);
+      next.special_abilities = stripBg(f.special_abilities);
+      next.inventory = (f.inventory || []).filter((it) =>
+        !(typeof it?._source === 'string' && it._source.startsWith('background:'))
+      );
+      if (prevAdded.abilities) {
+        for (const [stat, n] of Object.entries(prevAdded.abilities)) {
+          next[stat] = Math.max(1, (next[stat] || 10) - n);
+        }
+      }
+      if (Array.isArray(prevAdded.skills)) {
+        const expert = { ...(next.skill_expertise || {}) };
+        for (const raw of prevAdded.skills) {
+          const skill = typeof raw === 'string' ? raw : raw.skill;
+          if (skill) {
+            next[skill] = null;
+            delete expert[skill];
+          }
+        }
+        next.skill_expertise = expert;
+      }
+      if (prevAdded.currency_gp) {
+        next.currency_gp = Math.max(0, (f.currency_gp || 0) - prevAdded.currency_gp);
+      }
+      // Strip the auto-applied tool from the CSV.
+      if (prevAdded.tool) {
+        next.tool_proficiencies = String(f.tool_proficiencies || '')
+          .split(/\s*,\s*/)
+          .map((p) => p.trim())
+          .filter((p) => p && p.toLowerCase() !== String(prevAdded.tool).toLowerCase())
+          .join(', ');
+      }
+      next.background = '';
+      next.background_state = {};
+      return next;
+    });
+  }
+
   // Proficiency checkbox helpers
   function toggleSave(saveKey, statKey) {
     const profBonus = form.proficiency_bonus ?? 2;
@@ -1100,9 +1983,27 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className={labelClass}>Size</label>
-                    <select className={inputClass} value={form.size} onChange={(e) => setField('size', e.target.value)}>
-                      {SIZES.map((s) => <option key={s} value={s}>{SIZE_LABELS[s]}</option>)}
-                    </select>
+                    {/* If the active race in race_state declares
+                        sizeChoices, restrict the dropdown to those
+                        options. Falls back to the full SIZES list
+                        for non-PC creatures and races with no
+                        constraint. */}
+                    {(() => {
+                      const rid = form.race_state?.race_id;
+                      const activeRace = rid ? findRaceMerged(rid) : null;
+                      const allowedRaw = activeRace?.sizeChoices;
+                      const allowed = (Array.isArray(allowedRaw) && allowedRaw.length > 0)
+                        ? allowedRaw.map((s) => s.toLowerCase())
+                        : null;
+                      const sizes = allowed
+                        ? SIZES.filter((s) => allowed.includes(s.toLowerCase()))
+                        : SIZES;
+                      return (
+                        <select className={inputClass} value={form.size} onChange={(e) => setField('size', e.target.value)}>
+                          {sizes.map((s) => <option key={s} value={s}>{SIZE_LABELS[s]}</option>)}
+                        </select>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className={labelClass}>Type</label>
@@ -1114,18 +2015,149 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
               </div>
             </div>
 
+            {/* For player characters the Subtype field is fed by the
+                Race Picker below — no freeform input needed. Non-PC
+                creatures (NPCs / monsters / DM-managed rows) keep the
+                free-text input so a goblin can still be flagged
+                "(goblinoid)" or whatever the DM types. */}
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={labelClass}>Subtype</label>
-                <input className={inputClass} placeholder="(any race)" value={form.subtype} onChange={(e) => setField('subtype', e.target.value)} />
-              </div>
-              <div>
+              {!isPlayerCharacter && (
+                <div>
+                  <label className={labelClass}>Subtype</label>
+                  <input className={inputClass} placeholder="(any race)" value={form.subtype} onChange={(e) => setField('subtype', e.target.value)} />
+                </div>
+              )}
+              <div className={isPlayerCharacter ? 'col-span-2' : ''}>
                 <label className={labelClass}>Alignment</label>
                 <select className={inputClass} value={form.alignment} onChange={(e) => setField('alignment', e.target.value)}>
                   {ALIGNMENTS.map((a) => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
             </div>
+
+            {/* ── Race picker (player characters only) ──────────────────
+                Cascading edition → race → sub-race selector. Type is
+                pulled from the form's existing Type dropdown above, so
+                the race list always reflects whatever the user picked
+                there. Apply appends every trait into the stat-block
+                arrays (Special Abilities / Actions / Bonus Actions /
+                Reactions) based on the per-row category in races.js. */}
+            {isPlayerCharacter && (() => {
+              // Detect whether a race is currently applied — any entry
+              // in special_abilities/actions/bonus_actions/reactions
+              // with a __source starting "race:" indicates the picker
+              // touched this character before.
+              const hasAppliedRace = ['special_abilities','actions','bonus_actions','reactions'].some((key) =>
+                (form[key] || []).some((r) => typeof r?.__source === 'string' && r.__source.startsWith('race:'))
+              );
+              return (
+              <div className="border border-purple-700/40 bg-purple-900/10 rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-purple-300 font-semibold uppercase tracking-wider">Race Picker</span>
+                  <span className="text-[11px] text-gray-500">
+                    {form.subtype ? `Current: ${form.subtype}` : 'SRD races · auto-fills traits'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className={labelClass}>Edition</label>
+                    <select
+                      className={inputClass}
+                      value={raceEdition}
+                      onChange={(e) => setRaceEdition(e.target.value)}
+                    >
+                      {RACE_EDITIONS.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Race</label>
+                    <select
+                      className={inputClass}
+                      value={raceId}
+                      onChange={(e) => setRaceId(e.target.value)}
+                      disabled={!racePickerHasTypes || racePickerRaces.length === 0}
+                    >
+                      <option value="">
+                        {!racePickerHasTypes
+                          ? 'No races for this Type'
+                          : racePickerRaces.length === 0
+                            ? 'None imported yet'
+                            : 'Choose a race…'}
+                      </option>
+                      {racePickerRaces.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    {/* The dropdown label varies by race — Goliath
+                        calls them Ancestries, Tiefling Legacies, etc.
+                        races.js declares the override; default is
+                        "Sub-Race". */}
+                    <label className={labelClass}>
+                      {selectedRaceObj?.subraceLabel || 'Sub-Race'}
+                    </label>
+                    <select
+                      className={inputClass}
+                      value={subraceId}
+                      onChange={(e) => setSubraceId(e.target.value)}
+                      disabled={!selectedRaceObj || (selectedRaceObj.subraces || []).length === 0}
+                    >
+                      <option value="">
+                        {!selectedRaceObj
+                          ? '—'
+                          : (selectedRaceObj.subraces || []).length === 0
+                            ? `No ${(selectedRaceObj.subraceLabel || 'Sub-Race').toLowerCase()}`
+                            : `Choose a ${(selectedRaceObj.subraceLabel || 'Sub-Race').toLowerCase()}…`}
+                      </option>
+                      {(selectedRaceObj?.subraces || []).map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {selectedRaceObj && (
+                  <div className="space-y-1.5 mt-2">
+                    <div className="text-[11px] text-gray-400">
+                      The traits below will append to your stat block on Apply. Property rows like Size and Speed are skipped.
+                    </div>
+                    <div className="max-h-40 overflow-y-auto pr-1 space-y-1">
+                      {combinedRaceTraits(selectedRaceObj, selectedSubraceObj).map((t, i) => (
+                        <div key={`${t.name}-${i}`} className="flex items-baseline justify-between text-[11px] bg-gray-800/40 rounded px-2 py-1">
+                          <span className="text-gray-200 font-semibold">{t.name}</span>
+                          <span className="text-purple-300 font-mono">
+                            {t.category === 'specialAbility' && 'Special'}
+                            {t.category === 'action' && 'Action'}
+                            {t.category === 'bonusAction' && 'Bonus'}
+                            {t.category === 'reaction' && 'Reaction'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={applyRacePicker}
+                      disabled={!selectedRaceObj || ((selectedRaceObj.subraces || []).length > 0 && !selectedSubraceObj)}
+                      className="w-full bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 disabled:text-gray-500 text-purple-100 text-xs font-semibold py-1.5 rounded transition-colors"
+                    >
+                      Apply race traits
+                    </button>
+                  </div>
+                )}
+                {/* Remove-current-race control. Lives outside the
+                    selectedRaceObj block so it's reachable even when
+                    no race is currently picked but a previous one is
+                    still in the form. */}
+                {hasAppliedRace && (
+                  <button
+                    type="button"
+                    onClick={clearRacePickerContribution}
+                    className="w-full mt-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[11px] py-1 rounded transition-colors"
+                  >
+                    Remove current race traits
+                  </button>
+                )}
+              </div>
+              );
+            })()}
 
             {isPlayerCharacter && (
               <>
@@ -1200,6 +2232,74 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                     />
                   </div>
                 </div>
+
+                {/* ── Background row ── */}
+                {(() => {
+                  const bg = findBackgroundMerged(form.background);
+                  return (
+                    <div className="flex items-center gap-3 bg-gray-800/40 border border-gray-700 rounded p-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-gray-400">Background</div>
+                        <div className="text-sm text-gray-100 truncate">
+                          {bg ? (
+                            <>
+                              <span className="text-amber-300">{bg.name}</span>
+                              <span className="text-gray-500 ml-2">
+                                · feat: {bg.feat?.name}
+                                · skills: {bg.skills.map((raw) => {
+                                  const k = typeof raw === 'string' ? raw : raw.skill;
+                                  return SKILL_LABELS[k]?.split(' (')[0] || k;
+                                }).join(', ')}
+                                · tool: {bg.tool}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="italic text-gray-500">— not set —</span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Pre-load the modal with the current
+                          // background's choices when one is set, so
+                          // the user can review without hunting again.
+                          const prev = (form.background_state && form.background_state.added) || {};
+                          setBgPickedId(form.background || '');
+                          setBgEquipment(prev.equipment || 'a');
+                          // Best-effort restore of ASI selectors.
+                          if (prev.abilities) {
+                            const entries = Object.entries(prev.abilities);
+                            const has2 = entries.find(([, n]) => n === 2);
+                            const has1 = entries.find(([, n]) => n === 1 && (!has2 || has2[0] !== entries[0][0]));
+                            if (has2 && has1) {
+                              setBgAsiKind('2-1');
+                              setBgAsiPlus2(has2[0]);
+                              setBgAsiPlus1(has1[0]);
+                            } else {
+                              setBgAsiKind('1-1-1');
+                            }
+                          } else {
+                            setBgAsiKind('2-1');
+                            setBgAsiPlus2('');
+                            setBgAsiPlus1('');
+                          }
+                          setShowBackgroundModal(true);
+                        }}
+                        className="text-xs bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700 text-amber-200 px-3 py-1.5 rounded shrink-0">
+                        {bg ? 'Change Background' : 'Set Background'}
+                      </button>
+                      {bg && (
+                        <button
+                          type="button"
+                          onClick={removeBackground}
+                          className="text-xs bg-red-900/40 hover:bg-red-800/60 border border-red-700 text-red-200 px-3 py-1.5 rounded shrink-0">
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             )}
 
@@ -1308,6 +2408,27 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
               </div>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>Tool Proficiencies</label>
+                <input
+                  className={inputClass}
+                  placeholder="e.g. Thieves' Tools, Lute, Smith's Tools"
+                  value={form.tool_proficiencies || ''}
+                  onChange={(e) => setField('tool_proficiencies', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Weapon Proficiencies</label>
+                <input
+                  className={inputClass}
+                  placeholder="e.g. Simple weapons, Longsword, Shortbow"
+                  value={form.weapon_proficiencies || ''}
+                  onChange={(e) => setField('weapon_proficiencies', e.target.value)}
+                />
+              </div>
+            </div>
+
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className={labelClass} style={{ marginBottom: 0 }}>Passive Perception</label>
@@ -1403,15 +2524,26 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 <input className={inputClass} placeholder="natural armor" value={form.armor_desc} onChange={(e) => setField('armor_desc', e.target.value)} />
               </div>
             </div>
-            <label className="flex items-center gap-2 text-sm text-gray-200 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={!!form.shield_equipped}
-                onChange={(e) => setField('shield_equipped', e.target.checked)}
-                className="accent-dnd-gold"
-              />
-              Shield Equipped (+2 AC)
-            </label>
+            {/* Computed AC readout — shows the rolled-up total + its
+                breakdown so the player can see where the AC comes
+                from. The value is auto-pushed into the manual Armor
+                Class field via the useEffect below, so the stat
+                block / iOS stays in lockstep. */}
+            {(() => {
+              const calc = computeAcFromGear(form);
+              if (!calc) return null;
+              return (
+                <div className="bg-gray-800 border border-emerald-700/40 rounded-lg p-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-emerald-300 font-semibold uppercase tracking-wider">Computed AC from gear</div>
+                    <span className="text-xl font-bold text-emerald-200 font-mono">{calc.total}</span>
+                  </div>
+                  <div className="text-[11px] text-gray-400 font-mono">
+                    {calc.parts.join(' + ')} = {calc.total}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1969,10 +3101,16 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h4 className="text-sm font-semibold text-dnd-gold">Items</h4>
-                <button type="button" onClick={addInventoryItem}
-                  className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-200">
-                  + Add Item
-                </button>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setShowItemLibrary(true)}
+                    className="text-xs bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700 text-emerald-200 px-2 py-1 rounded">
+                    + From library
+                  </button>
+                  <button type="button" onClick={addInventoryItem}
+                    className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-200">
+                    + Add Item
+                  </button>
+                </div>
               </div>
               {(form.inventory || []).length === 0 && (
                 <p className="text-xs text-gray-500 italic py-1">No items — click + Add Item</p>
@@ -1981,10 +3119,15 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 {(form.inventory || []).map((item, i) => {
                   const isKnownLight = !!knownLightPreset(item.name);
                   const isWeapon = item.item_type === 'weapon';
+                  const isArmor = item.item_type === 'armor';
                   const isMagicItem = item.item_type === 'magic_item';
                   // Plain mundane items don't get attuned — show the flag
-                  // only on weapons and magic items where it actually applies.
-                  const canAttune = isWeapon || isMagicItem;
+                  // only on weapons / armor / magic items where it actually applies.
+                  const canAttune = isWeapon || isMagicItem || isArmor;
+                  // Magic-bonus AC field appears on magic items AND on
+                  // armor (so a +1 plate is just an armor row with
+                  // ac_bonus=1, no need for a separate magic-item entry).
+                  const showAcBonus = isMagicItem || isArmor;
                   return (
                   <div key={i} className="bg-gray-800 rounded-lg p-3 space-y-2">
                     <div className="flex gap-2">
@@ -1995,6 +3138,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                       >
                         <option value="item">Item</option>
                         <option value="weapon">Weapon</option>
+                        <option value="armor">Armor</option>
                         <option value="magic_item">Magic Item</option>
                       </select>
                       <input
@@ -2107,6 +3251,76 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                             ))}
                           </select>
                         </div>
+                      </div>
+                    )}
+
+                    {isArmor && (
+                      <div className="space-y-2 border-l-2 border-emerald-700/40 pl-3">
+                        <div className="flex gap-2 flex-wrap">
+                          <div className="w-24">
+                            <label className="text-xs text-gray-400">Base AC</label>
+                            <input
+                              type="number"
+                              min={1}
+                              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white text-center focus:outline-none focus:border-emerald-400"
+                              placeholder="14"
+                              value={item.ac_base ?? ''}
+                              onChange={(e) => updateInventoryItem(i, 'ac_base', parseInt(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="w-32">
+                            <label className="text-xs text-gray-400">Category</label>
+                            <select
+                              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-emerald-400"
+                              value={item.armor_category || 'light'}
+                              onChange={(e) => updateInventoryItem(i, 'armor_category', e.target.value)}
+                            >
+                              <option value="light">Light (+ DEX)</option>
+                              <option value="medium">Medium (+ DEX, max 2)</option>
+                              <option value="heavy">Heavy (no DEX)</option>
+                              <option value="shield">Shield (+2 flat)</option>
+                            </select>
+                          </div>
+                          <div className="w-24">
+                            <label className="text-xs text-gray-400">STR Req</label>
+                            <input
+                              type="number"
+                              min={0}
+                              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white text-center focus:outline-none focus:border-emerald-400"
+                              placeholder="—"
+                              value={item.str_req ?? ''}
+                              onChange={(e) => updateInventoryItem(i, 'str_req', e.target.value === '' ? null : parseInt(e.target.value) || 0)}
+                            />
+                          </div>
+                          <label className="flex items-center gap-1.5 text-xs text-gray-300 self-end pb-1">
+                            <input
+                              type="checkbox"
+                              className="accent-emerald-500"
+                              checked={!!item.stealth_disadvantage}
+                              onChange={(e) => updateInventoryItem(i, 'stealth_disadvantage', e.target.checked)}
+                            />
+                            <span>Stealth disadvantage</span>
+                          </label>
+                        </div>
+                        <p className="text-[11px] text-emerald-300/70 leading-snug">
+                          When this armor is equipped, your AC is auto-computed from Base AC + DEX (capped per category) + any other equipped magic-item AC bonuses. Shields with this category contribute the same +2 the existing Shield flag does.
+                        </p>
+                      </div>
+                    )}
+
+                    {showAcBonus && (
+                      <div className="flex items-center gap-3 flex-wrap pl-3">
+                        <label className="flex items-center gap-1.5 text-xs text-gray-300">
+                          <span className="text-gray-400">Equipped AC bonus:</span>
+                          <input
+                            type="number"
+                            className="w-14 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white text-center focus:outline-none focus:border-emerald-400"
+                            placeholder="0"
+                            value={item.ac_bonus ?? ''}
+                            onChange={(e) => updateInventoryItem(i, 'ac_bonus', e.target.value === '' ? null : parseInt(e.target.value) || 0)}
+                          />
+                          <span className="text-gray-500">added to AC while equipped</span>
+                        </label>
                       </div>
                     )}
 
@@ -2248,6 +3462,14 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             const total = mod + pb + misc;
             return (total >= 0 ? '+' : '') + total;
           }
+          // Damage modifier — STR/DEX (or whatever the weapon's
+          // attack_stat is) added to weapon damage per the standard
+          // 5e melee/ranged weapon attack rules.
+          function dmgMod(item) {
+            const statKey = STAT_KEYS[item.attack_stat] || 'strength';
+            const statVal = form[statKey] || 10;
+            return Math.floor((statVal - 10) / 2);
+          }
           return (
             <div className="space-y-4">
               <div>
@@ -2269,8 +3491,9 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                       <tbody className="divide-y divide-gray-800">
                         {weapons.map((w, idx) => {
                           const dmgEntries = getDamageEntries(w).filter(e => e.damage);
+                          const dm = dmgMod(w);
                           const dmgStr = dmgEntries.length
-                            ? dmgEntries.map(e => `${e.damage}${e.damage_type ? ` ${e.damage_type}` : ''}`).join(' + ')
+                            ? dmgEntries.map(e => `${formatDamageWithMod(e.damage, dm)}${e.damage_type ? ` ${formatDamageType(e.damage_type)}` : ''}`).join(' + ')
                             : '—';
                           return (
                           <tr key={idx} className={w.equipped ? 'text-white' : 'text-gray-400'}>
@@ -2342,6 +3565,269 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           {saving ? 'Saving...' : submitLabel || (creature?.id ? 'Update Creature' : 'Create Creature')}
         </button>
       </div>
+
+      {/* Background picker modal — basic-tab "Set Background" opens
+          this. Lets the user pick one of the four SRD-2024 backgrounds,
+          choose an ASI split (+2/+1 or +1/+1/+1) across the listed
+          abilities, and an equipment package (A or B = 50 GP).
+          Skills + feat + tool prof + items are all written into the
+          form on Apply, tagged so a future swap reverts them cleanly. */}
+      {showBackgroundModal && (() => {
+        const bg = findBackgroundMerged(bgPickedId);
+        const STAT_LABELS = {
+          strength: 'STR', dexterity: 'DEX', constitution: 'CON',
+          intelligence: 'INT', wisdom: 'WIS', charisma: 'CHA',
+        };
+        const canApply = !!bg && (
+          bgAsiKind === '1-1-1'
+            ? true
+            : (bgAsiPlus2 && bgAsiPlus1 && bgAsiPlus2 !== bgAsiPlus1
+                && bg.abilities.includes(bgAsiPlus2)
+                && bg.abilities.includes(bgAsiPlus1))
+        );
+        return (
+          <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+            onClick={() => setShowBackgroundModal(false)}>
+            <div onClick={(e) => e.stopPropagation()}
+              className="bg-gray-900 border border-amber-700 rounded-lg w-full max-w-2xl max-h-[88vh] flex flex-col">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+                <h3 className="text-amber-300 font-semibold">Choose Background</h3>
+                <button type="button" onClick={() => setShowBackgroundModal(false)}
+                  className="text-gray-400 hover:text-gray-200 text-xl leading-none">×</button>
+              </div>
+              <div className="overflow-y-auto flex-1 p-4 space-y-4">
+                {/* Card row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {allBackgroundsMerged.map((b) => (
+                    <button key={b.id} type="button"
+                      onClick={() => {
+                        setBgPickedId(b.id);
+                        // Reset ASI defaults whenever the card changes.
+                        setBgAsiKind('2-1');
+                        setBgAsiPlus2(b.abilities[0]);
+                        setBgAsiPlus1(b.abilities[1]);
+                        setBgEquipment('a');
+                      }}
+                      className={`text-left p-2 rounded border ${
+                        bgPickedId === b.id
+                          ? 'bg-amber-900/40 border-amber-500'
+                          : 'bg-gray-800 border-gray-700 hover:border-gray-500'
+                      }`}>
+                      <div className="text-sm font-semibold text-amber-200">{b.name}</div>
+                      <div className="text-[11px] text-gray-400">
+                        {b.abilities.map((a) => STAT_LABELS[a]).join(' / ')}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {bg && (
+                  <div className="space-y-3">
+                    <p className="text-xs text-gray-300 leading-relaxed">{bg.description}</p>
+
+                    <div className="bg-gray-800/40 border border-gray-700 rounded p-2">
+                      <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Origin Feat</div>
+                      <div className="text-sm text-amber-200 font-semibold">{bg.feat?.name}</div>
+                      <div className="text-xs text-gray-300 mt-1 whitespace-pre-wrap">{bg.feat?.desc}</div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-gray-800/40 border border-gray-700 rounded p-2">
+                        <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Skill Proficiencies</div>
+                        <ul className="text-sm text-gray-200 space-y-0.5">
+                          {bg.skills.map((raw) => {
+                            const k = typeof raw === 'string' ? raw : raw.skill;
+                            const lvl = typeof raw === 'string' ? 'proficient' : (raw.level || 'proficient');
+                            return (
+                              <li key={k}>• {SKILL_LABELS[k] || k}{lvl === 'expertise' && <span className="text-amber-300"> (expertise)</span>}</li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                      <div className="bg-gray-800/40 border border-gray-700 rounded p-2">
+                        <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Tool Proficiency</div>
+                        <div className="text-sm text-gray-200">{bg.tool}</div>
+                      </div>
+                    </div>
+
+                    {/* ASI selector */}
+                    <div className="bg-gray-800/40 border border-gray-700 rounded p-2 space-y-2">
+                      <div className="text-xs uppercase tracking-wider text-gray-400">
+                        Ability Score Improvement
+                      </div>
+                      <div className="flex flex-wrap gap-3 text-sm text-gray-200">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio"
+                            checked={bgAsiKind === '2-1'}
+                            onChange={() => setBgAsiKind('2-1')}
+                            className="accent-amber-500" />
+                          +2 in one, +1 in another
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio"
+                            checked={bgAsiKind === '1-1-1'}
+                            onChange={() => setBgAsiKind('1-1-1')}
+                            className="accent-amber-500" />
+                          +1 in all three
+                        </label>
+                      </div>
+                      {bgAsiKind === '2-1' ? (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-gray-400">+2 to</span>
+                          <select value={bgAsiPlus2}
+                            onChange={(e) => setBgAsiPlus2(e.target.value)}
+                            className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white">
+                            <option value="">—</option>
+                            {bg.abilities.map((a) => (
+                              <option key={a} value={a}>{STAT_LABELS[a]}</option>
+                            ))}
+                          </select>
+                          <span className="text-gray-400 ml-2">+1 to</span>
+                          <select value={bgAsiPlus1}
+                            onChange={(e) => setBgAsiPlus1(e.target.value)}
+                            className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white">
+                            <option value="">—</option>
+                            {bg.abilities.filter((a) => a !== bgAsiPlus2).map((a) => (
+                              <option key={a} value={a}>{STAT_LABELS[a]}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-400">
+                          +1 each to {bg.abilities.map((a) => STAT_LABELS[a]).join(', ')}.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Equipment selector */}
+                    <div className="bg-gray-800/40 border border-gray-700 rounded p-2 space-y-2">
+                      <div className="text-xs uppercase tracking-wider text-gray-400">Starting Equipment</div>
+                      <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-200">
+                        <input type="radio" checked={bgEquipment === 'a'}
+                          onChange={() => setBgEquipment('a')}
+                          className="accent-amber-500 mt-0.5" />
+                        <span>
+                          <span className="text-amber-200">A:</span>{' '}
+                          {bg.equipment_a_items.map((it) =>
+                            `${it.name}${it.qty > 1 ? ` ×${it.qty}` : ''}`
+                          ).join(', ')}
+                          {bg.equipment_a_gp > 0 && `, ${bg.equipment_a_gp} GP`}
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-200">
+                        <input type="radio" checked={bgEquipment === 'b'}
+                          onChange={() => setBgEquipment('b')}
+                          className="accent-amber-500 mt-0.5" />
+                        <span>
+                          <span className="text-amber-200">B:</span> {bg.equipment_b_gp} GP
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-gray-700">
+                <button type="button" onClick={() => setShowBackgroundModal(false)}
+                  className="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">
+                  Cancel
+                </button>
+                <button type="button"
+                  disabled={!canApply}
+                  onClick={() => {
+                    applyBackground(
+                      bg,
+                      { kind: bgAsiKind, plus2: bgAsiPlus2, plus1: bgAsiPlus1 },
+                      bgEquipment,
+                    );
+                    setShowBackgroundModal(false);
+                  }}
+                  className="text-xs bg-amber-700 hover:bg-amber-600 disabled:bg-gray-700 disabled:text-gray-500 text-amber-50 px-3 py-1.5 rounded">
+                  Apply Background
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Item-library picker modal — opened from "+ From library" in
+          inventory. Click a row to push it onto the inventory list. */}
+      {showItemLibrary && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowItemLibrary(false)}>
+          <div onClick={e => e.stopPropagation()}
+            className="bg-gray-900 border border-gray-700 rounded-lg w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+              <h3 className="text-dnd-gold font-semibold">Item Library</h3>
+              <button type="button" onClick={() => setShowItemLibrary(false)}
+                className="text-gray-400 hover:text-gray-200 text-xl leading-none">×</button>
+            </div>
+            <div className="px-4 py-2 flex gap-2 border-b border-gray-700">
+              <input
+                placeholder="Search by name…"
+                className="flex-1 min-w-[140px] bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white"
+                value={itemLibrarySearch}
+                onChange={e => setItemLibrarySearch(e.target.value)}
+              />
+              <select
+                className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white"
+                value={itemLibraryType}
+                onChange={e => setItemLibraryType(e.target.value)}
+              >
+                <option value="">All</option>
+                <option value="armor">Armor</option>
+                <option value="weapon">Weapon</option>
+                <option value="magic_item">Magic item</option>
+                <option value="gear">Gear</option>
+              </select>
+            </div>
+            <div className="overflow-y-auto flex-1 p-2">
+              {!itemLibraryLoaded && (
+                <div className="text-gray-500 italic p-2 text-sm">Loading…</div>
+              )}
+              {itemLibraryLoaded && (() => {
+                const q = itemLibrarySearch.trim().toLowerCase();
+                const list = itemLibraryRows.filter(r =>
+                  (!q || r.name.toLowerCase().includes(q)) &&
+                  (!itemLibraryType || r.item_type === itemLibraryType)
+                );
+                if (list.length === 0) {
+                  return <div className="text-gray-500 italic p-2 text-sm">No matches.</div>;
+                }
+                return (
+                  <ul className="space-y-1">
+                    {list.map(row => (
+                      <li key={row.id}>
+                        <button type="button"
+                          onClick={() => pickItemFromLibrary(row)}
+                          className="w-full text-left px-3 py-2 rounded hover:bg-gray-800 border border-gray-800">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-100">{row.name}</span>
+                            <span className="text-[10px] uppercase text-gray-500">
+                              {row.item_type}{row.rarity ? ` · ${row.rarity}` : ''} · {row.edition}
+                            </span>
+                          </div>
+                          {row.item_type === 'armor' && (
+                            <div className="text-[11px] text-gray-400">
+                              AC {row.ac_base} {row.armor_category && `· ${row.armor_category}`}
+                            </div>
+                          )}
+                          {row.item_type === 'weapon' && Array.isArray(row.damage_entries) && row.damage_entries[0] && (
+                            <div className="text-[11px] text-gray-400">
+                              {row.damage_entries[0].damage} {row.damage_entries[0].damage_type}
+                            </div>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 }

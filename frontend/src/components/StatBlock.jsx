@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatDamageWithMod, formatDamageType } from '../utils/damage.js';
 
 function mod(score) {
   const m = Math.floor((score - 10) / 2);
@@ -149,7 +150,7 @@ function WeaponsSection({ creature, onRoll }) {
                     <div key={di} className="flex items-center gap-1 text-xs">
                       <span className="text-gray-400">Damage:</span>
                       <span className="font-mono text-gray-200">
-                        {e.damage}{e.damage_type ? ` ${e.damage_type}` : ''}
+                        {formatDamageWithMod(e.damage, dm)}{e.damage_type ? ` ${formatDamageType(e.damage_type)}` : ''}
                       </span>
                     </div>
                   ))}
@@ -513,6 +514,7 @@ export default function StatBlock({ creature, onRoll = null }) {
         {creature.condition_immunities && <p><strong>Condition Immunities</strong> {creature.condition_immunities}</p>}
         {(() => { const s = sensesStr(creature); return s ? <p><strong>Senses</strong> {s}</p> : null; })()}
         {creature.languages && <p><strong>Languages</strong> {creature.languages}</p>}
+        {creature.tool_proficiencies && <p><strong>Tool Proficiencies</strong> {creature.tool_proficiencies}</p>}
         {!creature.is_player_character && (
           <p><strong>Challenge</strong> {creature.challenge_rating} ({creature.xp?.toLocaleString()} XP)</p>
         )}

@@ -1,0 +1,9 @@
+# Authored from the 2024 PHB SRD (CC-BY 4.0). Spot-check against the printed PHB — wording may have been adjusted in errata.,,,
+Ability,Description,Category,Notes
+Creature Type,You are a Humanoid.,Special Abilities,
+Size,You are Small.,,Set size to Small
+Speed,Your Speed is 30 feet.,,Set walking speed to 30ft
+Darkvision,You have Darkvision with a range of 60 feet.,Special Abilities,Set Darkvision to 60ft
+Gnomish Cunning,"You have Advantage on Intelligence, Wisdom, and Charisma saving throws.",Special Abilities,"Adds advantage on INT, WIS, CHA saving throws"
+Gnomish Lineage,You are part of a gnomish lineage that grants you supernatural abilities. Choose Forest Gnome or Rock Gnome.,Special Abilities,
+Languages,"You can speak, read, and write Common and Gnomish.",,"Auto adds Common, Gnomish to languages"

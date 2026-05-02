@@ -1,0 +1,7 @@
+Ability,Description,Category,Notes
+Ability Score Increase,Intelligence +2,,
+Size,Gnomes are between 3 and 4 feet tall and average about 40 pounds. Your size is Small.,,
+Speed,Your base walking speed is 25 feet.,,Set walking speed to 25ft
+Languages,"You can speak, read, and write Common and Gnomish. The Gnomish language, which uses the Dwarvish script, is renowned for its technical treatises and its catalogs of knowledge about the natural world.",,"Auto adds Common, Gnomish to languages"
+Darkvision,"Accustomed to life underground, you have superior vision in dark and dim conditions. You can see in dim light within 60 feet of you as if it were bright light, and in darkness as if it were dim light. You can't discern color in darkness, only shades of gray.",Special Abilities,Set Darkvision to 60ft
+Gnome Cunning,"You have advantage on all Intelligence, Wisdom, and Charisma saving throws against magic.",Special Abilities,

@@ -1,0 +1,7 @@
+// User-owned signing config. xcodegen REFERENCES this file but never
+// rewrites it, so anything you set here survives every regenerate.
+//
+// Read out of the existing pbxproj on 2026-05-01 so the team is
+// pinned in a place xcodegen can't touch. Edit this line if you ever
+// need to swap teams.
+DEVELOPMENT_TEAM = J4UJD4Z33J

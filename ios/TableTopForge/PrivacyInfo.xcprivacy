@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  PrivacyInfo.xcprivacy — required by Apple's App Review since spring
+  2024 for any app that links a "required-reason API" or any third-
+  party SDK on the manifest list. This app's only required-reason
+  hits are UserDefaults (login persistence) and SystemBootTime via
+  Foundation.Date (used implicitly by URLSession); both are listed
+  with the App Functionality reason code, which matches reality.
+
+  Tracking: NO. The app collects nothing for advertising or
+  cross-app/cross-website analytics. NSPrivacyTracking is false and
+  NSPrivacyTrackingDomains is empty.
+
+  Data collection: NONE off-device. The player's name + chosen
+  server URL + last-character-id sit in UserDefaults locally; nothing
+  is sent to any first- or third-party analytics/advertising backend.
+  When App Review's privacy nutrition labels are filled out at
+  submission time, all categories should be "Data Not Collected".
+-->
+<plist version="1.0">
+<dict>
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- CA92.1: "Access info from same app, per documentation"
+                     — which is exactly how we use UserDefaults: to read
+                     back the same player-name / server-URL / theme the
+                     user typed in this app. -->
+                <string>CA92.1</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- 35F9.1: "Measure time within the app or to a server
+                     event the user initiated." Matches our use of Date()
+                     for whisper / NPC-say timestamps shown to the user. -->
+                <string>35F9.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

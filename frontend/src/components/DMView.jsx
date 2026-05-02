@@ -5,8 +5,11 @@ import MapStage, { TOKEN_SIZES, DM_MARKER_ICONS, DM_MARKER_COLORS } from './MapS
 import DiceRoller, { DiceRollOverlay } from './DiceRoller.jsx';
 import CreatureLibrary from './CreatureLibrary.jsx';
 import SpellLibrary from './SpellLibrary.jsx';
+import ItemLibrary  from './ItemLibrary.jsx';
+import CustomOriginsPanel from './CustomOriginsPanel.jsx';
 import ToolPanel from './ToolPanel.jsx';
 import StatBlock from './StatBlock.jsx';
+import { formatDamageWithMod, formatDamageType } from '../utils/damage.js';
 import ActionsReference from './ActionsReference.jsx';
 import { wallsToSegments, doorsToSegments, lineBlocked } from '../utils/los.js';
 import { registries as pluginRegistries, useRegistryVersion, loadPlugins, unloadPlugin, reloadPlugin } from '../plugins/pluginRegistry.js';
@@ -113,8 +116,8 @@ function hexOpacityToRgba(hex, opacity) {
   return `rgba(${r},${g},${b},${Number(opacity).toFixed(2)})`;
 }
 
-const DEFAULT_PANEL_TABS = ['map', 'library', 'terrain', 'spells', 'tokens', 'markers', 'treasure', 'handouts', 'session'];
-const PANEL_LABELS = { map: 'Map', library: 'Library', terrain: 'Terrain', spells: 'Spells', tokens: 'Tokens', markers: 'Markers', treasure: 'Treasure', handouts: 'Handouts', session: 'Session' };
+const DEFAULT_PANEL_TABS = ['map', 'library', 'terrain', 'spells', 'items', 'origins', 'tokens', 'markers', 'treasure', 'handouts', 'session'];
+const PANEL_LABELS = { map: 'Map', library: 'Library', terrain: 'Terrain', spells: 'Spells', items: 'Items', origins: 'Origins', tokens: 'Tokens', markers: 'Markers', treasure: 'Treasure', handouts: 'Handouts', session: 'Session' };
 const PANEL_TAB_ORDER_KEY = 'dndvtt_dm_panel_tab_order';
 
 const DM_MARKER_TYPES = [
@@ -2091,6 +2094,9 @@ export default function DMView() {
   const [fowBlur, setFowBlur] = useState(16);
   const [fowColor, setFowColor] = useState('#000000');
   const [ambientLight, setAmbientLight] = useState('bright');
+  // 'both' / '2014' / '2024' — what slice of the SRD spell library the
+  // players are allowed to browse. DM-controlled, syncs via socket.
+  const [activeSrdEdition, setActiveSrdEdition] = useState('both');
 
   // DM markers
   const [dmMarkers, setDmMarkers] = useState([]);
@@ -2398,6 +2404,7 @@ export default function DMView() {
       setFowBlur(state.session.fow_blur ?? 16);
       setFowColor(state.session.fow_color || '#000000');
       setAmbientLight(state.session.ambient_light || 'bright');
+      setActiveSrdEdition(state.session.active_srd_edition || 'both');
       setGridSize(state.session.grid_size || 50);
       const gc = state.session.grid_color || 'rgba(0,0,0,0.35)';
       const gt = state.session.grid_thickness ?? 0.7;
@@ -2689,6 +2696,7 @@ export default function DMView() {
     socket.on('fow_blur_changed',      ({ blur })               => setFowBlur(blur));
     socket.on('fow_color_changed',     ({ color })              => setFowColor(color || '#000000'));
     socket.on('ambient_light_changed', ({ ambientLight: al })   => setAmbientLight(al));
+    socket.on('active_srd_edition_changed', ({ edition })       => setActiveSrdEdition(edition || 'both'));
 
     socket.on('grid_size_changed', ({ gridSize: gs }) => {
       setGridSize(gs);
@@ -4250,6 +4258,10 @@ export default function DMView() {
                       </div>
                     </div>
 
+                    {/* SRD edition toggle moved to the Spell Library
+                        tab — keeps it next to the spell list it
+                        filters and out of the FOW settings. */}
+
                     {/* FOW Toggle */}
                     <div className="flex items-center justify-between border-t border-gray-700 pt-2">
                       <div>
@@ -4569,7 +4581,30 @@ export default function DMView() {
 
             {/* ── SPELLS TAB (DM library) ── */}
             {panelTab === 'spells' && (
-              <SpellLibrary aiSettings={aiSettings} />
+              <SpellLibrary
+                aiSettings={aiSettings}
+                activeSrdEdition={activeSrdEdition}
+                onChangeActiveSrdEdition={(val) => {
+                  setActiveSrdEdition(val);
+                  socket.emit('set_active_srd_edition', { sessionId: session.id, edition: val });
+                }}
+              />
+            )}
+
+            {/* ── ITEMS TAB (DM library) ── */}
+            {panelTab === 'items' && (
+              <ItemLibrary
+                activeSrdEdition={activeSrdEdition}
+                onChangeActiveSrdEdition={(val) => {
+                  setActiveSrdEdition(val);
+                  socket.emit('set_active_srd_edition', { sessionId: session.id, edition: val });
+                }}
+              />
+            )}
+
+            {/* ── ORIGINS TAB (custom DM-authored races + backgrounds) ── */}
+            {panelTab === 'origins' && (
+              <CustomOriginsPanel />
             )}
 
             {/* ── TOKENS TAB ── */}
@@ -6160,14 +6195,19 @@ export default function DMView() {
                     const total = mod + pb + misc;
                     return (total >= 0 ? '+' : '') + total;
                   }
+                  function dmgMod(item) {
+                    const statKey = STAT_KEYS[item.attack_stat] || 'strength';
+                    const statVal = statBlockCreature[statKey] || 10;
+                    return Math.floor((statVal - 10) / 2);
+                  }
                   function dmgStr(w) {
                     const entries = Array.isArray(w.damage_entries) && w.damage_entries.length
                       ? w.damage_entries
                       : (w.damage ? [{ damage: w.damage, damage_type: w.damage_type || '' }] : []);
                     const filtered = entries.filter(e => e.damage);
-                    return filtered.length
-                      ? filtered.map(e => `${e.damage}${e.damage_type ? ` ${e.damage_type}` : ''}`).join(' + ')
-                      : '—';
+                    if (!filtered.length) return '—';
+                    const dm = dmgMod(w);
+                    return filtered.map(e => `${formatDamageWithMod(e.damage, dm)}${e.damage_type ? ` ${formatDamageType(e.damage_type)}` : ''}`).join(' + ');
                   }
                   return (
                     <>

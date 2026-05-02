@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Option 2: D20 die. The single most-recognisable TTRPG icon, drawn
+  flat with a centred "20" so it reads even at 40pt. Background is a
+  rich burgundy that calls back to the web app's dnd-red colour.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"  stop-color="#7a1d1d"/>
+      <stop offset="100%" stop-color="#3d0e0e"/>
+    </linearGradient>
+    <linearGradient id="dieFace" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"  stop-color="#f4d488"/>
+      <stop offset="100%" stop-color="#a07820"/>
+    </linearGradient>
+    <linearGradient id="dieFaceDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"  stop-color="#7a5a1c"/>
+      <stop offset="100%" stop-color="#3d2c0e"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- D20 outline silhouette (icosahedron viewed point-up). The
+       internal triangles fake the facets so the die reads as 3D
+       without needing a real perspective. -->
+  <g transform="translate(512 540)">
+    <!-- Outer hex outline. -->
+    <polygon points="0,-340  295,-170  295,170  0,340  -295,170  -295,-170"
+             fill="url(#dieFace)" stroke="#1a1a2e" stroke-width="14"/>
+
+    <!-- Inner pentagon (the visible front face). -->
+    <polygon points="0,-180  170,-58  105,142  -105,142  -170,-58"
+             fill="url(#dieFace)" stroke="#1a1a2e" stroke-width="10"/>
+
+    <!-- Side facet shading — three darker triangles around the front
+         face so the die has volume. -->
+    <polygon points="0,-340  295,-170  170,-58  0,-180" fill="url(#dieFaceDark)" opacity="0.55"/>
+    <polygon points="295,-170  295,170  105,142  170,-58" fill="url(#dieFaceDark)" opacity="0.35"/>
+    <polygon points="-295,-170  -170,-58  -105,142  -295,170" fill="url(#dieFaceDark)" opacity="0.55"/>
+    <polygon points="0,-340  -295,-170  -170,-58  0,-180" fill="url(#dieFaceDark)" opacity="0.35"/>
+
+    <!-- "20" — heavy serif, dark navy, perfectly centred on the
+         front face. -->
+    <text x="0" y="80" text-anchor="middle"
+          font-family="Georgia, 'Times New Roman', serif"
+          font-weight="900" font-size="240" fill="#1a1a2e">20</text>
+  </g>
+</svg>

@@ -1,0 +1,4 @@
+# Authored from the 2024 PHB SRD (CC-BY 4.0). Spot-check against the printed PHB — wording may have been adjusted in errata.,,,
+Ability,Description,Category,Notes
+Lineage Spells,Level 1: Prestidigitation cantrip. Level 3: Detect Magic. Level 5: Misty Step.,Special Abilities,Auto adds the listed spells to known spells at the matching character level
+Cantrip Choice,"You know one cantrip of your choice from the Wizard spell list. Intelligence, Wisdom, or Charisma is your spellcasting ability for it (one ability of your choice when you select this lineage).",Special Abilities,Auto adds the listed cantrip to known spells

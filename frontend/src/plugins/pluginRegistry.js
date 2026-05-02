@@ -107,6 +107,14 @@ export const registries = {
   // dropdown read via `useAllSubclasses(cls)` and re-render when any
   // plugin updates the registry.
   customSubclasses: new Map(),
+  // Map<pluginId, { [className]: ClassChoice[] }>
+  // Plugins can declare class-level "build choices" (Cleric Divine
+  // Order, Fighter Weapon Mastery, etc.) for any class — base SRD or
+  // plugin-added. The host's `getClassChoicesMerged(cls)` helper unions
+  // the static CLASS_CHOICES_2024 with every plugin's entry for that
+  // class. Same shape as `frontend/src/data/classes.js`:
+  //   { id, label, at_level, desc, kind, options? | pick_count? }
+  customClassChoices: new Map(),
   // Map<pluginId, Set<sectionId>>
   // Plugins can hide individual collapsible sub-sections inside the
   // Session tab (e.g. 'session_info', 'connected_players',

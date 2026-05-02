@@ -35,6 +35,28 @@
 const PLUGIN_ID = 'custom-classes';
 const CLASSES_KEY = 'classes';
 const SUBCLASSES_KEY = 'subclasses';
+// New in v1.2.0 — class-level "build choices" (Cleric Divine Order,
+// Fighter Weapon Mastery, etc.) keyed by class name. Stored as JSON
+// the DM authors directly, so the plugin doesn't need a structured
+// editor for every kind of choice. Example shape:
+//   {
+//     "Blood Hunter": [
+//       {
+//         "id": "blood-curse",
+//         "label": "Blood Curse",
+//         "at_level": 1,
+//         "kind": "single",
+//         "desc": "...",
+//         "options": [
+//           { "id": "exposure",  "name": "Curse of Exposure",
+//             "desc": "...", "adds": { "skills": [{"skill":"skill_perception","level":"proficient"}] } },
+//           { "id": "fervor",    "name": "Curse of Fervor",
+//             "desc": "...", "adds": { "armor": ["heavy"] } }
+//         ]
+//       }
+//     ]
+//   }
+const CHOICES_KEY = 'choices';
 
 // SRD base class list. Mirrors frontend/src/utils/classes.js so the plugin
 // can validate input + offer the right "pick a class to manage" dropdown
@@ -48,6 +70,20 @@ const BASE_CLASSES_LOWER = new Set(BASE_CLASSES.map(c => c.toLowerCase()));
 // Module-level state.
 let classes = [];                // Array<string>
 let subclassesByClass = {};      // { [className]: string[] }
+let choicesByClass = {};         // { [className]: ClassChoice[] }
+
+function normaliseChoicesMap(obj) {
+  if (!obj || typeof obj !== 'object') return {};
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const cls = String(k || '').trim();
+    if (!cls) continue;
+    if (!Array.isArray(v)) continue;
+    const list = v.filter((c) => c && typeof c === 'object' && c.id && c.label);
+    if (list.length) out[cls] = list;
+  }
+  return out;
+}
 
 // Local notify pump — re-renders the panel-tab extension component
 // without forcing the whole DM panel to re-render.
@@ -87,15 +123,23 @@ export default {
       const cloned = {};
       for (const [k, v] of Object.entries(subclassesByClass)) cloned[k] = v.slice();
       registries.customSubclasses.set(PLUGIN_ID, cloned);
+      // Choices — host's getClassChoicesMerged() reads this registry.
+      const choicesCloned = {};
+      for (const [k, v] of Object.entries(choicesByClass)) choicesCloned[k] = v.slice();
+      if (registries.customClassChoices) {
+        registries.customClassChoices.set(PLUGIN_ID, choicesCloned);
+      }
     }
 
     // ── Hydrate from KV ──────────────────────────────────────────────
     Promise.all([
       data.read(CLASSES_KEY).catch(() => null),
       data.read(SUBCLASSES_KEY).catch(() => null),
-    ]).then(([rawClasses, rawSubs]) => {
+      data.read(CHOICES_KEY).catch(() => null),
+    ]).then(([rawClasses, rawSubs, rawChoices]) => {
       classes = normaliseList(rawClasses);
       subclassesByClass = normaliseSubclassMap(rawSubs);
+      choicesByClass = normaliseChoicesMap(rawChoices);
       syncRegistries();
       notifyChange();
       pingSection();
@@ -109,6 +153,8 @@ export default {
           classes = payload.op === 'delete' ? [] : normaliseList(payload.value);
         } else if (payload.key === SUBCLASSES_KEY) {
           subclassesByClass = payload.op === 'delete' ? {} : normaliseSubclassMap(payload.value);
+        } else if (payload.key === CHOICES_KEY) {
+          choicesByClass = payload.op === 'delete' ? {} : normaliseChoicesMap(payload.value);
         } else {
           return;
         }
@@ -251,6 +297,79 @@ export default {
         data.write(SUBCLASSES_KEY, subclassesByClass);
       }
 
+      // Class choices — JSON-edit per class. Structured editor would
+      // double the plugin size; the JSON shape is documented in the
+      // source comment at the top of this file and the EXAMPLE button
+      // pastes a working Divine-Order-style template.
+      const [choicesPicked, setChoicesPicked] = React.useState('');
+      const [choicesDraft, setChoicesDraft] = React.useState('');
+      const [choicesError, setChoicesError] = React.useState('');
+      React.useEffect(() => {
+        if (!choicesPicked && classOptions.length) setChoicesPicked(classOptions[0]);
+      }, [classOptions.join('|')]);
+      React.useEffect(() => {
+        if (!choicesPicked) { setChoicesDraft(''); return; }
+        const cur = choicesByClass[choicesPicked] || [];
+        setChoicesDraft(JSON.stringify(cur, null, 2));
+        setChoicesError('');
+      }, [choicesPicked, classes.length, JSON.stringify(choicesByClass[choicesPicked] || [])]);
+      const CHOICE_EXAMPLE = JSON.stringify([{
+        id: 'divine-order',
+        label: 'Divine Order',
+        at_level: 1,
+        kind: 'single',
+        desc: 'Pick a divine role.',
+        options: [
+          {
+            id: 'protector', name: 'Protector',
+            desc: 'Trained for war.',
+            adds: { armor: ['heavy'], weapons: ['Martial weapons'] },
+          },
+          {
+            id: 'thaumaturge', name: 'Thaumaturge',
+            desc: 'Trained in arcane lore.',
+            adds: {
+              skills: [{ skill: 'skill_arcana', level: 'proficient' }],
+              traits: [{ name: 'Arcane Initiate',
+                desc: 'You learn one wizard cantrip.',
+                category: 'specialAbility' }],
+            },
+          },
+        ],
+      }], null, 2);
+      function saveChoices() {
+        if (!choicesPicked) return;
+        let parsed;
+        try { parsed = JSON.parse(choicesDraft || '[]'); }
+        catch (err) { setChoicesError('Invalid JSON: ' + err.message); return; }
+        if (!Array.isArray(parsed)) { setChoicesError('Top level must be an array of choices.'); return; }
+        for (const c of parsed) {
+          if (!c.id || !c.label || !c.kind) {
+            setChoicesError('Every choice needs id, label, and kind.');
+            return;
+          }
+        }
+        const trimmed = { ...choicesByClass };
+        if (parsed.length) trimmed[choicesPicked] = parsed;
+        else delete trimmed[choicesPicked];
+        choicesByClass = trimmed;
+        syncRegistries();
+        notifyChange();
+        pingSection();
+        data.write(CHOICES_KEY, choicesByClass);
+        setChoicesError('');
+      }
+      function clearChoices() {
+        const trimmed = { ...choicesByClass };
+        delete trimmed[choicesPicked];
+        choicesByClass = trimmed;
+        setChoicesDraft('[]');
+        syncRegistries();
+        notifyChange();
+        pingSection();
+        data.write(CHOICES_KEY, choicesByClass);
+      }
+
       const customSubsForPicked = subclassesByClass[subClassPicked] || [];
 
       return React.createElement(
@@ -375,7 +494,51 @@ export default {
                     title: `Remove ${name} from ${subClassPicked}`,
                   }, 'Remove')
                 ))
-              )
+              ),
+
+          // ── Class choices section ──
+          React.createElement('div', { className: 'pt-2 border-t border-gray-700 text-xs font-semibold text-gray-200 uppercase tracking-wide' }, 'Class Choices'),
+          React.createElement('p', { className: 'text-[11px] text-gray-500 leading-snug' },
+            'Define class-level "build choices" the player makes when they take the class — Cleric Divine Order, Fighter Weapon Mastery, Rogue Expertise, etc. Stored as JSON; click EXAMPLE for a Divine-Order-style template. Picks land in class_state and rewrite stat-block fields tagged for clean revert.'),
+          React.createElement('div', { className: 'flex gap-2 items-center' },
+            React.createElement('label', { className: 'text-[11px] text-gray-400 shrink-0' }, 'Class:'),
+            React.createElement(
+              'select',
+              {
+                value: choicesPicked,
+                onChange: (e) => setChoicesPicked(e.target.value),
+                className: 'flex-1 min-w-0 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-dnd-gold',
+              },
+              classOptions.map(c => React.createElement('option', { key: c, value: c }, c))
+            )
+          ),
+          React.createElement('textarea', {
+            value: choicesDraft,
+            onChange: (e) => { setChoicesDraft(e.target.value); if (choicesError) setChoicesError(''); },
+            rows: 10,
+            spellCheck: false,
+            className: 'w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-[11px] text-white font-mono focus:outline-none focus:border-dnd-gold',
+            placeholder: '[]',
+          }),
+          choicesError && React.createElement('div', {
+            className: 'text-[11px] text-red-300 bg-red-900/30 border border-red-800 rounded px-2 py-1',
+          }, choicesError),
+          React.createElement('div', { className: 'flex gap-2 justify-end' },
+            React.createElement('button', {
+              onClick: () => { setChoicesDraft(CHOICE_EXAMPLE); setChoicesError(''); },
+              className: 'text-[10px] bg-gray-700 hover:bg-gray-600 text-gray-200 px-2 py-1 rounded',
+            }, 'Example'),
+            React.createElement('button', {
+              onClick: clearChoices,
+              disabled: !choicesByClass[choicesPicked],
+              className: 'text-[10px] bg-red-900/30 hover:bg-red-900/50 disabled:opacity-40 border border-red-800 text-red-200 px-2 py-1 rounded',
+            }, 'Clear'),
+            React.createElement('button', {
+              onClick: saveChoices,
+              disabled: !choicesPicked,
+              className: 'text-[10px] bg-dnd-gold/20 hover:bg-dnd-gold/30 disabled:opacity-40 border border-dnd-gold/60 text-dnd-gold px-2 py-1 rounded font-semibold',
+            }, 'Save')
+          )
         ) // closes bg-gray-800 body container
         ) // closes the Fragment opened above by `!open ? null : React.createElement(React.Fragment, ...)`
       );
@@ -389,6 +552,7 @@ export default {
   unregister() {
     classes = [];
     subclassesByClass = {};
+    choicesByClass = {};
     sectionSubs.clear();
   },
 };

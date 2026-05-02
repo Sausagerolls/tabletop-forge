@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import LanguagePicker from './LanguagePicker.jsx';
-import { useAllClasses, useAllSubclasses } from '../utils/classes.js';
+import { useAllClasses, useAllSubclasses, useClassChoices } from '../utils/classes.js';
 import { formatDamageWithMod, formatDamageType } from '../utils/damage.js';
 import {
   RACE_EDITIONS,
@@ -10,6 +10,7 @@ import {
   combinedRaceTraits,
 } from '../data/races.js';
 import { BACKGROUNDS_2024, findBackground, SKILL_LABELS } from '../data/backgrounds.js';
+import ClassChoicesPicker from './ClassChoicesPicker.jsx';
 
 const XIcon = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="w-3.5 h-3.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>);
 const DragonIcon = () => (<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10 text-gray-500"><path d="M44 12c4-2 8 0 10 4s0 10-4 12l-4 2" /><path d="M20 12c-4-2-8 0-10 4s0 10 4 12l4 2" /><ellipse cx="32" cy="32" rx="14" ry="10" fill="currentColor" stroke="none" opacity="0.15" /><path d="M18 28c0 10 6 18 14 18s14-8 14-18" /><path d="M26 24c0-2 2-4 6-4s6 2 6 4" /><circle cx="27" cy="26" r="1.5" fill="currentColor" stroke="none" /><circle cx="37" cy="26" r="1.5" fill="currentColor" stroke="none" /><path d="M28 36c1 2 3 3 4 3s3-1 4-3" /></svg>);
@@ -197,6 +198,7 @@ const defaultForm = {
   background_state: {},
   tool_proficiencies: '',
   weapon_proficiencies: '',
+  class_state: {},
   heroic_inspiration: false,
   death_save_successes: 0,
   death_save_failures: 0,
@@ -729,6 +731,10 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   // Subclass options track the selected class — derived after `form` exists
   // so the hook always has the latest char_class on every render.
   const allSubclasses = useAllSubclasses(form.char_class);
+  // Class-level "build choices" — Cleric Divine Order, Fighter Weapon
+  // Mastery, Rogue Expertise, etc. Merges static SRD-2024 with any
+  // plugin-supplied choices for this class.
+  const classChoices = useClassChoices(form.char_class);
 
   const tabs = isPlayerCharacter
     ? ['basic', 'combat', 'abilities', 'skills', 'traits', 'spells', 'inventory', 'weapons']
@@ -1588,6 +1594,212 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     });
   }
 
+  // ── Class choices (Cleric Divine Order, Fighter Weapon Mastery, …) ──
+  // Reads `class_state.choices = { [choiceId]: pick }` and applies
+  // each pick's effects onto the live form. Strip-prev semantics
+  // mirror the race / background appliers.
+  function applyClassChoices(choiceList, picks /* { [choiceId]: pickPayload } */) {
+    const sourceTagFor = (choice, optionOrPicks) => {
+      if (choice.kind === 'single') {
+        return `class:${form.char_class}:${choice.id}:${optionOrPicks}`;
+      }
+      return `class:${form.char_class}:${choice.id}`;
+    };
+
+    setForm((f) => {
+      const prevState = f.class_state || {};
+      const prevAdded = prevState.added || {};
+      const next = { ...f };
+      const profBonus = next.proficiency_bonus ?? 2;
+
+      // Strip ALL previous class:* tagged rows up front.
+      const stripBy = (rows, prefix) => (rows || []).filter((r) =>
+        !(typeof r?.__source === 'string' && r.__source.startsWith(prefix))
+      );
+      next.special_abilities = stripBy(f.special_abilities, 'class:');
+      next.actions           = stripBy(f.actions, 'class:');
+      next.bonus_actions     = stripBy(f.bonus_actions, 'class:');
+      next.reactions         = stripBy(f.reactions, 'class:');
+
+      // Roll back skills + expertise that prev choices set.
+      if (Array.isArray(prevAdded.skills) && prevAdded.skills.length) {
+        const expert = { ...(next.skill_expertise || {}) };
+        for (const sk of prevAdded.skills) { next[sk] = null; delete expert[sk]; }
+        next.skill_expertise = expert;
+      }
+      // Roll back armor / weapon CSV additions.
+      const stripCsv = (csv, removeLower) => String(csv || '')
+        .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean)
+        .filter((p) => !removeLower.has(p.toLowerCase())).join(', ');
+      if (Array.isArray(prevAdded.weapons) && prevAdded.weapons.length) {
+        const r = new Set(prevAdded.weapons.map((s) => s.toLowerCase()));
+        next.weapon_proficiencies = stripCsv(f.weapon_proficiencies, r);
+      }
+      if (Array.isArray(prevAdded.armor) && prevAdded.armor.length) {
+        for (const a of prevAdded.armor) {
+          if (a === 'light')   next.prof_light_armor  = false;
+          if (a === 'medium')  next.prof_medium_armor = false;
+          if (a === 'heavy')   next.prof_heavy_armor  = false;
+          if (a === 'shields') next.prof_shields      = false;
+        }
+      }
+      // Roll back spells.
+      if (Array.isArray(prevAdded.spells) && prevAdded.spells.length) {
+        const drop = new Set(prevAdded.spells.map((s) => String(s).toLowerCase()));
+        next.spells = (f.spells || []).filter((s) =>
+          !drop.has(String(s.name || '').toLowerCase())
+        );
+      }
+
+      // Apply new choices.
+      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0 };
+      const expert = { ...(next.skill_expertise || {}) };
+
+      for (const choice of choiceList) {
+        const pick = picks[choice.id];
+        if (!pick) continue;
+
+        if (choice.kind === 'single') {
+          const opt = (choice.options || []).find((o) => o.id === pick.option_id);
+          if (!opt) continue;
+          const tag = sourceTagFor(choice, opt.id);
+          const adds = opt.adds || {};
+          // armor
+          for (const a of (adds.armor || [])) {
+            if (a === 'light')   next.prof_light_armor  = true;
+            if (a === 'medium')  next.prof_medium_armor = true;
+            if (a === 'heavy')   next.prof_heavy_armor  = true;
+            if (a === 'shields') next.prof_shields      = true;
+            added.armor.push(a);
+          }
+          // weapons
+          if (adds.weapons && adds.weapons.length) {
+            const have = String(next.weapon_proficiencies || '')
+              .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean);
+            for (const w of adds.weapons) {
+              if (!have.some((p) => p.toLowerCase() === w.toLowerCase())) {
+                have.push(w);
+                added.weapons.push(w);
+              }
+            }
+            next.weapon_proficiencies = have.join(', ');
+          }
+          // skills
+          for (const sObj of (adds.skills || [])) {
+            const sk = typeof sObj === 'string' ? sObj : sObj.skill;
+            const lvl = typeof sObj === 'string' ? 'proficient' : (sObj.level || 'proficient');
+            if (!sk || !STAT_OF_SKILL[sk]) continue;
+            const m = Math.floor(((next[STAT_OF_SKILL[sk]] ?? 10) - 10) / 2);
+            const mult = lvl === 'expertise' ? 2 : 1;
+            next[sk] = m + profBonus * mult;
+            if (lvl === 'expertise') expert[sk] = true;
+            added.skills.push(sk);
+          }
+          // traits / actions / bonus actions / reactions
+          for (const t of (adds.traits || [])) {
+            const target = t.category === 'action' ? 'actions'
+              : t.category === 'bonusAction' ? 'bonus_actions'
+              : t.category === 'reaction' ? 'reactions'
+              : 'special_abilities';
+            next[target] = [
+              ...(next[target] || []),
+              { name: t.name, desc: t.desc, __source: tag },
+            ];
+            added.traits_count++;
+          }
+          // spells
+          for (const sp of (adds.spells || [])) {
+            if (!sp?.name) continue;
+            const has = (next.spells || []).some((s) =>
+              String(s.name || '').toLowerCase() === sp.name.toLowerCase()
+            );
+            if (!has) {
+              next.spells = [
+                ...(next.spells || []),
+                { id: Date.now() + Math.random(), name: sp.name, level: sp.level ?? 0, prepared: true, __source: tag },
+              ];
+              added.spells.push(sp.name);
+            }
+          }
+        }
+
+        if (choice.kind === 'multi-weapons') {
+          const have = String(next.weapon_proficiencies || '')
+            .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean);
+          for (const w of (pick.picks || [])) {
+            if (!w) continue;
+            if (!have.some((p) => p.toLowerCase() === w.toLowerCase())) {
+              have.push(w);
+              added.weapons.push(w);
+            }
+          }
+          next.weapon_proficiencies = have.join(', ');
+        }
+
+        if (choice.kind === 'multi-skills') {
+          for (const sk of (pick.picks || [])) {
+            if (!sk || !STAT_OF_SKILL[sk]) continue;
+            const m = Math.floor(((next[STAT_OF_SKILL[sk]] ?? 10) - 10) / 2);
+            // Expertise here — Rogue/Bard Expertise doubles PB.
+            next[sk] = m + profBonus * 2;
+            expert[sk] = true;
+            added.skills.push(sk);
+          }
+        }
+      }
+
+      next.skill_expertise = expert;
+      next.class_state = {
+        class_id: f.char_class || '',
+        choices: picks,
+        added,
+      };
+      return next;
+    });
+  }
+
+  function removeClassChoices() {
+    setForm((f) => {
+      const prevAdded = (f.class_state && f.class_state.added) || {};
+      const next = { ...f };
+      const stripBy = (rows, prefix) => (rows || []).filter((r) =>
+        !(typeof r?.__source === 'string' && r.__source.startsWith(prefix))
+      );
+      next.special_abilities = stripBy(f.special_abilities, 'class:');
+      next.actions           = stripBy(f.actions, 'class:');
+      next.bonus_actions     = stripBy(f.bonus_actions, 'class:');
+      next.reactions         = stripBy(f.reactions, 'class:');
+      if (Array.isArray(prevAdded.skills) && prevAdded.skills.length) {
+        const expert = { ...(next.skill_expertise || {}) };
+        for (const sk of prevAdded.skills) { next[sk] = null; delete expert[sk]; }
+        next.skill_expertise = expert;
+      }
+      const stripCsv = (csv, removeLower) => String(csv || '')
+        .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean)
+        .filter((p) => !removeLower.has(p.toLowerCase())).join(', ');
+      if (Array.isArray(prevAdded.weapons) && prevAdded.weapons.length) {
+        const r = new Set(prevAdded.weapons.map((s) => s.toLowerCase()));
+        next.weapon_proficiencies = stripCsv(f.weapon_proficiencies, r);
+      }
+      if (Array.isArray(prevAdded.armor) && prevAdded.armor.length) {
+        for (const a of prevAdded.armor) {
+          if (a === 'light')   next.prof_light_armor  = false;
+          if (a === 'medium')  next.prof_medium_armor = false;
+          if (a === 'heavy')   next.prof_heavy_armor  = false;
+          if (a === 'shields') next.prof_shields      = false;
+        }
+      }
+      if (Array.isArray(prevAdded.spells) && prevAdded.spells.length) {
+        const drop = new Set(prevAdded.spells.map((s) => String(s).toLowerCase()));
+        next.spells = (f.spells || []).filter((s) =>
+          !drop.has(String(s.name || '').toLowerCase())
+        );
+      }
+      next.class_state = {};
+      return next;
+    });
+  }
+
   // Proficiency checkbox helpers
   function toggleSave(saveKey, statKey) {
     const profBonus = form.proficiency_bonus ?? 2;
@@ -2300,6 +2512,15 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                     </div>
                   );
                 })()}
+
+                <ClassChoicesPicker
+                  charClass={form.char_class}
+                  charLevel={form.char_level}
+                  choices={classChoices}
+                  classState={form.class_state}
+                  onApply={(picks) => applyClassChoices(classChoices, picks)}
+                  onRemove={removeClassChoices}
+                />
               </>
             )}
 

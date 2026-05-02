@@ -2773,6 +2773,11 @@ server.listen(PORT, async () => {
     // background picker.
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS tool_proficiencies TEXT DEFAULT ''`);
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS weapon_proficiencies TEXT DEFAULT ''`);
+    // Records the class-level choices the player picked when they
+    // took the class — Cleric's Divine Order, Fighter's Weapon
+    // Mastery weapons, Rogue's Expertise skills, etc. Mirror of how
+    // race_state / background_state work.
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS class_state JSONB DEFAULT '{}'`);
 
     // ── Custom DM-authored races + backgrounds ──
     // Free-form JSONB so the editor can grow without migrations. The

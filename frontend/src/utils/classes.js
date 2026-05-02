@@ -6,6 +6,7 @@
 // version and re-renders on register/unregister).
 import { useEffect, useState } from 'react';
 import { registries, subscribeRegistry } from '../plugins/pluginRegistry.js';
+import { CLASS_CHOICES_2024 } from '../data/classes.js';
 
 export const BASE_CLASSES = [
   'Artificer','Barbarian','Bard','Cleric','Druid','Fighter',
@@ -93,4 +94,34 @@ export function useAllSubclasses(charClass) {
   const [, setV] = useState(0);
   useEffect(() => subscribeRegistry(() => setV(n => n + 1)), []);
   return getAllSubclasses(charClass);
+}
+
+// Class-level "build choices" for a class — Cleric Divine Order,
+// Fighter Weapon Mastery, Rogue Expertise, etc. Returns the merged
+// list across the static SRD-2024 catalog and any plugin
+// contributions for the same class. Choice ids are de-duped per
+// class (first registration wins, base SRD takes priority).
+export function getClassChoicesMerged(charClass) {
+  if (!charClass) return [];
+  const out = [];
+  const seen = new Set();
+  const push = (c) => {
+    if (!c || !c.id) return;
+    const k = String(c.id).toLowerCase();
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(c);
+  };
+  for (const c of (CLASS_CHOICES_2024[charClass] || [])) push(c);
+  for (const map of registries.customClassChoices.values()) {
+    if (!map || typeof map !== 'object') continue;
+    for (const c of (map[charClass] || [])) push(c);
+  }
+  return out;
+}
+
+export function useClassChoices(charClass) {
+  const [, setV] = useState(0);
+  useEffect(() => subscribeRegistry(() => setV(n => n + 1)), []);
+  return getClassChoicesMerged(charClass);
 }

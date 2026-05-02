@@ -47,7 +47,10 @@ const PLUGIN_ID = 'tab-controller';
 const BUILTIN_TABS = [
   { id: 'map',      label: 'Map',           protected: true  },
   { id: 'library',  label: 'Token Library', protected: true  },
+  { id: 'terrain',  label: 'Terrain',       protected: false },
   { id: 'spells',   label: 'Spells',        protected: false },
+  { id: 'items',    label: 'Items',         protected: false },
+  { id: 'origins',  label: 'Origins',       protected: false },
   { id: 'tokens',   label: 'Token List',    protected: true  },
   { id: 'markers',  label: 'Markers',       protected: false },
   { id: 'treasure', label: 'Treasure',      protected: false },

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import LanguagePicker from './LanguagePicker.jsx';
 import { useAllClasses, useAllSubclasses, useClassChoices, computeHitDicePool, formatHitDicePool, hitDieFor } from '../utils/classes.js';
 import { getClassBuild, formatPrimaryAbility } from '../data/class_build.js';
+import { expandWeaponProficiency } from '../data/weapons.js';
 import { formatDamageWithMod, formatDamageType } from '../utils/damage.js';
 import {
   RACE_EDITIONS,
@@ -2978,8 +2979,13 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
 
                 {(() => {
                   const profSkills = Object.keys(STAT_OF_SKILL).filter((k) => form[k] != null);
-                  const weaponProfs = String(form.weapon_proficiencies || '')
-                    .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean);
+                  // Expand category profs (Simple / Martial) into the
+                  // concrete SRD weapon list so the Fighter Weapon
+                  // Mastery picker shows Greatsword / Longsword /
+                  // Shortbow etc. rather than just "Simple", "Martial".
+                  const weaponProfs = Array.from(
+                    expandWeaponProficiency(form.weapon_proficiencies || '')
+                  );
                   const mcs = form.multiclasses || [];
                   // Total level = primary + sum(multiclass levels).
                   const totalLevel = (Number(form.char_level) || 0)

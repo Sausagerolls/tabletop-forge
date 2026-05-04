@@ -11,6 +11,7 @@
 //   { [choiceId]: { kind, option_id?, picks?: string[] } }
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { WEAPONS } from '../data/weapons.js';
 
 const SKILL_LABELS = {
   skill_acrobatics: 'Acrobatics (DEX)',
@@ -203,9 +204,11 @@ function SkillMultiPick({ picks, max, onChange, available }) {
 function WeaponMultiPick({ picks, max, onChange, available }) {
   // Restrict to weapons the character is already proficient with —
   // Weapon Mastery only works on weapons you have proficiency with.
-  // Falls back to a free-form text input when the proficiency list
-  // is empty so a fresh character can still record picks (and Save +
-  // Skills tab can be filled in afterwards).
+  // The `available` array now carries CONCRETE weapon names (e.g.
+  // Greatsword, Longbow) — category profs like "Simple" / "Martial"
+  // get expanded by the parent before this picker is rendered.
+  // Falls back to a free-form text input when the pool is empty so
+  // a fresh character can still record picks.
   const slots = Array.from({ length: max }, (_, i) => picks[i] || '');
   const updateSlot = (i, v) => {
     const next = [...slots];
@@ -213,6 +216,32 @@ function WeaponMultiPick({ picks, max, onChange, available }) {
     onChange(next.filter((s) => s));
   };
   const havePool = Array.isArray(available) && available.length > 0;
+  // Sorted + annotated dropdown options. Group by Simple-Melee /
+  // Simple-Ranged / Martial-Melee / Martial-Ranged via <optgroup>
+  // so a Fighter scanning the list can find their weapon fast.
+  const annotated = havePool
+    ? available
+        .map((name) => {
+          const w = WEAPONS.find((x) => x.name === name);
+          return {
+            name,
+            category: w?.category || '',
+            kind: w?.kind || '',
+            mastery: w?.mastery || '',
+            label: w?.mastery ? `${name} — ${w.mastery}` : name,
+          };
+        })
+    : [];
+  const groups = [
+    { key: 'sm', label: 'Simple Melee',   filter: (w) => w.category === 'Simple'  && w.kind === 'Melee'  },
+    { key: 'sr', label: 'Simple Ranged',  filter: (w) => w.category === 'Simple'  && w.kind === 'Ranged' },
+    { key: 'mm', label: 'Martial Melee',  filter: (w) => w.category === 'Martial' && w.kind === 'Melee'  },
+    { key: 'mr', label: 'Martial Ranged', filter: (w) => w.category === 'Martial' && w.kind === 'Ranged' },
+    { key: 'other', label: 'Other',       filter: (w) => !w.category },
+  ];
+  const grouped = groups
+    .map((g) => ({ ...g, items: annotated.filter(g.filter).sort((a, b) => a.name.localeCompare(b.name)) }))
+    .filter((g) => g.items.length > 0);
   return (
     <div className="space-y-1">
       <div className="text-[11px] text-gray-500">
@@ -231,11 +260,15 @@ function WeaponMultiPick({ picks, max, onChange, available }) {
           onChange={(e) => updateSlot(i, e.target.value)}
           className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white">
           <option value="">— Pick weapon {i + 1} —</option>
-          {available.map((w) => (
-            <option key={w} value={w}
-              disabled={picks.includes(w) && picks[i] !== w}>
-              {w}
-            </option>
+          {grouped.map((g) => (
+            <optgroup key={g.key} label={g.label}>
+              {g.items.map((w) => (
+                <option key={w.name} value={w.name}
+                  disabled={picks.includes(w.name) && picks[i] !== w.name}>
+                  {w.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       ) : (

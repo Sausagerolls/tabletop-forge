@@ -135,6 +135,14 @@ struct Creature: Codable, Identifiable, Equatable {
     var currency_gp: Int?
     var currency_sp: Int?
     var currency_cp: Int?
+    // Extra class rows on top of the primary char_class. Each entry
+    // contributes its own hit-die pool. Server shape is
+    // `{ id, class, subclass, level, class_state }` per row; iOS only
+    // reads the bits the player tabs need.
+    var multiclasses: [Multiclass]?
+    // Per-die-type spent count for the multi-pool hit dice.
+    // Format: `{ "d10": 2, "d6": 0 }` — keys are die labels.
+    var hit_dice_used_by_type: [String: Int]?
 
     // Custom decoder: each optional field uses try? so a single
     // malformed JSONB column (e.g. server returns spell_slots as a
@@ -235,6 +243,8 @@ struct Creature: Codable, Identifiable, Equatable {
         self.inventory   = decodeJSONBArray(InventoryItem.self, c, .inventory)
         self.spells      = decodeJSONBArray(Spell.self,         c, .spells)
         self.spell_slots = decodeJSONBObject(SpellSlots.self,   c, .spell_slots)
+        self.multiclasses = decodeJSONBArray(Multiclass.self,   c, .multiclasses)
+        self.hit_dice_used_by_type = (try? c.decodeIfPresent([String: Int].self, forKey: .hit_dice_used_by_type)) ?? nil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -258,7 +268,73 @@ struct Creature: Codable, Identifiable, Equatable {
         case skill_stealth, skill_survival, skill_expertise
         case actions, bonus_actions, reactions, movement_actions
         case legendary_actions, special_abilities, class_features, feats
+        case multiclasses, hit_dice_used_by_type
     }
+}
+
+// Multiclass — one extra class row on top of the primary char_class.
+// `class` is a Swift soft keyword in non-declaration contexts so we
+// remap it to `charClass` via CodingKeys to keep the model ergonomic.
+struct Multiclass: Codable, Equatable, Identifiable {
+    var id: String?
+    var charClass: String?
+    var subclass: String?
+    var level: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, subclass, level
+        case charClass = "class"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id        = try? c.decodeIfPresent(String.self, forKey: .id)
+        self.charClass = try? c.decodeIfPresent(String.self, forKey: .charClass)
+        self.subclass  = try? c.decodeIfPresent(String.self, forKey: .subclass)
+        self.level     = decodeFlexibleInt(c, .level)
+    }
+}
+
+// SRD-canonical hit-die per class. Custom plugin classes default to
+// d8 (the SRD majority). Mirrors HIT_DIE_BY_CLASS in the web client.
+private let HIT_DIE_BY_CLASS: [String: String] = [
+    "Barbarian": "d12",
+    "Fighter": "d10", "Paladin": "d10", "Ranger": "d10",
+    "Artificer": "d8", "Bard": "d8", "Cleric": "d8", "Druid": "d8",
+    "Monk": "d8", "Rogue": "d8", "Warlock": "d8",
+    "Sorcerer": "d6", "Wizard": "d6",
+]
+
+private let HIT_DIE_ORDER = ["d12", "d10", "d8", "d6", "d4"]
+
+func hitDie(forClass cls: String?) -> String? {
+    guard let cls, !cls.isEmpty else { return nil }
+    return HIT_DIE_BY_CLASS[cls] ?? "d8"
+}
+
+struct HitDicePoolEntry: Equatable, Identifiable {
+    let type: String
+    let qty: Int
+    var id: String { type }
+}
+
+func computeHitDicePool(_ c: Creature) -> [HitDicePoolEntry] {
+    // Player characters carry the auto-pool; non-PCs use the scalar
+    // hit_dice_qty/type/used fields straight from the stat block.
+    var merged: [String: Int] = [:]
+    if let cls = c.char_class, let die = hitDie(forClass: cls) {
+        let lvl = max(1, c.char_level ?? 1)
+        merged[die, default: 0] += lvl
+    }
+    for mc in c.multiclasses ?? [] {
+        guard let die = hitDie(forClass: mc.charClass) else { continue }
+        let lvl = max(1, mc.level ?? 1)
+        merged[die, default: 0] += lvl
+    }
+    return merged
+        .sorted { (HIT_DIE_ORDER.firstIndex(of: $0.key) ?? .max) <
+                  (HIT_DIE_ORDER.firstIndex(of: $1.key) ?? .max) }
+        .map { HitDicePoolEntry(type: $0.key, qty: $0.value) }
 }
 
 // Decode a JSONB array column. Server normally returns an array of

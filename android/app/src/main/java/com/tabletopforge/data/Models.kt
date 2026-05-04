@@ -260,6 +260,22 @@ data class Creature(
     @Serializable(with = FlexibleInt::class) val currency_gp: Int? = null,
     @Serializable(with = FlexibleInt::class) val currency_sp: Int? = null,
     @Serializable(with = FlexibleInt::class) val currency_cp: Int? = null,
+    // Extra class rows on top of the primary char_class. Each entry
+    // contributes its own hit-die pool to the multi-class pool. Class
+    // names are deserialized off `class` (a Kotlin reserved word) via
+    // SerialName.
+    val multiclasses: List<Multiclass>? = null,
+    // Per-die-type spent count for the multi-pool hit dice. Format
+    // matches the web client: { "d10": 2, "d6": 0 }.
+    val hit_dice_used_by_type: Map<String, Int>? = null,
+)
+
+@Serializable
+data class Multiclass(
+    val id: String? = null,
+    @kotlinx.serialization.SerialName("class") val charClass: String? = null,
+    val subclass: String? = null,
+    @Serializable(with = FlexibleInt::class) val level: Int? = null,
 )
 
 // ── Token (map presence) ──────────────────────────────────────────

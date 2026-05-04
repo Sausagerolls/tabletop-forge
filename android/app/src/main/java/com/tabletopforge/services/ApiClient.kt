@@ -52,6 +52,10 @@ class ApiClient(private val baseUrl: String) {
         is Number -> kotlinx.serialization.json.JsonPrimitive(v)
         is Boolean -> kotlinx.serialization.json.JsonPrimitive(v)
         is String -> kotlinx.serialization.json.JsonPrimitive(v)
+        is Map<*, *> -> kotlinx.serialization.json.JsonObject(
+            v.entries.associate { (k, value) -> k.toString() to jsonValueOf(value) }
+        )
+        is List<*> -> kotlinx.serialization.json.JsonArray(v.map { jsonValueOf(it) })
         else -> kotlinx.serialization.json.JsonPrimitive(v.toString())
     }
 }

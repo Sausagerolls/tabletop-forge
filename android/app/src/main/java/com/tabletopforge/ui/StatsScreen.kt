@@ -76,9 +76,11 @@ import coil.compose.AsyncImage
 import com.tabletopforge.SocketHolder
 import com.tabletopforge.data.Creature
 import com.tabletopforge.data.DiceRollRequest
+import com.tabletopforge.data.HitDicePoolEntry
 import com.tabletopforge.data.InventoryItem
 import com.tabletopforge.data.StatAction
 import com.tabletopforge.data.Token
+import com.tabletopforge.data.computeHitDicePool
 import com.tabletopforge.data.resourcesFor
 import com.tabletopforge.services.ApiClient
 import com.tabletopforge.services.ResourceStore
@@ -142,56 +144,46 @@ fun StatsScreen(store: SessionStore, socketHolder: SocketHolder, resourceStore: 
             } }
         }
 
-        // 3. Hit Dice — Spend rolls the die + CON mod, heals, broadcasts
-        val hdQty = creature.hit_dice_qty ?: 0
-        if (hdQty > 0) {
+        // 3. Hit Dice — multi-class pool. One row per die type derived
+        // from char_class + multiclasses, plus a single "Use Hit Die"
+        // button. When more than one die type is available the button
+        // opens a chooser dialog; with one type it spends immediately.
+        val hdPool = computeHitDicePool(creature)
+        if (hdPool.isNotEmpty()) {
             item { Section("Hit Dice") {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    val used = creature.hit_dice_used ?: 0
-                    val typ = creature.hit_dice_type ?: "d8"
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("$typ hit dice", modifier = Modifier.weight(1f))
-                            Text("${hdQty - used} / $hdQty",
-                                fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.width(70.dp).wrapContentWidth(Alignment.CenterHorizontally))
-                            IconButton(
-                                enabled = used > 0,
-                                onClick = {
-                                    val next = (used - 1).coerceAtLeast(0)
-                                    sc?.creature?.value = creature.copy(hit_dice_used = next)
-                                    scope.launch { persist(mapOf("hit_dice_used" to next)) }
-                                },
-                            ) { Icon(Icons.Filled.Add, contentDescription = "Restore hit die") }
+                HitDicePoolCard(
+                    pool = hdPool,
+                    creature = creature,
+                    token = token,
+                    onSpend = { type ->
+                        val faces = type.removePrefix("d").toIntOrNull() ?: 8
+                        val roll = Random.nextInt(1, faces + 1)
+                        val mod = (((creature.constitution ?: 10) - 10) / 2)
+                        val healed = (roll + mod).coerceAtLeast(0)
+                        val usedMap = creature.hit_dice_used_by_type.orEmpty()
+                        val qty = hdPool.firstOrNull { it.type == type }?.qty ?: 0
+                        val nextForType = ((usedMap[type] ?: 0) + 1).coerceAtMost(qty)
+                        val nextMap = usedMap.toMutableMap().apply { put(type, nextForType) }
+                        sc?.creature?.value = creature.copy(hit_dice_used_by_type = nextMap)
+                        scope.launch { persist(mapOf("hit_dice_used_by_type" to nextMap)) }
+                        if (token != null && healed > 0) {
+                            val newHp = ((token.current_hp ?: 0) + healed)
+                                .coerceAtMost(token.max_hp ?: 0)
+                            sc.emitHpChange(token.id, newHp)
                         }
-                        // Spend = roll the die + CON mod, bump used, heal current_hp.
-                        Row(verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            androidx.compose.material3.Button(
-                                enabled = used < hdQty && token != null,
-                                onClick = {
-                                    val faces = typ.removePrefix("d").toIntOrNull() ?: 8
-                                    val roll = Random.nextInt(1, faces + 1)
-                                    val mod = (((creature.constitution ?: 10) - 10) / 2)
-                                    val healed = (roll + mod).coerceAtLeast(0)
-                                    val nextUsed = (used + 1).coerceAtMost(hdQty)
-                                    sc?.creature?.value = creature.copy(hit_dice_used = nextUsed)
-                                    scope.launch { persist(mapOf("hit_dice_used" to nextUsed)) }
-                                    if (token != null && healed > 0) {
-                                        val newHp = ((token.current_hp ?: 0) + healed)
-                                            .coerceAtMost(token.max_hp ?: 0)
-                                        sc.emitHpChange(token.id, newHp)
-                                    }
-                                    sc?.emitDiceRoll(DiceRollRequest(
-                                        dice = faces, count = 1, modifier = mod,
-                                        label = "Hit Die ($typ${if (mod >= 0) "+$mod" else "$mod"}) — heal",
-                                    ))
-                                },
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Spend Hit Die") }
-                        }
-                    }
-                }
+                        sc?.emitDiceRoll(DiceRollRequest(
+                            dice = faces, count = 1, modifier = mod,
+                            label = "Hit Die ($type${if (mod >= 0) "+$mod" else "$mod"}) — heal",
+                        ))
+                    },
+                    onRestore = { type ->
+                        val usedMap = creature.hit_dice_used_by_type.orEmpty()
+                        val nextForType = ((usedMap[type] ?: 0) - 1).coerceAtLeast(0)
+                        val nextMap = usedMap.toMutableMap().apply { put(type, nextForType) }
+                        sc?.creature?.value = creature.copy(hit_dice_used_by_type = nextMap)
+                        scope.launch { persist(mapOf("hit_dice_used_by_type" to nextMap)) }
+                    },
+                )
             } }
         }
 
@@ -758,3 +750,77 @@ private fun <T> androidx.compose.foundation.lazy.grid.LazyGridScope.gridItems(
     items: List<T>,
     content: @Composable (T) -> Unit,
 ) { items(items.size) { i -> content(items[i]) } }
+
+// HitDicePoolCard — one row per die type with available/total
+// readout + a single "Use Hit Die" button. With multiple types
+// the button opens a chooser dialog so the player picks which
+// pool to draw from. Restore-one-die plus button per row keeps
+// long-rest restoration easy without a global "reset" action.
+@Composable
+private fun HitDicePoolCard(
+    pool: List<HitDicePoolEntry>,
+    creature: Creature,
+    token: Token?,
+    onSpend: (String) -> Unit,
+    onRestore: (String) -> Unit,
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val usedMap = creature.hit_dice_used_by_type.orEmpty()
+    val anyAvailable = pool.any { (usedMap[it.type] ?: 0) < it.qty }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (entry in pool) {
+                val used = (usedMap[entry.type] ?: 0).coerceIn(0, entry.qty)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${entry.qty}${entry.type}", modifier = Modifier.weight(1f))
+                    Text("${entry.qty - used} / ${entry.qty}",
+                        fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.width(70.dp).wrapContentWidth(Alignment.CenterHorizontally))
+                    IconButton(
+                        enabled = used > 0,
+                        onClick = { onRestore(entry.type) },
+                    ) { Icon(Icons.Filled.Add, contentDescription = "Restore one ${entry.type}") }
+                }
+            }
+            androidx.compose.material3.Button(
+                enabled = anyAvailable && token != null,
+                onClick = {
+                    val available = pool.filter { (usedMap[it.type] ?: 0) < it.qty }
+                    if (available.size == 1) onSpend(available[0].type)
+                    else showPicker = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Use Hit Die") }
+        }
+    }
+
+    if (showPicker) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showPicker = false },
+            title = { Text("Use which hit die?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val available = pool.filter { (usedMap[it.type] ?: 0) < it.qty }
+                    for (entry in available) {
+                        val used = (usedMap[entry.type] ?: 0)
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = {
+                                showPicker = false
+                                onSpend(entry.type)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("${entry.type}  (${entry.qty - used}/${entry.qty} left)")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { showPicker = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+}

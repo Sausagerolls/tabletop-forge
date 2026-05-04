@@ -23,6 +23,10 @@ struct StatsView: View {
 
     @State private var saveError: String? = nil
     @State private var clearedWhisperIds: Set<UUID> = []
+    // Drives the hit-die chooser when a player has more than one
+    // pool. Single-pool characters never see the picker — the button
+    // spends the only available type immediately.
+    @State private var showHitDicePicker: Bool = false
 
     private var creature: Creature? { socket.creature }
     private var playerToken: Token? {
@@ -239,41 +243,111 @@ struct StatsView: View {
     }
 
     // ── Hit Dice ──────────────────────────────────────────────────────
+    // Multi-class pool. One row per die type derived from
+    // char_class + multiclasses, plus a single "Use Hit Die" button.
+    // With more than one type the button opens a confirmationDialog
+    // chooser; with one type it spends immediately. Per-row plus
+    // button restores a single die for that type (long-rest helper).
     @ViewBuilder
     private var hitDiceSection: some View {
-        if let creature, let qty = creature.hit_dice_qty, qty > 0 {
-            let used = creature.hit_dice_used ?? 0
-            let typ  = creature.hit_dice_type ?? "d8"
-            Section("Hit Dice") {
-                HStack {
-                    Text("\(typ) hit dice")
-                    Spacer()
-                    // Display reads "available / total" (qty - used).
-                    // Minus = spend a die (used goes UP, available
-                    // goes down). Plus = restore one (used goes DOWN,
-                    // available goes up). Disabled when at the
-                    // respective bound.
-                    Button { adjustHitDice(1) } label: { Image(systemName: "minus.circle") }
-                        .disabled(used >= qty)
-                    Text("\(qty - used) / \(qty)")
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minWidth: 60)
-                    Button { adjustHitDice(-1) } label: { Image(systemName: "plus.circle") }
-                        .disabled(used <= 0)
+        if let creature {
+            let pool = computeHitDicePool(creature)
+            if !pool.isEmpty {
+                let usedMap = creature.hit_dice_used_by_type ?? [:]
+                let availableTypes = pool.filter { (usedMap[$0.type] ?? 0) < $0.qty }
+                Section("Hit Dice") {
+                    ForEach(pool) { entry in
+                        let used = max(0, min(entry.qty, usedMap[entry.type] ?? 0))
+                        HStack {
+                            Text("\(entry.qty)\(entry.type)")
+                                .font(.system(.body, design: .monospaced))
+                            Spacer()
+                            Text("\(entry.qty - used) / \(entry.qty)")
+                                .font(.system(.body, design: .monospaced))
+                                .frame(minWidth: 70)
+                            Button { restoreHitDie(type: entry.type) } label: {
+                                Image(systemName: "plus.circle")
+                            }
+                            .disabled(used <= 0)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.tint)
+                        }
+                    }
+                    Button {
+                        if availableTypes.count == 1 {
+                            spendHitDie(type: availableTypes[0].type)
+                        } else if availableTypes.count > 1 {
+                            showHitDicePicker = true
+                        }
+                    } label: {
+                        Text("Use Hit Die")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .disabled(availableTypes.isEmpty || playerToken == nil)
+                    .buttonStyle(.borderedProminent)
+                    .confirmationDialog(
+                        "Use which hit die?",
+                        isPresented: $showHitDicePicker,
+                        titleVisibility: .visible,
+                    ) {
+                        ForEach(availableTypes) { entry in
+                            let used = usedMap[entry.type] ?? 0
+                            Button("\(entry.type)  (\(entry.qty - used)/\(entry.qty) left)") {
+                                spendHitDie(type: entry.type)
+                            }
+                        }
+                        Button("Cancel", role: .cancel) { }
+                    }
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tint)
             }
         }
     }
 
-    private func adjustHitDice(_ delta: Int) {
+    // Restore one die for the given type (long-rest helper). Mirrors
+    // the web client's checkbox-toggle restore. No HP change — only
+    // spending heals.
+    private func restoreHitDie(type: String) {
         guard var creature else { return }
-        let qty = creature.hit_dice_qty ?? 0
-        let used = max(0, min(qty, (creature.hit_dice_used ?? 0) + delta))
-        creature.hit_dice_used = used
+        var map = creature.hit_dice_used_by_type ?? [:]
+        let cur = map[type] ?? 0
+        map[type] = max(0, cur - 1)
+        creature.hit_dice_used_by_type = map
         socket.creature = creature
-        Task { await persist(["hit_dice_used": used]) }
+        Task { await persist(["hit_dice_used_by_type": map]) }
+    }
+
+    // Spend one die of the given type: roll d{N} + CON mod, heal HP,
+    // bump used count, broadcast the dice roll so the table sees it.
+    private func spendHitDie(type: String) {
+        guard var creature else { return }
+        guard let token = playerToken else { return }
+        let pool = computeHitDicePool(creature)
+        guard let entry = pool.first(where: { $0.type == type }) else { return }
+        let usedMap = creature.hit_dice_used_by_type ?? [:]
+        let curUsed = usedMap[type] ?? 0
+        guard curUsed < entry.qty else { return }
+
+        let faces = Int(type.dropFirst()) ?? 8     // "d8" → 8
+        let roll = Int.random(in: 1...faces)
+        let conMod = ((creature.constitution ?? 10) - 10) / 2
+        let healed = max(0, roll + conMod)
+
+        var nextMap = usedMap
+        nextMap[type] = curUsed + 1
+        creature.hit_dice_used_by_type = nextMap
+        socket.creature = creature
+
+        Task { await persist(["hit_dice_used_by_type": nextMap]) }
+
+        if healed > 0, let mx = token.max_hp {
+            let newHp = min(mx, (token.current_hp ?? 0) + healed)
+            socket.emitHpChange(tokenId: token.id, currentHp: newHp)
+        }
+        let modStr = conMod >= 0 ? "+\(conMod)" : "\(conMod)"
+        socket.emitDiceRoll(DiceRollRequest(
+            dice: faces, count: 1, modifier: conMod,
+            label: "Hit Die (\(type)\(modStr)) — heal",
+        ))
     }
 
     // ── Death Saves ───────────────────────────────────────────────────

@@ -14,6 +14,7 @@
 //                 routes through the existing inspiration_die flow.
 
 import React, { useState } from 'react';
+import LanguagePicker from './LanguagePicker.jsx';
 
 const INPUT = 'w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white';
 const SMALL = 'bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white';
@@ -53,6 +54,7 @@ function emptyClass() {
     subclasses: [],
     features:   [],
     resources:  [],
+    grantsLanguages: [],
   };
 }
 
@@ -222,6 +224,19 @@ export default function CustomClassEditor({ initial, onClose, onSaved }) {
                 grants: { ...data.multiclass.grants, weapons: arr }
               })} />
           </Field>
+
+          <Section>Languages Granted</Section>
+          <p className="text-[11px] text-gray-500 -mt-2">
+            Languages auto-added at level 1, the same way Druids learn Druidic. New entries land in the shared /api/languages registry so other characters and NPC chat see them too. Empty = the class grants no languages.
+          </p>
+          <LanguagePicker
+            value={Array.isArray(data.grantsLanguages) ? data.grantsLanguages.join(', ') : (data.grantsLanguages || '')}
+            onChange={(csv) => patch({
+              grantsLanguages: String(csv || '')
+                .split(/\s*,\s*/)
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })} />
 
           <Section>Subclasses</Section>
           <FreeChips selected={data.subclasses}

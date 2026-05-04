@@ -214,19 +214,40 @@ export function getClassChoicesMerged(charClass, opts = {}) {
 // armor keys, weapons CSV-friendly) plus the new `saves` entry.
 import { CLASS_BUILD } from '../data/class_build.js';
 function buildClassKitAdds(charClass, isMulticlass) {
-  const build = CLASS_BUILD[charClass];
+  // Static SRD entry first.
+  let build = CLASS_BUILD[charClass];
+  // Fallback to GM-authored class data — populated by
+  // CustomClassesProvider into registries.customClassBuilds. Lets
+  // homebrew classes contribute their kit (saves / armor / weapons
+  // / granted languages) to the same auto-apply pipeline.
+  if (!build) {
+    for (const map of registries.customClassBuilds.values()) {
+      if (map && typeof map === 'object' && map[charClass]) {
+        build = map[charClass];
+        break;
+      }
+    }
+  }
   if (!build) return null;
   const src = isMulticlass ? (build.multiclass?.grants || {}) : build;
   const armor   = (src.armor   || []).map(a => a.toLowerCase());
   const weapons =  src.weapons || [];
   const saves   = isMulticlass ? [] : (build.saves || []);
-  if (armor.length === 0 && weapons.length === 0 && saves.length === 0) {
+  // Languages — only granted to first-class adopters, mirroring how
+  // SRD class-language grants (Druidic) work. A multiclass take-up
+  // doesn't re-grant the language. Custom-class authors expose this
+  // through grantsLanguages; the SRD build entries don't carry it
+  // (Druidic etc. live elsewhere on the SRD side, intentionally
+  // out of scope here).
+  const languages = isMulticlass ? [] : (build.grantsLanguages || []);
+  if (armor.length === 0 && weapons.length === 0 && saves.length === 0 && languages.length === 0) {
     return null;
   }
   const adds = {};
-  if (armor.length)   adds.armor   = armor;
-  if (weapons.length) adds.weapons = weapons;
-  if (saves.length)   adds.saves   = saves;
+  if (armor.length)     adds.armor     = armor;
+  if (weapons.length)   adds.weapons   = weapons;
+  if (saves.length)     adds.saves     = saves;
+  if (languages.length) adds.languages = languages;
   return adds;
 }
 

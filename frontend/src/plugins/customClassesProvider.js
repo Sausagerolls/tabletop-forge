@@ -65,6 +65,7 @@ async function loadAndRegister() {
       saves:   Array.isArray(d.saves)    ? d.saves   : [],
       armor:   Array.isArray(d.armor)    ? d.armor   : [],
       weapons: Array.isArray(d.weapons)  ? d.weapons : [],
+      grantsLanguages: Array.isArray(d.grantsLanguages) ? d.grantsLanguages : [],
       startingEquipment: d.startingEquipment || { optionA: { items: [], gp: 0 }, optionB: { gp: 0 } },
       multiclass: d.multiclass || {
         prereq: { abilities: [], min: 13, mode: 'all' },

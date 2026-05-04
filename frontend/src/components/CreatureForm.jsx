@@ -1731,7 +1731,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       }
 
       // Apply new choices.
-      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0, saves: [] };
+      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0, saves: [], languages: [] };
       const expert = { ...(next.skill_expertise || {}) };
 
       // Helper: apply an `adds` block onto `next`, recording into `added`.
@@ -1755,6 +1755,31 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             }
           }
           next.weapon_proficiencies = have.join(', ');
+        }
+        // Granted languages — Druidic-style class language pickup.
+        // Merges into the existing comma-separated languages column
+        // and tracks adds in added.languages so revert clears only
+        // the class-granted ones, leaving manually-added languages
+        // alone. Trailing fluency qualifiers like "(understands but
+        // cannot speak)" are NOT added by class kits — those stay a
+        // manual concern via the LanguagePicker.
+        if (adds.languages && adds.languages.length) {
+          const have = String(next.languages || '')
+            .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean);
+          // Strip trailing qualifier when comparing so "Druidic"
+          // matches "Druidic (only)" and we don't double-add.
+          const haveBare = new Set(have.map((p) =>
+            p.replace(/\s*\(.*\)\s*$/, '').toLowerCase()
+          ));
+          for (const lang of adds.languages) {
+            const bare = String(lang).replace(/\s*\(.*\)\s*$/, '').trim();
+            if (!bare) continue;
+            if (haveBare.has(bare.toLowerCase())) continue;
+            have.push(bare);
+            added.languages.push(bare);
+            haveBare.add(bare.toLowerCase());
+          }
+          next.languages = have.join(', ');
         }
         // Save proficiencies — class kit grants two saves to first-class
         // characters. Compute the bonus = ability mod + PB. Track in
@@ -1895,6 +1920,18 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           const field = SAVE_FIELD[ab];
           if (field) next[field] = null;
         }
+      }
+      // Languages granted by the previous class kit (Druidic, the
+      // homebrew class's class-language) — strip ONLY the entries
+      // recorded as kit-granted. Manually-added languages keep their
+      // place in the CSV. Comparison ignores fluency qualifiers so
+      // "Druidic (only)" gets removed if the kit added "Druidic".
+      if (Array.isArray(prevAdded.languages) && prevAdded.languages.length) {
+        const drop = new Set(prevAdded.languages.map((s) => String(s).toLowerCase()));
+        const kept = String(f.languages || '')
+          .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean)
+          .filter((p) => !drop.has(p.replace(/\s*\(.*\)\s*$/, '').toLowerCase()));
+        next.languages = kept.join(', ');
       }
       if (Array.isArray(prevAdded.spells) && prevAdded.spells.length) {
         const drop = new Set(prevAdded.spells.map((s) => String(s).toLowerCase()));
@@ -2040,6 +2077,18 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           if (field) next[field] = null;
         }
       }
+      // Languages granted by the previous class kit (Druidic, the
+      // homebrew class's class-language) — strip ONLY the entries
+      // recorded as kit-granted. Manually-added languages keep their
+      // place in the CSV. Comparison ignores fluency qualifiers so
+      // "Druidic (only)" gets removed if the kit added "Druidic".
+      if (Array.isArray(prevAdded.languages) && prevAdded.languages.length) {
+        const drop = new Set(prevAdded.languages.map((s) => String(s).toLowerCase()));
+        const kept = String(f.languages || '')
+          .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean)
+          .filter((p) => !drop.has(p.replace(/\s*\(.*\)\s*$/, '').toLowerCase()));
+        next.languages = kept.join(', ');
+      }
       if (Array.isArray(prevAdded.spells) && prevAdded.spells.length) {
         const drop = new Set(prevAdded.spells.map((s) => String(s).toLowerCase()));
         next.spells = (f.spells || []).filter((s) =>
@@ -2047,7 +2096,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         );
       }
 
-      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0, saves: [] };
+      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0, saves: [], languages: [] };
       const expert = { ...(next.skill_expertise || {}) };
 
       function applyAdds(adds, tag) {
@@ -2069,6 +2118,31 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             }
           }
           next.weapon_proficiencies = have.join(', ');
+        }
+        // Granted languages — Druidic-style class language pickup.
+        // Merges into the existing comma-separated languages column
+        // and tracks adds in added.languages so revert clears only
+        // the class-granted ones, leaving manually-added languages
+        // alone. Trailing fluency qualifiers like "(understands but
+        // cannot speak)" are NOT added by class kits — those stay a
+        // manual concern via the LanguagePicker.
+        if (adds.languages && adds.languages.length) {
+          const have = String(next.languages || '')
+            .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean);
+          // Strip trailing qualifier when comparing so "Druidic"
+          // matches "Druidic (only)" and we don't double-add.
+          const haveBare = new Set(have.map((p) =>
+            p.replace(/\s*\(.*\)\s*$/, '').toLowerCase()
+          ));
+          for (const lang of adds.languages) {
+            const bare = String(lang).replace(/\s*\(.*\)\s*$/, '').trim();
+            if (!bare) continue;
+            if (haveBare.has(bare.toLowerCase())) continue;
+            have.push(bare);
+            added.languages.push(bare);
+            haveBare.add(bare.toLowerCase());
+          }
+          next.languages = have.join(', ');
         }
         // Save proficiencies — multiclass kits don't grant saves
         // (per the PHB), so this loop is a no-op for the slot path.
@@ -2213,6 +2287,18 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           const field = SAVE_FIELD[ab];
           if (field) next[field] = null;
         }
+      }
+      // Languages granted by the previous class kit (Druidic, the
+      // homebrew class's class-language) — strip ONLY the entries
+      // recorded as kit-granted. Manually-added languages keep their
+      // place in the CSV. Comparison ignores fluency qualifiers so
+      // "Druidic (only)" gets removed if the kit added "Druidic".
+      if (Array.isArray(prevAdded.languages) && prevAdded.languages.length) {
+        const drop = new Set(prevAdded.languages.map((s) => String(s).toLowerCase()));
+        const kept = String(f.languages || '')
+          .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean)
+          .filter((p) => !drop.has(p.replace(/\s*\(.*\)\s*$/, '').toLowerCase()));
+        next.languages = kept.join(', ');
       }
       if (Array.isArray(prevAdded.spells) && prevAdded.spells.length) {
         const drop = new Set(prevAdded.spells.map((s) => String(s).toLowerCase()));

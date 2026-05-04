@@ -40,14 +40,14 @@ struct Creature: Codable, Identifiable, Equatable {
     var subtype: String?            // "race" in player-character speak
     var char_class: String?
     var char_subclass: String?
-    // The DM-applied background id — display name comes from the
+    // The GM-applied background id — display name comes from the
     // companion `background_state.added.feat` and the catalog the web
     // app keeps. iOS only renders the canonical name part of the id
     // (e.g. `acolyte-2024` → "Acolyte") so we never need the full data.
     var background: String?
     var languages: String?
     // Free-form CSV for non-skill proficiencies. The backend stores
-    // them as plain text fields the DM (or a background apply) can
+    // them as plain text fields the GM (or a background apply) can
     // append to.
     var tool_proficiencies: String?
     var weapon_proficiencies: String?
@@ -129,7 +129,7 @@ struct Creature: Codable, Identifiable, Equatable {
     var spells: [Spell]?
     var spell_slots: SpellSlots?
     var concentrating_on: String?
-    // Currency tracked separately on the creature row — DM gold drops
+    // Currency tracked separately on the creature row — GM gold drops
     // and player purchases update these via socket broadcasts so the
     // wallet readout stays in sync across every client.
     var currency_gp: Int?
@@ -455,7 +455,7 @@ struct SpellDamage: Codable, Equatable {
     var damage_type: String?     // "fire" / "radiant" / etc.
 }
 
-// NPC chat — DM-driven NPC speech relayed through the plugin event
+// NPC chat — GM-driven NPC speech relayed through the plugin event
 // bus. Identifiable so SwiftUI's .sheet(item:) can present them; one
 // at a time, just like whispers.
 struct NpcSay: Identifiable, Equatable {

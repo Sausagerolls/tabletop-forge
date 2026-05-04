@@ -47,9 +47,9 @@ The auth model mirrors the web app: trust-by-name, no per-player password.
 - **Stats tab** — HP / temp HP edit, ability scores, AC. Live socket sync.
 - **Dice / Light tab** — d4–d20 quick rolls, torch preset picker (Candle / Torch / Lantern / No Light)
 - **Spells, Inventory tabs** — placeholder views with a clear pattern to extend
-- **Whisper notifications** — DM whispers pop a native banner via `UNUserNotificationCenter`
+- **Whisper notifications** — GM whispers pop a native banner via `UNUserNotificationCenter`
 
-Every state-changing event round-trips through the Socket.IO session room, so any change made here updates the web DM/player/spectator clients instantly, and any change there shows up here without a refresh.
+Every state-changing event round-trips through the Socket.IO session room, so any change made here updates the web GM/player/spectator clients instantly, and any change there shows up here without a refresh.
 
 ## Porting to Android later
 

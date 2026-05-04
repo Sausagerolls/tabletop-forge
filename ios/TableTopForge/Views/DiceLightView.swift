@@ -5,7 +5,7 @@ import SwiftUI
 // belongs alongside the items it represents. This tab is now:
 //   1. Dice rolling controls (count + modifier + d4..d100)
 //   2. The most recent roll only (the full session log lives on the
-//      DM's view; the player phone just wants "what did I just roll")
+//      GM's view; the player phone just wants "what did I just roll")
 //   3. App settings — theme picker + connection summary + Logout
 //
 // File is still named DiceLightView.swift so we don't churn the

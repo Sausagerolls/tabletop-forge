@@ -1,4 +1,4 @@
-// CustomBackgroundEditor — modal for DM-authored backgrounds.
+// CustomBackgroundEditor — modal for GM-authored backgrounds.
 // Persists to /api/custom/backgrounds.
 //
 // Mirrors the SRD background shape (frontend/src/data/backgrounds.js)

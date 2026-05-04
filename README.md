@@ -1,7 +1,7 @@
 # TableTop Forge
 
 **A self-hosted virtual tabletop for D&D 5e.**  
-Per-player instanced fog of war, AI-powered token generation, PDF spell library import, full combat tracking, an extensible plugin system, and complete DM control — running entirely on your own machine.
+Per-player instanced fog of war, AI-powered token generation, PDF spell library import, full combat tracking, an extensible plugin system, and complete GM control — running entirely on your own machine.
 
 ---
 
@@ -123,7 +123,7 @@ docker compose up -d
 Create a `.env` file in the project root to override defaults:
 
 ```env
-# Password required to log in as DM or create sessions
+# Password required to log in as GM or create sessions
 DM_MASTER_PASSWORD=your_secure_password
 
 # Database password (internal only — players never see this)
@@ -179,7 +179,7 @@ server {
 
 ## AI Setup
 
-TableTop Forge can generate fully-statted creature tokens using a local AI model or OpenAI. Configure AI in the **Session** tab of the DM view.
+TableTop Forge can generate fully-statted creature tokens using a local AI model or OpenAI. Configure AI in the **Session** tab of the GM view.
 
 ### LM Studio
 
@@ -190,7 +190,7 @@ TableTop Forge can generate fully-statted creature tokens using a local AI model
 3. Load the model by clicking on it in your model list
 4. Go to the **Local Server** tab (the `<->` icon) and click **Start Server**
    - The server runs on `http://localhost:1234` by default
-5. In TableTop Forge DM view → **Session** tab → AI Settings:
+5. In TableTop Forge GM view → **Session** tab → AI Settings:
    - **Provider:** OpenAI Compatible
    - **Base URL:** `http://localhost:1234`
    - **API Key:** leave blank
@@ -212,7 +212,7 @@ TableTop Forge can generate fully-statted creature tokens using a local AI model
    ollama pull gemma3
    ```
 3. Ollama runs automatically as a background service on `http://localhost:11434`
-4. In TableTop Forge DM view → **Session** tab → AI Settings:
+4. In TableTop Forge GM view → **Session** tab → AI Settings:
    - **Provider:** Ollama
    - **Base URL:** `http://host.docker.internal:11434`
      *(use `host.docker.internal` so Docker can reach your host machine — on Linux use your machine's LAN IP instead)*
@@ -225,7 +225,7 @@ TableTop Forge can generate fully-statted creature tokens using a local AI model
 
 Any OpenAI-compatible API (OpenAI, Groq, Together, etc.) works.
 
-1. In TableTop Forge DM view → **Session** tab → AI Settings:
+1. In TableTop Forge GM view → **Session** tab → AI Settings:
    - **Provider:** OpenAI Compatible
    - **Base URL:** `https://api.openai.com` (or your provider's base URL)
    - **API Key:** your API key
@@ -236,12 +236,12 @@ Any OpenAI-compatible API (OpenAI, Groq, Together, etc.) works.
 
 ## Spell Library — PDF Scanner
 
-The DM panel's **Spells** tab can ingest a sourcebook PDF and turn it into a shared spell library that players can learn from.
+The GM panel's **Spells** tab can ingest a sourcebook PDF and turn it into a shared spell library that players can learn from.
 
 How it works:
 
 1. Configure a vision-capable AI (LM Studio / Ollama / GPT-4o) — see [AI Setup](#ai-setup). The PDF scanner needs a **vision model** and a **context window of at least 16k tokens** (32k+ recommended for whole-book scans).
-2. Open **DM view → Spells tab → Scan PDF** and pick a `.pdf`.
+2. Open **GM view → Spells tab → Scan PDF** and pick a `.pdf`.
 3. The backend rasterises every page, runs deterministic regex header detection on the text layer, then asks the AI to fill body fields. Multi-pass consensus voting filters out hallucinated spells.
 4. After a scan completes, a **Review names** panel surfaces any imported spells whose names don't match a canonical 5e list, with one-click replacements.
 5. Missing or short descriptions are backfilled from the **open5e SRD** — toggle between the **2014** (5.1) and **2024** (5.2) rulesets in the panel header. Aliases for SRD-renamed spells (Bigby's Hand → Arcane Hand etc.) are applied automatically.
@@ -253,7 +253,7 @@ How it works:
 
 ## Plugin System
 
-TableTop Forge has a filesystem-based plugin system. Plugins extend the app with new map effects, custom DM tabs, click-to-place tools, and shared state that auto-syncs between the DM and players.
+TableTop Forge has a filesystem-based plugin system. Plugins extend the app with new map effects, custom GM tabs, click-to-place tools, and shared state that auto-syncs between the GM and players.
 
 **Quick facts:**
 
@@ -261,9 +261,9 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 - The backend never executes plugin code; it only stores metadata, serves plugin assets, and provides a generic JSONB key/value store keyed by plugin id.
 - Plugin code runs in the browser using the host's React + Konva instances passed in via `register({ React, ReactKonva, registries, context })`.
 - Disabling a plugin keeps its data; deleting a plugin keeps its data; only an explicit table wipe removes it. Re-installing later restores everything.
-- Plugins **cannot** modify core React components, the login screen, or anyone else's data. The login screen never loads plugins, so a misbehaving plugin can never break DM auth.
+- Plugins **cannot** modify core React components, the login screen, or anyone else's data. The login screen never loads plugins, so a misbehaving plugin can never break GM auth.
 
-**Managing plugins:** open **DM view → Session tab → Plugins**. From there you can upload a plugin `.zip`, toggle enabled/disabled, see dependency status, and delete plugins.
+**Managing plugins:** open **GM view → Session tab → Plugins**. From there you can upload a plugin `.zip`, toggle enabled/disabled, see dependency status, and delete plugins.
 
 **If a plugin breaks the app so badly that the in-app manager can't help**, stop the backend and delete `backend/plugins/<id>/` on the host filesystem. On next start the host reconciles its records with what's on disk. Stored data is not touched.
 
@@ -285,7 +285,7 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 **AI settings persistence:**
 - AI config (LM Studio / Ollama / SwarmUI URLs, models, prompt templates) used to live in `localStorage` only, which is per-origin per-browser. New device, incognito tab, or aggressive iOS storage cleanup wiped it.
 - New generic `app_settings` table (key TEXT pk, JSONB value) + `/api/settings/:key` routes (GET / PUT / DELETE). DMView writes-through to the server on every change and hydrates from there on mount; localStorage is kept as a first-paint cache and as the read source for plugins, so `context.getAiSettings()` still works unchanged.
-- Settings now follow the DM across phones, browsers, and incognito sessions.
+- Settings now follow the GM across phones, browsers, and incognito sessions.
 
 **Cone template hit-test bug fix:**
 - `findNearestTemplate`'s cone branch returned hypot-from-apex, so a click 30 px from the cone's apex in any direction (including the half-plane behind the caster) registered as a hit on `tpl-edit` / `tpl-erase`. Replaced with a proper inside-the-wedge test plus perpendicular distance to the nearest cone edge for outside hits.
@@ -293,18 +293,18 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 ### v1.4.0 — Languages registry, Fog colour, six new plugins
 
 **First-class languages:**
-- New `languages` table seeded with the SRD set on startup (8 standard, 8 exotic, 2 rare). DMs can add custom entries via the picker; the SRD seed is protected from deletion.
+- New `languages` table seeded with the SRD set on startup (8 standard, 8 exotic, 2 rare). GMs can add custom entries via the picker; the SRD seed is protected from deletion.
 - New `LanguagePicker` component replaces the freeform Languages text input on creatures — multi-select, grouped by category, fluency qualifier dropdown ("understands but cannot speak" etc).
 - AI stat-block prompt now embeds the canonical language list at request time and tells the model to ONLY use those names; output is canonicalised to match casing before insert, so the picker recognises every value.
 - Plugins can read `/api/languages`. The bundled `npc-chat` plugin uses this as its language source instead of hard-coding a list.
 
 **Fog of War — configurable colour:**
-- New `sessions.fow_color` column (default `#000000`). DM-only `set_fow_color` socket; live re-tints the player view as the picker drags.
+- New `sessions.fow_color` column (default `#000000`). GM-only `set_fow_color` socket; live re-tints the player view as the picker drags.
 - Picker added to **Session tab → Fog of War** (under the edge-feather slider) with hex text input and Reset.
 
 **New bundled plugins (downloadable from the Plugin Store):**
 - **Theme Customizer** — accent colour, panel + window backdrop (gradients: Forest, Ember, Nebula, Cinnabar dusk, Deep ocean, plus solid presets), UI font family. Live-syncs to every player in the session and reverts cleanly on disable.
-- **NPC Chat** — one-way DM-to-player speech with per-language scrambling. Pulls the canonical language list from the host; per-token knowledge derived from each character's `creature.languages`, no separate KV needed. Players who don't understand see "Speaks in a tongue you do not know" so they can't deduce the language from the popup.
+- **NPC Chat** — one-way GM-to-player speech with per-language scrambling. Pulls the canonical language list from the host; per-token knowledge derived from each character's `creature.languages`, no separate KV needed. Players who don't understand see "Speaks in a tongue you do not know" so they can't deduce the language from the popup.
 - **3D Dice** — three.js polyhedra (Tetrahedron / Cube / Octahedron / custom d10 trapezohedron / Dodecahedron / Icosahedron) tumbling across every player's screen. Faces are blank during the roll; once the dice settle, the rolled value fades in as a textured plane locked to the camera-facing face — rotated to match the die's own orientation. GLB models bundled for d6 / d20 / d100; drop other GLBs in the plugin folder to swap any procedural shape. Per-die colour overrides persist per session and sync to all players. Plugin hijacks the host's built-in dice roller so quick-rolls and character-sheet rolls also get the full 3D animation.
 - **SRD 2024 Content Pack / SRD 2014 Content Pack** — pull the full WotC SRD set (creatures + magic items) from Open5e on enable. Creatures land in the host library tagged by edition; magic items live in the plugin tab with **Send to player** (uses the existing `send_treasure` socket) and **Treasure JSON** download (matches the format the Treasure tab's **Load** button accepts). Disabling the plugin deletes every creature it inserted by tracked ID — clean test of the disable/cleanup contract.
 - **Content Exporter** — multi-select creatures and spells from your library, fill in a manifest, download a self-contained installable plugin .zip. The exported pack auto-imports its content on enable and removes it on disable using the same install/cleanup pattern the bundled SRD packs use. Zip is built in-browser with an inline STORE-method ZIP encoder — no external dependencies.
@@ -332,7 +332,7 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 - Bumped `max_tokens` to 4096 and dropped temperature to 0.3 — fixes the "Expected ',' or '}' at position ~1273" mid-JSON truncation on local servers that defaulted to 1024 tokens.
 - Added a one-shot LLM JSON-repair retry on parse failure.
 - Strengthened the system prompt around skills + saves: most creatures now get 0–4 skill proficiencies and 0–2 save proficiencies instead of every slot filled.
-- Server-side guardrail: if the model still over-assigns (≥10/18 skills or ≥5/6 saves), all skills/saves are reset to null so the DM can hand-pick.
+- Server-side guardrail: if the model still over-assigns (≥10/18 skills or ≥5/6 saves), all skills/saves are reset to null so the GM can hand-pick.
 - New **Legendary creature** checkbox in the AI Generator modal — off by default, with server-side enforcement that strips legendary actions when not requested.
 - New **Appearance** field is now passed into image generation alongside the creature name (substitutes `{appearance}` in the prompt template, or appends if no placeholder).
 
@@ -346,14 +346,14 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 ### v1.2.0 — Plugin store + three new plugins, panel-tab extension API
 
 **New plugins (downloadable from the Plugin Store on the website):**
-- **Weather Effects** — DM-controlled animated rain / snow / fog across the whole map, with intensity and wind-angle controls. Per-session, particles scale with map size.
-- **Damage Pop-Ups** — DM picks a token and announces a damage / healing / temp HP value. Floating colour-coded chip animates above the token while HP is updated using 5e rules (temp HP absorbs first, healing caps at max, temp HP doesn't stack).
+- **Weather Effects** — GM-controlled animated rain / snow / fog across the whole map, with intensity and wind-angle controls. Per-session, particles scale with map size.
+- **Damage Pop-Ups** — GM picks a token and announces a damage / healing / temp HP value. Floating colour-coded chip animates above the token while HP is updated using 5e rules (temp HP absorbs first, healing caps at max, temp HP doesn't stack).
 - **Tab Controller** — adds a Tab Visibility section to the Session tab so you can hide rarely-used built-in tabs from the bar (Spells / Markers / Treasure / Handouts). Hidden tabs stay reachable via an "Open" button. Map / Token Library / Token List / Session are protected.
 
 **Plugin API additions:**
-- `panelTabHidden` registry — `Map<pluginId, Set<tabId>>`. Plugins can hide built-in DM panel tabs from the bar. The host filters the bar by the union of every plugin's set; hidden tabs still render their body when active so plugins can navigate to them via `setPanelTab`.
+- `panelTabHidden` registry — `Map<pluginId, Set<tabId>>`. Plugins can hide built-in GM panel tabs from the bar. The host filters the bar by the union of every plugin's set; hidden tabs still render their body when active so plugins can navigate to them via `setPanelTab`.
 - `panelTabExtensions` registry — `Map<pluginId, { tabId, render }>`. Plugins can append content inside the body of a specific built-in tab (currently the Session tab; other tabs need a one-line host insertion to enable).
-- `context.setPanelTab(tabId)` — DM-only callback so plugins can switch the active panel tab programmatically.
+- `context.setPanelTab(tabId)` — GM-only callback so plugins can switch the active panel tab programmatically.
 
 **Bug fix:**
 - Spell templates' tpl-edit / tpl-erase tools were silently no-oping on freshly-drawn templates because the mousedown handler captured a stale closure of the templates array. Fixed via a ref, matching the existing pattern for tokens / walls / doors.
@@ -361,10 +361,10 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 ### v1.1.0 — Plugin system, PDF spell scanner, big combat + spell-template improvements
 
 **Plugin system**
-- New extension points: spell-template decorators, template-editor extensions, DM tabs, template overlays (host-rendered effects via canvas), map decorations, and map click handlers
-- Per-plugin JSONB key/value store (`/api/plugins/:id/data`), auto-broadcasting writes via socket so DM ↔ player views stay in sync
+- New extension points: spell-template decorators, template-editor extensions, GM tabs, template overlays (host-rendered effects via canvas), map decorations, and map click handlers
+- Per-plugin JSONB key/value store (`/api/plugins/:id/data`), auto-broadcasting writes via socket so GM ↔ player views stay in sync
 - Generic `plugin_event` socket relay so plugins can ship arbitrary cross-client events
-- Plugin manager UI in the DM Session tab — install zips, enable/disable, dependency status, delete
+- Plugin manager UI in the GM Session tab — install zips, enable/disable, dependency status, delete
 - Bundled **Elemental Templates** plugin (fire / water / ice / lightning / void / acid-poison effects on spell templates, cone-aware)
 - See [`PLUGINS.md`](PLUGINS.md) for the authoring guide
 
@@ -390,7 +390,7 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 - Token export with selection modal; treasure list export-selected
 
 **Spell templates**
-- DM-only place / edit / move / colour controls for cones, circles, lines, squares
+- GM-only place / edit / move / colour controls for cones, circles, lines, squares
 - Spell templates broadcast to players (read-only) so plugin overlays are visible at the table
 - Live feet readout while drawing — chip matches the existing Measurement-tool style (radius for circles, side dimensions for squares, length for cones and lines)
 
@@ -413,7 +413,7 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 ### v1.0.0 — Initial Release
 
 **Core Features**
-- Session-based multiplayer with unique session codes and DM password protection
+- Session-based multiplayer with unique session codes and GM password protection
 - Per-player instanced fog of war with ray-cast line-of-sight (LOS)
 - Ambient light modes: Bright, Dim, Dark
 - Vision types: Normal, Darkvision, Blindsight, Truesight, Devil's Sight
@@ -428,7 +428,7 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 - Full creature stat block editor with AI generation support
 - Player character creator with class, stats, skills, saving throws, senses, spells, and inventory
 - Token sizing (Tiny → Gargantuan)
-- Token visibility toggle (DM-only hidden tokens)
+- Token visibility toggle (GM-only hidden tokens)
 - Conditions tracker on each token
 - Initiative and HP management per token
 
@@ -437,7 +437,7 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 - Choose which tokens are included when starting combat
 - Next Turn control visible to all players
 
-**DM Tools**
+**GM Tools**
 - Wall placement (line, rectangle, circle, polygon) for LOS occlusion
 - Door placement with open/close/flip controls
 - Light source placement with configurable bright/dim radii
@@ -454,7 +454,7 @@ TableTop Forge has a filesystem-based plugin system. Plugins extend the app with
 - Searchable creature library with monster/character filter
 - AI-powered stat block generation (LM Studio, Ollama, OpenAI compatible)
 - Loot tables per creature with drop chance percentages
-- View inventory, spells, and loot from the DM token viewer
+- View inventory, spells, and loot from the GM token viewer
 
 **Stat Block**
 - Full D&D 5e stat block display including senses, spells, inventory, and loot

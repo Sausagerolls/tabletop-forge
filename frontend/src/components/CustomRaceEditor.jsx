@@ -1,4 +1,4 @@
-// CustomRaceEditor — modal for DM-authored races and sub-races.
+// CustomRaceEditor — modal for GM-authored races and sub-races.
 // Persists to /api/custom/races. The data shape mirrors the static
 // catalog in frontend/src/data/races.js so the existing race-picker
 // apply logic accepts custom rows without changes.

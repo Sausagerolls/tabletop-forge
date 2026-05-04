@@ -13,7 +13,7 @@ import SwiftUI
 //      range, properties.
 //   6. Collapsible stat-block sections: Class Features, Special
 //      Abilities, Feats, Actions, Bonus Actions, Reactions, Movement.
-//   7. Conditions, DM whispers.
+//   7. Conditions, GM whispers.
 //
 // Ability scores moved to AbilitiesView (separate tab) so this tab
 // can give the at-the-table info more vertical room.
@@ -494,7 +494,7 @@ struct StatsView: View {
                 }
             } header: {
                 HStack {
-                    Text("DM whispers")
+                    Text("GM whispers")
                     Spacer()
                     Button("Clear all") {
                         clearedWhisperIds.formUnion(socket.whispers.map(\.id))

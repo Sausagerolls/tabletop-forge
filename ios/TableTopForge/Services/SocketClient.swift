@@ -34,7 +34,7 @@ final class SocketClient {
     var connectionStatus: ConnectionStatus = .disconnected
     // Tick that HomeView watches with a .task(id:) — bumped whenever
     // the server hints the creature row has changed beyond what we
-    // can patch incrementally (e.g. the DM edited the sheet directly).
+    // can patch incrementally (e.g. the GM edited the sheet directly).
     // Forces a fresh REST fetch so the Stats tab picks up new spells,
     // ability score changes, etc. without the user reopening the tab.
     var requestCreatureRefresh: Int = 0
@@ -135,7 +135,7 @@ final class SocketClient {
 
         // Token lifecycle — the server broadcasts these for every
         // mutation. Without these listeners the iOS app's tokens array
-        // gets stale the moment the DM (or another client) does
+        // gets stale the moment the GM (or another client) does
         // anything: a new token spawned, an old one removed, a
         // creature edit re-syncing the token row would all leave us
         // showing data that no longer exists. token_refreshed in
@@ -243,7 +243,7 @@ final class SocketClient {
         sock.on("whisper_received") { [weak self] data, _ in
             guard let p = data.first as? [String: Any], let msg = p["message"] as? String else { return }
             self?.whispers.append(WhisperLine(message: msg, ts: Date()))
-            NotificationManager.shared.deliver(title: "DM whispers", body: msg)
+            NotificationManager.shared.deliver(title: "GM whispers", body: msg)
         }
 
         // NPC chat — the npc-chat plugin broadcasts via the generic
@@ -293,12 +293,12 @@ final class SocketClient {
             NotificationManager.shared.deliver(title: speaker, body: preview)
         }
 
-        // ── DM-side loot drops ────────────────────────────────────────
-        // The DM's treasure tab broadcasts treasure_received with the
+        // ── GM-side loot drops ────────────────────────────────────────
+        // The GM's treasure tab broadcasts treasure_received with the
         // recipient creatureId and the new full inventory array. We
         // patch socket.creature in place so every tab (Inventory,
         // Stats, Dice & Light) re-renders with the new items the
-        // moment the DM hits Send.
+        // moment the GM hits Send.
         sock.on("treasure_received") { [weak self] data, _ in
             guard
                 let self,
@@ -354,7 +354,7 @@ final class SocketClient {
             }
         }
 
-        // Generic creature_updated catch-all — the DM panel emits this
+        // Generic creature_updated catch-all — the GM panel emits this
         // when it pushes any creature-row patch through. Refetching is
         // simpler than trying to merge per-field, and the tabs all
         // bind to socket.creature so a clean swap re-renders the lot.

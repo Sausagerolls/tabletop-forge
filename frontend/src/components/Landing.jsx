@@ -141,7 +141,7 @@ export default function Landing() {
         <div className="bg-dnd-panel rounded-xl overflow-hidden shadow-2xl border border-gray-700">
           <div className="flex border-b border-gray-700">
             <button className={tabClass('player')} onClick={() => { setTab('player'); setPlayerStep(1); }}><PersonIcon />Join as Player</button>
-            <button className={tabClass('dm')} onClick={() => setTab('dm')}><DiceIcon />DM Login</button>
+            <button className={tabClass('dm')} onClick={() => setTab('dm')}><DiceIcon />GM Login</button>
             <button className={tabClass('create')} onClick={() => setTab('create')}><SparkleIcon />New Session</button>
             <button className={tabClass('spectate')} onClick={() => setTab('spectate')} title="Audience-facing TV view">📺 Spectate</button>
           </div>
@@ -277,7 +277,7 @@ export default function Landing() {
               </div>
             )}
 
-            {/* ── DM LOGIN ── */}
+            {/* ── GM LOGIN ── */}
             {tab === 'dm' && (
               <form onSubmit={joinAsDM} className="space-y-4">
                 <div>
@@ -292,7 +292,7 @@ export default function Landing() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">DM Password</label>
+                  <label className="block text-sm text-gray-400 mb-1">GM Password</label>
                   <input
                     type="password"
                     className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-dnd-gold"
@@ -307,7 +307,7 @@ export default function Landing() {
                   disabled={loading}
                   className="w-full bg-dnd-gold hover:bg-yellow-500 text-gray-900 py-3 rounded-lg font-semibold transition-colors disabled:opacity-50"
                 >
-                  {loading ? 'Verifying...' : 'Enter as Dungeon Master'}
+                  {loading ? 'Verifying...' : 'Enter as Game Master'}
                 </button>
               </form>
             )}
@@ -326,7 +326,7 @@ export default function Landing() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">DM Password</label>
+                  <label className="block text-sm text-gray-400 mb-1">GM Password</label>
                   <input
                     type="password"
                     className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-dnd-gold"
@@ -358,7 +358,7 @@ export default function Landing() {
                 className="space-y-4"
               >
                 <p className="text-xs text-gray-400 leading-snug">
-                  Read-only audience view for a TV at the table. Combines the line-of-sight of every player on the current map and follows whichever map the DM is showing. No password, no controls — just the map.
+                  Read-only audience view for a TV at the table. Combines the line-of-sight of every player on the current map and follows whichever map the GM is showing. No password, no controls — just the map.
                 </p>
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Session Code</label>

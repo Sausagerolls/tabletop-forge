@@ -16,7 +16,7 @@ function WhisperPopup({ whisper, onClose }) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
-        DM whispers to you
+        GM whispers to you
       </div>
       <div className="text-sm text-purple-50 whitespace-pre-wrap break-words">
         {whisper.message}
@@ -559,7 +559,7 @@ export default function PlayerView() {
   const navigate = useNavigate();
   const code = searchParams.get('code') || '';
 
-  // Player setup. The legacy deep-link path is "the DM gave you a URL
+  // Player setup. The legacy deep-link path is "the GM gave you a URL
   // with ?name=… and ?creatureId=… already filled in" — those skip the
   // setup screen entirely. Everyone else goes through CharacterSetup
   // below: pick an existing character owned by their player name, or
@@ -570,7 +570,7 @@ export default function PlayerView() {
   const queryCreature = searchParams.get('creatureId') ? parseInt(searchParams.get('creatureId'), 10) : null;
   const queryHp = parseInt(searchParams.get('hp') || '20', 10);
   const querySize = searchParams.get('size') || 'medium';
-  // Preview mode: the DM's player-preview plugin opens this view in an
+  // Preview mode: the GM's player-preview plugin opens this view in an
   // iframe with `?previewTokenId=<existing token>` so the iframe can
   // bind to a token that already exists on the map instead of asking
   // the server to spawn another one. When set, we:
@@ -581,7 +581,7 @@ export default function PlayerView() {
   const previewTokenId = searchParams.get('previewTokenId') ? parseInt(searchParams.get('previewTokenId'), 10) : null;
   const [setup, setSetup] = useState(() => {
     // Preview mode is observe-only — bypass character setup so the
-    // DM doesn't have to fake a name + creature in the iframe URL.
+    // GM doesn't have to fake a name + creature in the iframe URL.
     if (previewTokenId || queryName) {
       return {
         ready: true,
@@ -629,11 +629,11 @@ export default function PlayerView() {
   const playerTokenIdRef = useRef(null);
   useEffect(() => { playerTokenIdRef.current = playerTokenId; }, [playerTokenId]);
   // Tracked separately from the `tokens` array because that array is
-  // filtered server-side to the session's *current* map. When the DM
+  // filtered server-side to the session's *current* map. When the GM
   // switches maps, our own token can drop out of the array even though
   // the row still exists in the DB on its previous map. Without this
   // state, the auto-follow rule loses the token's map_id and the
-  // player's view incorrectly snaps to whatever the DM is viewing.
+  // player's view incorrectly snaps to whatever the GM is viewing.
   const [ownTokenMapId, setOwnTokenMapId] = useState(null);
   // Mirror to a ref so socket handlers (registered once at mount) can
   // read the latest value without re-binding.
@@ -702,9 +702,9 @@ export default function PlayerView() {
   // map we're currently viewing as our override and we need its
   // creature-image join from the server.
   const [overrideRefetchKey, setOverrideRefetchKey] = useState(0);
-  // DM-set map override for this player by name (Split the Party,
-  // native). Pinned by the DM via the Session-tab UI. Wins over the
-  // auto-follow-token rule below; cleared by the DM, sent as null.
+  // GM-set map override for this player by name (Split the Party,
+  // native). Pinned by the GM via the Session-tab UI. Wins over the
+  // auto-follow-token rule below; cleared by the GM, sent as null.
   const [dmAssignedMapId, setDmAssignedMapId] = useState(null);
   // Cross-map transition state. Bumped opaque the moment the resolved
   // map id changes, then faded clear ~600ms later so the new scene
@@ -737,8 +737,8 @@ export default function PlayerView() {
   }, [overrideMap?.mapId, session?.map_id]);
 
   // Re-centre the map on the player's own token after every map
-  // transition (DM "Send to" pipeline, manual override change,
-  // auto-follow on DM map switch). The first centering is handled by
+  // transition (GM "Send to" pipeline, manual override change,
+  // auto-follow on GM map switch). The first centering is handled by
   // the one-time center-on-load effect further down; this effect only
   // re-centres on *subsequent* effective map changes.
   const lastCenteredMapIdRef = useRef(null);
@@ -789,7 +789,7 @@ export default function PlayerView() {
     }
     if (desired == null && ownTokenMapId != null && ownTokenMapId !== session.map_id) {
       // Auto-follow our own token's map. Tracked via a dedicated state
-      // so a DM map switch (which drops our token from the broadcast
+      // so a GM map switch (which drops our token from the broadcast
       // `tokens` array) doesn't cause us to lose track of where our
       // token actually lives.
       desired = ownTokenMapId;
@@ -932,7 +932,7 @@ export default function PlayerView() {
   const [remoteMeasurements, setRemoteMeasurements] = useState([]);
 
   // Create the AudioContext immediately and resume it on the first user gesture.
-  // This ensures it's in 'running' state before the DM ever triggers a sound,
+  // This ensures it's in 'running' state before the GM ever triggers a sound,
   // so socket-triggered playback works without requiring a tap from the player.
   useEffect(() => {
     audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
@@ -1005,11 +1005,11 @@ export default function PlayerView() {
     socket.io.on('reconnect_attempt', (n) => setReconnectAttempt(n));
     socket.io.on('reconnect_failed', () => setReconnectAttempt(-1));
 
-    // DM rotated the session code. The server has already disconnected
+    // GM rotated the session code. The server has already disconnected
     // us; show a notice and bounce to the lobby so the player can rejoin
-    // with whatever new link the DM sends.
+    // with whatever new link the GM sends.
     socket.on('session_code_changed', () => {
-      setError('The DM rotated the session code. Ask them for the new join link.');
+      setError('The GM rotated the session code. Ask them for the new join link.');
       setTimeout(() => navigate('/'), 2500);
     });
 
@@ -1018,11 +1018,11 @@ export default function PlayerView() {
       setSpellTemplates(Array.isArray(state.spellTemplates) ? state.spellTemplates : []);
       // Load enabled plugins as soon as we know the session id. Errors are
       // isolated per plugin and ignored on the player side — players see no
-      // plugin manager UI; the DM resolves any issues from their side.
+      // plugin manager UI; the GM resolves any issues from their side.
       loadPlugins({ context: { sessionId: state.session.id, role: 'player', socket } });
       setTokens(state.tokens.filter((t) => !t.is_hidden));
       setTerrain(state.terrain || []);
-      // Pick up our own DM-set override on join. The server keys these
+      // Pick up our own GM-set override on join. The server keys these
       // by player name, so a reconnect with the same name re-applies
       // automatically.
       const overrides = state.playerMapOverrides || {};
@@ -1076,7 +1076,7 @@ export default function PlayerView() {
       patchOverrideToken(tokenId, (t) => ({ ...t, grid_col: gridCol, grid_row: gridRow }));
     });
 
-    // DM pinned us (or someone else) to a specific map. Only react
+    // GM pinned us (or someone else) to a specific map. Only react
     // when our own name matches; ignore broadcasts for other players.
     socket.on('player_map_override_changed', ({ playerName, mapId }) => {
       if (playerName !== name) return;
@@ -1227,13 +1227,13 @@ export default function PlayerView() {
 
     socket.on('map_changed', async ({ map, walls: newWalls, doors: newDoors, lights: newLights, tokens: newTokens, magicalDarkness: newDarkness, terrain: newTerrain }) => {
       setTerrain(newTerrain || []);
-      // If our own token sits on a map other than the one the DM just
+      // If our own token sits on a map other than the one the GM just
       // switched to, we'll be auto-following our token's map — and
       // visually nothing should change for us. Pre-fetch our token's
       // map slice and install it as the override BEFORE applying the
       // session.map_id change, so the resolver never sees an
       // "override == null && session.map_id == new" state and the
-      // renderer never flashes through the DM's map.
+      // renderer never flashes through the GM's map.
       const targetMapId = ownTokenMapIdRef.current;
       const willAutoFollow = (
         overrideMapRef.current == null
@@ -1498,7 +1498,7 @@ export default function PlayerView() {
 
     // Live spell-template sync. Players never mutate templates; these
     // listeners just keep the read-only list current so plugin overlays
-    // (animated fire/water/etc.) reflect the DM's edits in real time.
+    // (animated fire/water/etc.) reflect the GM's edits in real time.
     socket.on('template_placed',  (tpl) => setSpellTemplates(prev => [...prev, tpl]));
     socket.on('template_updated', (tpl) => setSpellTemplates(prev => prev.map(t => t.id === tpl.id ? tpl : t)));
     socket.on('template_deleted', ({ id }) => setSpellTemplates(prev => prev.filter(t => t.id !== id)));
@@ -1653,7 +1653,7 @@ export default function PlayerView() {
   // the token row has even arrived from the server, and the player's
   // saved torch gets clobbered to 0/0. Server-side state was correct;
   // the client was just overwriting it on every reload.
-  // Applies to both normal players (so the DM's stored value survives a
+  // Applies to both normal players (so the GM's stored value survives a
   // refresh) and the preview iframe (so opening the preview doesn't snuff
   // out the real player's torch). Once the flag flips, all subsequent
   // preset changes emit normally.
@@ -1699,7 +1699,7 @@ export default function PlayerView() {
   // shed-light inventory items only join TORCH_PRESETS once the creature
   // loads — without that wait we'd snap to 0 even when the player is
   // holding a custom magical lantern. Once the flag flips, ongoing token
-  // updates do NOT re-sync — that would race the DM's clicks (round-trip
+  // updates do NOT re-sync — that would race the GM's clicks (round-trip
   // delays would briefly snap the icon back to the old value).
   useEffect(() => {
     if (!playerTokenId) return;
@@ -1767,7 +1767,7 @@ export default function PlayerView() {
   // Character setup: shown the FIRST time a player visits the join
   // link. Once they pick or build a character we stash the result in
   // localStorage keyed by session code so a refresh skips the form.
-  // The DM can still hand out deep links with ?name= / ?creatureId=
+  // The GM can still hand out deep links with ?name= / ?creatureId=
   // that bypass this entirely (legacy flow).
   if (!setup.ready) {
     return (
@@ -2149,7 +2149,7 @@ export default function PlayerView() {
 
         <DiceRollOverlay rolls={diceRolls} />
 
-        {/* DM whispers — top-right stack, auto-dismiss after 12s, click to close. */}
+        {/* GM whispers — top-right stack, auto-dismiss after 12s, click to close. */}
         {whispers.length > 0 && (
           <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-auto">
             {whispers.map((w) => (
@@ -2187,7 +2187,7 @@ export default function PlayerView() {
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center text-gray-500">
               <div className="mb-3 text-gray-600"><MapIcon /></div>
-              <div>Waiting for the Dungeon Master to set the map...</div>
+              <div>Waiting for the Game Master to set the map...</div>
             </div>
           </div>
         )}

@@ -1,5 +1,5 @@
 // 3D Dice — three.js polyhedra (and optional GLTF models bundled with
-// the plugin) tumbling across a WebGL overlay. DM rolls; every player
+// the plugin) tumbling across a WebGL overlay. GM rolls; every player
 // in the session sees the same dice land on the same numbers.
 //
 // Asset loading
@@ -759,7 +759,7 @@ function showFallbackBanner(err) {
   rootEl.appendChild(banner);
 }
 
-// ── Roll mechanics (DM side only) ──────────────────────────────────
+// ── Roll mechanics (GM side only) ──────────────────────────────────
 function rollDie(sides) { return Math.floor(Math.random() * sides) + 1; }
 
 function parseExpression(text) {

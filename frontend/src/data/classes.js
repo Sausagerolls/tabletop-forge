@@ -90,18 +90,14 @@ export const CLASS_CHOICES_2024 = {
       id: 'favored-enemy',
       label: 'Favored Enemy',
       at_level: 1,
-      desc: "You always have the Hunter's Mark spell prepared, and you can cast it without expending a spell slot a number of times equal to your Wisdom modifier (a minimum of once per long rest).",
-      kind: 'single',
-      options: [
-        {
-          id: 'hunters-mark',
-          name: "Hunter's Mark (always prepared)",
-          desc: "You always have Hunter's Mark prepared.",
-          adds: {
-            spells: [{ name: "Hunter's Mark", minLevel: 1 }],
-          },
-        },
-      ],
+      desc: "You always have the Hunter's Mark spell prepared, and you can cast it without expending a spell slot a number of times equal to your Wisdom modifier per long rest.",
+      // No picker — the only effect is granting Hunter's Mark, so it
+      // auto-applies the moment Ranger is picked. Tracked in
+      // class_state.added so it reverts on class swap.
+      kind: 'auto',
+      adds: {
+        spells: [{ name: "Hunter's Mark", minLevel: 1 }],
+      },
     },
   ],
 

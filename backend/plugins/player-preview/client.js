@@ -1,10 +1,10 @@
-// Player View Preview — DM-only plugin that lets the DM see exactly
+// Player View Preview — GM-only plugin that lets the GM see exactly
 // what a specific player sees on the map, fog-of-war and hidden-token
 // filters included.
 //
 // How the preview works
 // ─────────────────────
-//   Rather than re-implement the player render inside the DM panel
+//   Rather than re-implement the player render inside the GM panel
 //   (which would duplicate FoW visibility math, plugin overlays, the
 //   character sheet, every socket subscription, etc.), the plugin
 //   mounts a full-screen iframe pointed at the host's existing
@@ -27,7 +27,7 @@
 // What "Switch back" does
 // ───────────────────────
 //   Just removes the overlay from the DOM. The iframe's React tree
-//   tears down, its socket disconnects, and the DM panel becomes
+//   tears down, its socket disconnects, and the GM panel becomes
 //   interactive again. No state in the host view was modified.
 
 const PLUGIN_ID = 'player-preview';
@@ -100,7 +100,7 @@ function tearDownOverlay() {
 }
 
 function buildPlayerUrl(token) {
-  // Read the current session code from the DM's URL — the only
+  // Read the current session code from the GM's URL — the only
   // bit of "host state" a plugin can lift without a context API.
   const code = new URL(window.location.href).searchParams.get('code') || '';
   // `previewTokenId` is the key knob — PlayerView treats it as
@@ -194,12 +194,12 @@ function openPreview(token) {
   });
   bar.appendChild(reloadBtn);
 
-  // Switch back to the DM view — just removes the overlay; the iframe
-  // unmounts, its socket disconnects, the DM panel underneath was
+  // Switch back to the GM view — just removes the overlay; the iframe
+  // unmounts, its socket disconnects, the GM panel underneath was
   // never touched so nothing else needs to re-hydrate.
   const backBtn = document.createElement('button');
   backBtn.className = 'ppv-btn';
-  backBtn.textContent = '← Back to DM view';
+  backBtn.textContent = '← Back to GM view';
   backBtn.addEventListener('click', tearDownOverlay);
   bar.appendChild(backBtn);
 
@@ -260,7 +260,7 @@ export default {
         { className: 'p-4 space-y-3' },
         React.createElement('h3', { className: 'text-sm font-semibold text-dnd-gold mb-1' }, 'Player View Preview'),
         React.createElement('p', { className: 'text-xs text-gray-400 leading-snug' },
-          'See exactly what a specific player sees — fog of war, hidden tokens, light radius, plugin overlays. The preview opens fullscreen; the "Back to DM view" button (or Escape) closes it.'),
+          'See exactly what a specific player sees — fog of war, hidden tokens, light radius, plugin overlays. The preview opens fullscreen; the "Back to GM view" button (or Escape) closes it.'),
         React.createElement('p', { className: 'text-[11px] text-gray-500 leading-snug' },
           'Heads up: the preview connects as a separate player socket. If the real player is online, they\'ll briefly see "(preview)" appear in the Connected Players list while the overlay is open.'),
 
@@ -283,7 +283,7 @@ export default {
 
         React.createElement('div',
           { className: 'text-[11px] text-gray-500 leading-snug bg-gray-800/50 border border-gray-700 rounded-lg p-2 mt-2' },
-          'Tip: while the preview is open, switch to your other browser tab / window for the actual DM controls — moves you make there reflect live in the preview iframe via the same socket events the real player gets.')
+          'Tip: while the preview is open, switch to your other browser tab / window for the actual GM controls — moves you make there reflect live in the preview iframe via the same socket events the real player gets.')
       );
     }
 
@@ -293,7 +293,7 @@ export default {
     });
 
     // ── Top-bar flyout button ────────────────────────────────────────
-    // Lets the DM start a player-view preview from anywhere — the
+    // Lets the GM start a player-view preview from anywhere — the
     // flyout is the same picker as the dmTab, just one click away
     // from any panel.
     function PreviewTopBarButton() {
@@ -326,9 +326,9 @@ export default {
     });
   },
 
-  // Tear down the overlay if the DM disables the plugin while a
+  // Tear down the overlay if the GM disables the plugin while a
   // preview is open — otherwise the iframe sticks around as a
-  // headless fullscreen layer covering the actual DM view.
+  // headless fullscreen layer covering the actual GM view.
   unregister() {
     tearDownOverlay();
     const tag = document.getElementById(STYLE_TAG_ID);

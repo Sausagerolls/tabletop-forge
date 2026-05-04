@@ -184,7 +184,7 @@ db.query(`
 
 // ─── Named per-map spawn points (Phase 2 of split-the-party) ─────────────────
 // A map can have many labelled spawn points — the "Send to map" right-click
-// flow surfaces them as a sub-submenu so the DM can land a token at a
+// flow surfaces them as a sub-submenu so the GM can land a token at a
 // specific location ("Throne Room") rather than the map's default spawn.
 // Chain CREATE → ALTER so the radius column is added only once the
 // table exists. Firing both as parallel promises raced on a fresh DB
@@ -207,7 +207,7 @@ db.query(`ALTER TABLE maps ADD COLUMN IF NOT EXISTS spawn_radius INTEGER DEFAULT
   .catch(err => console.error('maps.spawn_radius migration error:', err));
 
 // ─── Terrain library + placed instances ──────────────────────────────────────
-// Library is global (not per-session) — DM-curated reusable pieces. The
+// Library is global (not per-session) — GM-curated reusable pieces. The
 // shipping defaults (rock wall / rubble / tree) are auto-seeded on first
 // startup so a fresh install has something to drop on the map.
 // Chain CREATE map_terrain after CREATE terrain_library — the FK on
@@ -355,7 +355,7 @@ async function backfillMapDimensions() {
 const TERRAIN_UPLOADS_DIR = path.join(__dirname, '../uploads/terrain');
 // Earlier v1.6.0 builds auto-seeded three default terrain pieces (rock
 // wall / rubble / tree). The art wasn't ready for shipping, so the
-// library is empty out of the box now — the DM uploads pieces
+// library is empty out of the box now — the GM uploads pieces
 // themselves. This pass cleans up any rows + on-disk images left
 // behind by the previous seed so existing installs match new ones.
 async function removeSeededTerrainDefaults() {
@@ -377,9 +377,9 @@ async function removeSeededTerrainDefaults() {
   }
 }
 
-// ─── DM-set per-player map overrides (Split the Party, native) ───────────────
+// ─── GM-set per-player map overrides (Split the Party, native) ───────────────
 // One row per (session, player_name). When set, that player's view is pinned
-// to map_id regardless of which map the DM is currently viewing. Replaces
+// to map_id regardless of which map the GM is currently viewing. Replaces
 // the `assignment_*` KV rows the bundled split-the-party plugin used.
 db.query(`
   CREATE TABLE IF NOT EXISTS player_map_overrides (
@@ -395,11 +395,11 @@ db.query(`
 
 // Track connected users per session
 const sessionUsers = {}; // sessionCode -> Map<socketId, {name, role}>
-const sessionTemplates = {}; // sessionCode -> Array<{ id, type, points, color, label }> — DM-only
+const sessionTemplates = {}; // sessionCode -> Array<{ id, type, points, color, label }> — GM-only
 const sessionUserColors = {}; // sessionCode -> { name: color }
-// Per-session, per-map ambient state. When the DM starts an ambient
+// Per-session, per-map ambient state. When the GM starts an ambient
 // loop on a map, we remember the latest filename/volume here so a
-// player who later switches to that map (Send-to, auto-follow, DM map
+// player who later switches to that map (Send-to, auto-follow, GM map
 // change) can be auto-synced — see set_player_active_map_id below.
 // Stop clears every map for the session (a "stop everything" button).
 const sessionAmbients = {}; // sessionCode -> { [mapId]: { filename, volume } }
@@ -683,7 +683,7 @@ async function getSessionState(sessionCode) {
   };
 }
 
-// Read every DM-set per-player override for a session as a flat
+// Read every GM-set per-player override for a session as a flat
 // { [playerName]: mapId } map — easier for clients to consume than
 // raw rows. Returns {} when the table is empty.
 async function loadPlayerMapOverrides(sessionId) {
@@ -717,7 +717,7 @@ io.on('connection', (socket) => {
       if (role === 'dm') {
         const valid = await bcrypt.compare(dmPassword || '', session.dm_password_hash);
         if (!valid) {
-          socket.emit('error', { message: 'Invalid DM password' });
+          socket.emit('error', { message: 'Invalid GM password' });
           return;
         }
       }
@@ -736,12 +736,12 @@ io.on('connection', (socket) => {
       sessionUsers[sessionCode].set(socket.id, { name: socket.data.name, role: safeRole });
 
       const state = await getSessionState(sessionCode);
-      // Strip DM markers from non-DM state but include spell templates so
+      // Strip GM markers from non-GM state but include spell templates so
       // both players and spectators see plugin-driven AOE effects on the
       // map. Templates are non-interactive — write-side socket handlers
       // gate on socket.data.role === 'dm'.
       // Players only see terrain that's revealed OR not flagged as
-      // hide_until_revealed. The DM sees everything (with a ghosted
+      // hide_until_revealed. The GM sees everything (with a ghosted
       // tint client-side for the still-hidden ones). Spectators get the
       // same filtered slice as players — they're a TV-side audience
       // view, not a back-channel into hidden content.
@@ -752,8 +752,8 @@ io.on('connection', (socket) => {
       const colors = sessionUserColors[sessionCode] || {};
       const currentUsers = Array.from(sessionUsers[sessionCode].values());
       socket.emit('session_joined', { state: sendState, role: safeRole, userColors: colors, users: currentUsers });
-      // Re-attach the DM to whatever per-map ambients are currently
-      // running so the DM panel can render the running list.
+      // Re-attach the GM to whatever per-map ambients are currently
+      // running so the GM panel can render the running list.
       if (role === 'dm') {
         socket.emit('session_ambients_changed', sessionAmbients[sessionCode] || {});
       }
@@ -784,7 +784,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── DM "Send to map" — physically relocate a token to another map.
+  // ── GM "Send to map" — physically relocate a token to another map.
   // Used by the right-click context menu and by warp-point activation.
   // Token's session_tokens.map_id is updated, and grid_col/grid_row are
   // reset to the destination map's spawn point so the token doesn't
@@ -812,7 +812,7 @@ io.on('connection', (socket) => {
       );
       if (!mapRes.rows.length) return;
       const m = mapRes.rows[0];
-      // Default landing: the map's spawn_col/spawn_row. If the DM picked
+      // Default landing: the map's spawn_col/spawn_row. If the GM picked
       // a named spawn point we look its coords up and use those instead;
       // a missing/foreign spawn point silently falls back to the default
       // so a stale UI can't strand a token off-map. When the chosen
@@ -865,13 +865,13 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── HP update — DM, or the player who owns the token ────────────────────
+  // ── HP update — GM, or the player who owns the token ────────────────────
   socket.on('update_token_hp', async ({ tokenId, currentHp }) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
 
     try {
-      // Permission: DM can update any token; a player can only update their own.
+      // Permission: GM can update any token; a player can only update their own.
       const prev = await db.query(
         'SELECT current_hp, creature_id, player_name FROM session_tokens WHERE id=$1',
         [tokenId]
@@ -912,7 +912,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Temp HP update — DM, or the player who owns the token ───────────────
+  // ── Temp HP update — GM, or the player who owns the token ───────────────
   socket.on('update_token_temp_hp', async ({ tokenId, tempHp }) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
@@ -935,8 +935,8 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── DM whisper (DM → single player) ───────────────────────────────────────
-  // Private DM-to-player text. Server-side routing is essential — broadcasting
+  // ── GM whisper (GM → single player) ───────────────────────────────────────
+  // Private GM-to-player text. Server-side routing is essential — broadcasting
   // to the session room and filtering client-side would leak the message to
   // every player via DevTools. Instead we resolve the target socket(s) from
   // the session room (a player may have more than one tab open) and emit
@@ -961,11 +961,11 @@ io.on('connection', (socket) => {
       s.emit('whisper_received', { message: safeMessage, fromDm: true, ts: Date.now() });
       delivered += 1;
     }
-    // Echo back to the sender so the DM has a record of what was sent.
+    // Echo back to the sender so the GM has a record of what was sent.
     socket.emit('whisper_sent', { targetName, message: safeMessage, delivered, ts: Date.now() });
   });
 
-  // ── Conditions update (DM only) ───────────────────────────────────────────
+  // ── Conditions update (GM only) ───────────────────────────────────────────
   socket.on('update_token_conditions', async ({ tokenId, conditions }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -982,7 +982,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Initiative update (DM only) ───────────────────────────────────────────
+  // ── Initiative update (GM only) ───────────────────────────────────────────
   socket.on('update_token_initiative', async ({ tokenId, initiative }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -999,7 +999,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Toggle visibility (DM only) ───────────────────────────────────────────
+  // ── Toggle visibility (GM only) ───────────────────────────────────────────
   socket.on('toggle_token_visibility', async ({ tokenId }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -1017,7 +1017,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Toggle flying flag (DM only) ─────────────────────────────────────────
+  // ── Toggle flying flag (GM only) ─────────────────────────────────────────
   socket.on('toggle_token_flying', async ({ tokenId }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -1034,7 +1034,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Add token to map (DM only) ────────────────────────────────────────────
+  // ── Add token to map (GM only) ────────────────────────────────────────────
   socket.on('add_token', async ({ sessionId, creatureId, gridCol, gridRow, mapId }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -1122,8 +1122,8 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Use the DM-configured spawn map (sessions.spawn_map_id) when set —
-      // lets a DM stage incoming players on a "lobby" map while the rest
+      // Use the GM-configured spawn map (sessions.spawn_map_id) when set —
+      // lets a GM stage incoming players on a "lobby" map while the rest
       // of the party is mid-encounter on a different one. Falls back to
       // the session's current map_id if no spawn map has been picked.
       const sessionInfoRes = await db.query(
@@ -1177,7 +1177,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── DM: force-respawn a player token (re-creates if deleted) ────────────
+  // ── GM: force-respawn a player token (re-creates if deleted) ────────────
   socket.on('dm_respawn_player_token', async ({ playerName }) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode || socket.data.role !== 'dm') return;
@@ -1199,7 +1199,7 @@ io.on('connection', (socket) => {
       );
       if (existing.rows.length) {
         // Token exists on this map — notify the player to reconnect to it
-        // and broadcast it so the DM panel refreshes
+        // and broadcast it so the GM panel refreshes
         const tok = existing.rows[0];
         io.to(sessionCode).emit('token_added', { token: tok });
         const users = sessionUsers[sessionCode];
@@ -1292,7 +1292,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── DM Markers ───────────────────────────────────────────────────────────
+  // ── GM Markers ───────────────────────────────────────────────────────────
   socket.on('add_dm_marker', async ({ markerType, label, note, gridCol, gridRow }) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode || socket.data.role !== 'dm') return;
@@ -1330,7 +1330,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // ── Map terrain CRUD (DM only) ──────────────────────────────────────────
+  // ── Map terrain CRUD (GM only) ──────────────────────────────────────────
   // Wall regeneration for a terrain piece. Called on every lifecycle
   // event that could change the piece's geometry or its
   // visibility-to-players (place / move / resize / reveal). Walls are
@@ -1360,10 +1360,10 @@ io.on('connection', (socket) => {
     await db.query('DELETE FROM walls WHERE terrain_id=$1', [t.id]);
 
     // Walls are absent for hidden pieces — players never see them
-    // and the DM doesn't need their FoW to be partially blocked by
+    // and the GM doesn't need their FoW to be partially blocked by
     // a piece nobody can see yet. Walls only ever come from the
     // piece's custom_walls list (set in the wall-editor modal). No
-    // auto-perimeter — DM owns the geometry explicitly.
+    // auto-perimeter — GM owns the geometry explicitly.
     const hidden = !!(t.hide_until_revealed && !t.is_revealed);
     const hasCustom = Array.isArray(t.custom_walls) && t.custom_walls.length;
     if (hidden || !hasCustom) {
@@ -1372,8 +1372,8 @@ io.on('connection', (socket) => {
 
     // Convert grid-unit terrain coords into the map-pixel coords that
     // walls.points use. The frontend renders using the SESSION's
-    // grid_size (the DM-tweakable per-campaign value), not the map's
-    // initial grid_size — they can diverge if the DM resized the
+    // grid_size (the GM-tweakable per-campaign value), not the map's
+    // initial grid_size — they can diverge if the GM resized the
     // grid after upload. Match the session here so walls land where
     // the artwork sits.
     const mapRes = await db.query(
@@ -1459,7 +1459,7 @@ io.on('connection', (socket) => {
   }
   // Broadcasts a terrain event to everyone in the session, except hidden
   // pieces (hide_until_revealed && !is_revealed) which are sent to the
-  // DM only — players don't get a 'terrain_added' for a piece they
+  // GM only — players don't get a 'terrain_added' for a piece they
   // shouldn't know exists.
   function broadcastTerrain(sessionCode, eventName, terrainRow) {
     const room = io.sockets.adapter.rooms.get(sessionCode);
@@ -1547,8 +1547,8 @@ io.on('connection', (socket) => {
       await db.query('UPDATE map_terrain SET is_revealed=$1 WHERE id=$2', [!!isRevealed, id]);
       const row = await fetchTerrainRow(id);
       if (!row) return;
-      // Reveal: send terrain_added to non-DMs (they didn't have it).
-      // Hide: send terrain_removed to non-DMs (they shouldn't see it).
+      // Reveal: send terrain_added to non-GMs (they didn't have it).
+      // Hide: send terrain_removed to non-GMs (they shouldn't see it).
       const room = io.sockets.adapter.rooms.get(sessionCode);
       if (!room) return;
       for (const sid of room) {
@@ -1584,7 +1584,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // ── DM sends treasure items to a player's creature inventory ────────────
+  // ── GM sends treasure items to a player's creature inventory ────────────
   socket.on('send_treasure', async ({ creatureId, items }) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode || socket.data.role !== 'dm') return;
@@ -1600,7 +1600,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error('send_treasure error:', err); }
   });
 
-  // ── DM sends currency to a player's creature ────────────────────────────
+  // ── GM sends currency to a player's creature ────────────────────────────
   socket.on('send_currency', async ({ creatureId, gp, sp, cp }) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode || socket.data.role !== 'dm') return;
@@ -1632,7 +1632,7 @@ io.on('connection', (socket) => {
   });
 
   // ── Spell templates — persistent on-map AOE shapes ────────────────────
-  // Templates are placed/edited only by the DM (every handler below
+  // Templates are placed/edited only by the GM (every handler below
   // gates on role === 'dm'), but the resulting shapes broadcast to every
   // socket in the room so players see plugin-driven elemental effects
   // (fire/water/etc.) on the map.
@@ -1696,7 +1696,7 @@ io.on('connection', (socket) => {
     io.to(sessionCode).emit('templates_cleared');
   });
 
-  // ── Send a handout (DM only) — broadcast to room or whisper to player ───
+  // ── Send a handout (GM only) — broadcast to room or whisper to player ───
   socket.on('send_handout', ({ target, title, body, imageUrl }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -1722,7 +1722,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Set token light source (player: their own token; DM: any) ────────────
+  // ── Set token light source (player: their own token; GM: any) ────────────
   socket.on('set_token_light', async ({ tokenId, brightFt, dimFt, color, flicker }) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
@@ -1767,7 +1767,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Remove token (DM only) ────────────────────────────────────────────────
+  // ── Remove token (GM only) ────────────────────────────────────────────────
   socket.on('remove_token', async ({ tokenId }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -1781,7 +1781,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Change map (DM only) ──────────────────────────────────────────────────
+  // ── Change map (GM only) ──────────────────────────────────────────────────
   socket.on('change_map', async ({ sessionId, mapId }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -1851,7 +1851,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Map spawn points CRUD (DM only) ───────────────────────────────────────
+  // ── Map spawn points CRUD (GM only) ───────────────────────────────────────
   // Named spawn points per map. The right-click "Send to map → spawn point"
   // submenu pulls labels from here, and `dm_send_token_to_map` accepts an
   // optional spawnPointId that overrides the map's default landing tile.
@@ -1957,7 +1957,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Wall CRUD (DM only) ───────────────────────────────────────────────────
+  // ── Wall CRUD (GM only) ───────────────────────────────────────────────────
   socket.on('add_wall', async ({ mapId, type, points }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2023,7 +2023,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // Players and DM can toggle doors open/closed
+  // Players and GM can toggle doors open/closed
   socket.on('toggle_door', async ({ doorId }) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
@@ -2038,7 +2038,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // DM can flip the swing direction of a door
+  // GM can flip the swing direction of a door
   socket.on('flip_door_dir', async ({ doorId }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2064,7 +2064,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // ── Light source CRUD (DM only) ──────────────────────────────────────────
+  // ── Light source CRUD (GM only) ──────────────────────────────────────────
   socket.on('add_light', async ({ mapId, x, y, brightRadius, dimRadius, label, color, direction, spreadAngle, flicker }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2113,7 +2113,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // ── Magical darkness CRUD (DM only) ─────────────────────────────────────
+  // ── Magical darkness CRUD (GM only) ─────────────────────────────────────
   socket.on('add_magical_darkness', async ({ sessionId, mapId, x, y, radius, zoneType, shape, polyPoints }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2167,7 +2167,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // ── Sound effects (DM only) ─────────────────────────────────────────────
+  // ── Sound effects (GM only) ─────────────────────────────────────────────
   // We route per-map at the server: only sockets whose activeMapId
   // matches the source map get the play_* event. Sockets that haven't
   // reported an activeMapId yet (older client, or pre-set_player_active
@@ -2213,8 +2213,8 @@ io.on('connection', (socket) => {
     io.to(sessionCode).emit('stop_sounds');
   });
 
-  // ── Ambient music (DM only) ──────────────────────────────────────────────
-  // Push the full per-map ambient snapshot to every DM socket in this
+  // ── Ambient music (GM only) ──────────────────────────────────────────────
+  // Push the full per-map ambient snapshot to every GM socket in this
   // session. Players don't need it — they only hear their own map.
   function broadcastAmbientState(sessionCode) {
     const state = sessionAmbients[sessionCode] || {};
@@ -2239,7 +2239,7 @@ io.on('connection', (socket) => {
     broadcastAmbientState(sessionCode);
   });
 
-  // Stop ambient on a specific map (DM only). The targeted map's
+  // Stop ambient on a specific map (GM only). The targeted map's
   // audience hears the stop; other maps' loops keep playing.
   socket.on('stop_ambient_on_map', ({ mapId }) => {
     if (socket.data.role !== 'dm') return;
@@ -2261,10 +2261,10 @@ io.on('connection', (socket) => {
     broadcastAmbientState(sessionCode);
   });
 
-  // Each connected client (DM + players) tells the server which map
+  // Each connected client (GM + players) tells the server which map
   // it's currently rendering so the server can route per-map audio
   // to the right sockets. Fires on session join, every Send-to /
-  // auto-follow / DM map switch.
+  // auto-follow / GM map switch.
   socket.on('set_player_active_map_id', ({ mapId }) => {
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
@@ -2282,7 +2282,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Spawn point (DM only) ────────────────────────────────────────────────
+  // ── Spawn point (GM only) ────────────────────────────────────────────────
   socket.on('set_spawn_point', async ({ mapId, col, row, radius }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2305,7 +2305,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // ── Ambient light (DM only) ───────────────────────────────────────────────
+  // ── Ambient light (GM only) ───────────────────────────────────────────────
   socket.on('set_ambient_light', async ({ sessionId, ambientLight }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2316,7 +2316,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // ── Active SRD edition for the spell library (DM only) ────────────────
+  // ── Active SRD edition for the spell library (GM only) ────────────────
   // Drives whether players see 2014, 2024, or every spell when they
   // browse the spell library. Stored on the session row so it can be
   // changed mid-session and surveyed by the spell-library REST query.
@@ -2331,7 +2331,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // ── Toggle fog of war (DM only) ───────────────────────────────────────────
+  // ── Toggle fog of war (GM only) ───────────────────────────────────────────
   socket.on('toggle_fow', async ({ sessionId }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2348,7 +2348,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── FOW blur change (DM only) ─────────────────────────────────────────────
+  // ── FOW blur change (GM only) ─────────────────────────────────────────────
   socket.on('set_fow_blur', async ({ sessionId, blur }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2361,12 +2361,12 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Rotate session code (DM only — kicks all current players) ────────────
-  // The DM hits "Rotate" when they need to evict a player they've already
+  // ── Rotate session code (GM only — kicks all current players) ────────────
+  // The GM hits "Rotate" when they need to evict a player they've already
   // told off / banned. Generates a fresh 6-char code, swaps it on the
   // session row, broadcasts the change to everyone in the old room, then
   // hard-disconnects every socket so each client decides what to do
-  // (DM auto-rejoins on the new code; players are bounced to the lobby).
+  // (GM auto-rejoins on the new code; players are bounced to the lobby).
   socket.on('rotate_session_code', async ({ sessionId }) => {
     if (socket.data.role !== 'dm') return;
     const oldCode = socket.data.sessionCode;
@@ -2402,10 +2402,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── FOW colour change (DM only) ───────────────────────────────────────────
+  // ── FOW colour change (GM only) ───────────────────────────────────────────
   // Validates the input as a 3- or 6-digit hex literal — anything else is
   // rejected silently. Empty / null clears back to the default black so the
-  // DM can recover a borked picker state without re-creating the session.
+  // GM can recover a borked picker state without re-creating the session.
   socket.on('set_fow_color', async ({ sessionId, color }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2420,7 +2420,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Grid size change (DM only) ────────────────────────────────────────────
+  // ── Grid size change (GM only) ────────────────────────────────────────────
   socket.on('change_grid_size', async ({ sessionId, gridSize }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2435,7 +2435,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Grid style change (DM only) ───────────────────────────────────────────
+  // ── Grid style change (GM only) ───────────────────────────────────────────
   socket.on('change_grid_style', async ({ sessionId, gridColor, gridThickness }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2453,9 +2453,9 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Default spawn-map for new player tokens (DM only) ────────────────
+  // ── Default spawn-map for new player tokens (GM only) ────────────────
   // Set to null to clear the default (revert to "use whatever map_id the
-  // session currently points at"). Broadcast so the DM panel UI in
+  // session currently points at"). Broadcast so the GM panel UI in
   // other open tabs reflects the change live.
   socket.on('change_spawn_map', async ({ sessionId, mapId }) => {
     if (socket.data.role !== 'dm') return;
@@ -2468,11 +2468,11 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // ── DM-set per-player map overrides (Split the Party, native) ────────
+  // ── GM-set per-player map overrides (Split the Party, native) ────────
   // mapId === null clears the override. Stored as upsert on
   // (session_id, player_name) so re-routing the same player just
   // overwrites their current row. Broadcast lets every other client
-  // (DM tabs, the player themselves) react without polling.
+  // (GM tabs, the player themselves) react without polling.
   socket.on('set_player_map_override', async ({ sessionId, playerName, mapId }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2510,7 +2510,7 @@ io.on('connection', (socket) => {
     } catch (err) { console.error(err); }
   });
 
-  // ── Token name font size change (DM only) ────────────────────────────────
+  // ── Token name font size change (GM only) ────────────────────────────────
   socket.on('change_token_name_font_size', async ({ sessionId, tokenNameFontSize }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2528,7 +2528,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Update token size (DM only) ───────────────────────────────────────────
+  // ── Update token size (GM only) ───────────────────────────────────────────
   socket.on('update_token_size', async ({ tokenId, size }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2562,7 +2562,7 @@ io.on('connection', (socket) => {
     socket.to(sessionCode).emit('measure_update', { meas, color, name });
   });
 
-  // ── Combat control (DM only) ──────────────────────────────────────────────
+  // ── Combat control (GM only) ──────────────────────────────────────────────
   socket.on('set_combat', async ({ sessionId, active, tokenIds }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2596,7 +2596,7 @@ io.on('connection', (socket) => {
 
   // Add additional tokens to an active combat without resetting the turn
   // counter or kicking anyone out — used when reinforcements walk into a
-  // fight or the DM forgot a token at start.
+  // fight or the GM forgot a token at start.
   socket.on('add_tokens_to_combat', async ({ sessionId, tokenIds }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2629,7 +2629,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── User color (DM only) ──────────────────────────────────────────────────
+  // ── User color (GM only) ──────────────────────────────────────────────────
   socket.on('set_user_color', ({ name, color }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2684,7 +2684,7 @@ io.on('connection', (socket) => {
   // Generic relay for plugin-to-plugin coordination between clients in the
   // same session. The backend never inspects the payload — plugins ship
   // arbitrary JSON. Used by the host's data-write wrapper to broadcast
-  // KV changes so DM + player views stay in sync without each plugin
+  // KV changes so GM + player views stay in sync without each plugin
   // having to wire up its own socket protocol.
   socket.on('plugin_event', ({ pluginId, type, payload }) => {
     const sessionCode = socket.data.sessionCode;
@@ -2723,7 +2723,7 @@ server.listen(PORT, async () => {
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS grid_thickness FLOAT DEFAULT 0.7`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS token_name_font_size INTEGER DEFAULT 45`);
     // Default map for newly-spawned player tokens. NULL = fall back to the
-    // session's current map_id (legacy behaviour). The DM Map tab picker
+    // session's current map_id (legacy behaviour). The GM Map tab picker
     // and the split-the-party plugin both read/write this column.
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS spawn_map_id INTEGER REFERENCES maps(id) ON DELETE SET NULL`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS combat_active BOOLEAN DEFAULT false`);
@@ -2738,7 +2738,7 @@ server.listen(PORT, async () => {
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS fow_blur INTEGER DEFAULT 16`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS fow_color VARCHAR(9) DEFAULT '#000000'`);
 
-    // Generic key/value settings table. Currently used to persist DM AI
+    // Generic key/value settings table. Currently used to persist GM AI
     // configuration across devices / browser clears (it used to live in
     // localStorage only); designed so future "global app settings" can
     // share the same store without another migration. Values are JSONB
@@ -2778,8 +2778,24 @@ server.listen(PORT, async () => {
     // Mastery weapons, Rogue's Expertise skills, etc. Mirror of how
     // race_state / background_state work.
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS class_state JSONB DEFAULT '{}'`);
+    // Per-resource usage counter — Bardic Inspiration / Ki / Sorcery
+    // Points / Channel Divinity etc. Shape: { <resource_id>: { used: int } }
+    // The resource catalog (totals, rest behaviour) is computed
+    // client-side from the character's class + level; only the
+    // mutable "used" count needs to round-trip.
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS resource_state JSONB DEFAULT '{}'`);
+    // A single Bardic Inspiration die granted by a Bard. Any character
+    // can hold one at a time; "" / null when none. Format is just the
+    // die label ("d6" / "d8" / "d10" / "d12") so the UI can render
+    // and roll it without a lookup.
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS inspiration_die VARCHAR(8) DEFAULT ''`);
+    // Multiclass rows. Each entry is one extra class on top of the
+    // primary char_class/char_subclass/char_level. Shape:
+    //   [{ id, class, subclass, level, class_state }]
+    // The character's total level = char_level + sum(level).
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS multiclasses JSONB DEFAULT '[]'`);
 
-    // ── Custom DM-authored races + backgrounds ──
+    // ── Custom GM-authored races + backgrounds ──
     // Free-form JSONB so the editor can grow without migrations. The
     // shape mirrors frontend/src/data/races.js / backgrounds.js so the
     // race / background pickers can merge static SRD content with these.
@@ -2970,7 +2986,7 @@ server.listen(PORT, async () => {
 
     // Item library — analog of spell_library for equipment + magic
     // items. Same shape: per-edition rows, idempotent imports keyed
-    // by (name, edition), DM session toggles which edition the
+    // by (name, edition), GM session toggles which edition the
     // players see via the same active_srd_edition session column the
     // spell library already reads from.
     await db.query(`
@@ -3005,7 +3021,7 @@ server.listen(PORT, async () => {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_item_library_edition ON item_library(edition)`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_item_library_rarity  ON item_library(rarity)`);
     // edition: tags each spell with the SRD it came from. Lets the
-    // DM toggle which set of spells players see (2014 vs 2024 SRD).
+    // GM toggle which set of spells players see (2014 vs 2024 SRD).
     // Existing rows default to '2014' since the historical plugin/
     // import path only ever loaded the 2014 SRD set.
     await db.query(`ALTER TABLE spell_library ADD COLUMN IF NOT EXISTS edition VARCHAR(8) NOT NULL DEFAULT '2014'`);
@@ -3032,9 +3048,9 @@ server.listen(PORT, async () => {
       // Constraint already exists from a prior run — fine.
       if (!String(e.message || '').includes('already exists')) throw e;
     }
-    // Per-session "active SRD" filter the DM controls. 'both' shows
+    // Per-session "active SRD" filter the GM controls. 'both' shows
     // every edition; '2014' / '2024' show only that set. Players see
-    // whatever the DM has selected.
+    // whatever the GM has selected.
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_srd_edition VARCHAR(8) NOT NULL DEFAULT 'both'`);
 
     // Plugin system. `plugins` tracks installed plugins and their enabled

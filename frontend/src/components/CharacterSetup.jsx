@@ -164,7 +164,7 @@ export default function CharacterSetup({ sessionCode, initial, onComplete }) {
                 </div>
               )}
 
-              {/* Full creator — same component the DM Library and the
+              {/* Full creator — same component the GM Library and the
                   Landing page's player flow use, so the experience is
                   identical regardless of how the player got here. */}
               {!charsLoading && showCreateForm && (

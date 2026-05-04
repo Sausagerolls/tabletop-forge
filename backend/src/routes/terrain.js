@@ -30,7 +30,7 @@ const upload = multer({
 });
 
 // GET /api/terrain-library — every library piece, default first then by id.
-// Defaults sit pinned at the top of the panel so the DM can always grab
+// Defaults sit pinned at the top of the panel so the GM can always grab
 // rock-wall / rubble / tree quickly.
 router.get('/library', async (_req, res) => {
   try {
@@ -125,7 +125,7 @@ router.delete('/library/:id', async (req, res) => {
     if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
     // Don't delete shipping default art on disk — the next startup's
     // seed-skip relies on the row, not the file. (We allow deleting
-    // the row though, since a DM may genuinely not want a default in
+    // the row though, since a GM may genuinely not want a default in
     // their library.)
     if (!r.rows[0].is_default && r.rows[0].image_path) {
       const filePath = path.join(__dirname, '../../uploads', r.rows[0].image_path);

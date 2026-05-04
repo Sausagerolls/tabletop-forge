@@ -2,7 +2,7 @@
 //
 // What it does
 // ────────────
-//   Lets the DM add custom class names (e.g. "Blood Hunter") and custom
+//   Lets the GM add custom class names (e.g. "Blood Hunter") and custom
 //   subclasses scoped to a specific class. Both lists feed the host's
 //   class-related dropdowns:
 //     * Spell Library — top class filter
@@ -24,10 +24,10 @@
 //     - registries.customSubclasses[pluginId] = { [className]: string[] }
 //     The host's `getAllClasses()` / `getAllSubclasses(cls)` helpers
 //     merge each plugin's contribution with the SRD base lists.
-//   * UI: rendered as a panel-tab extension on the Session tab. DM only
+//   * UI: rendered as a panel-tab extension on the Session tab. GM only
 //     (player view has no panel-tab surface). Players still receive the
 //     data via the plugin load + cross-client broadcast, so their
-//     subclass dropdowns reflect DM additions live.
+//     subclass dropdowns reflect GM additions live.
 //   * Cross-client sync: data.write() broadcasts plugin_event to every
 //     client in the session. Subscribers rehydrate their cache, re-sync
 //     the registry, notifyChange() so dropdowns refresh without a reload.
@@ -37,7 +37,7 @@ const CLASSES_KEY = 'classes';
 const SUBCLASSES_KEY = 'subclasses';
 // New in v1.2.0 — class-level "build choices" (Cleric Divine Order,
 // Fighter Weapon Mastery, etc.) keyed by class name. Stored as JSON
-// the DM authors directly, so the plugin doesn't need a structured
+// the GM authors directly, so the plugin doesn't need a structured
 // editor for every kind of choice. Example shape:
 //   {
 //     "Blood Hunter": [
@@ -86,7 +86,7 @@ function normaliseChoicesMap(obj) {
 }
 
 // Local notify pump — re-renders the panel-tab extension component
-// without forcing the whole DM panel to re-render.
+// without forcing the whole GM panel to re-render.
 const sectionSubs = new Set();
 function pingSection() { for (const fn of sectionSubs) try { fn(); } catch {} }
 
@@ -164,10 +164,10 @@ export default {
       });
     }
 
-    // Players don't see the DM panel — registry hydration is enough.
+    // Players don't see the GM panel — registry hydration is enough.
     if (role !== 'dm') return;
 
-    // ── DM-only React section ────────────────────────────────────────
+    // ── GM-only React section ────────────────────────────────────────
     // Storage key for the section's open/closed state. Mirrors the
     // host's `dndvtt_session_section_collapsed_v1` shape (an object
     // map of id → boolean) but uses a plugin-specific key so it doesn't
@@ -271,7 +271,7 @@ export default {
         }
         // Don't duplicate something the SRD already supplies for this
         // class — the host will dedupe at render time anyway, but warning
-        // here gives the DM a clearer signal about which is which.
+        // here gives the GM a clearer signal about which is which.
         // (This list is a best-effort mirror; if it drifts from the host
         // base list, the host still de-dupes.)
         subclassesByClass = {

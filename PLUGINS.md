@@ -1,8 +1,8 @@
 # Writing TableTop Forge Plugins
 
-This guide is for plugin authors. If you just want to install a plugin, use the **Plugins** section of the **Session** tab in the DM view.
+This guide is for plugin authors. If you just want to install a plugin, use the **Plugins** section of the **Session** tab in the GM view.
 
-A plugin is a folder of static files. The backend never executes plugin code; it only stores metadata, serves your files, and provides a generic key/value store. Your code runs in the browser, on both DM and player views, using the host's React + Konva instances.
+A plugin is a folder of static files. The backend never executes plugin code; it only stores metadata, serves your files, and provides a generic key/value store. Your code runs in the browser, on both GM and player views, using the host's React + Konva instances.
 
 ---
 
@@ -10,8 +10,8 @@ A plugin is a folder of static files. The backend never executes plugin code; it
 
 A plugin can do three kinds of things, alone or in combination:
 
-1. **Decorate** existing objects — overlay animated effects on a spell template, draw extra Konva shapes on the map, add fields to a built-in popup, add tabs to the DM panel.
-2. **Persist data** in a per-plugin JSONB key/value store via `data.read/write/delete`. The host writes are auto-broadcast to **every client in the session including the sender**, so DM ↔ player sync is free.
+1. **Decorate** existing objects — overlay animated effects on a spell template, draw extra Konva shapes on the map, add fields to a built-in popup, add tabs to the GM panel.
+2. **Persist data** in a per-plugin JSONB key/value store via `data.read/write/delete`. The host writes are auto-broadcast to **every client in the session including the sender**, so GM ↔ player sync is free.
 3. **Listen for and emit events** between clients in the same session via `subscribe(handler)` and `emitEvent(type, payload)`.
 
 What a plugin cannot do:
@@ -23,7 +23,7 @@ What a plugin cannot do:
 
 ### Before you build
 
-The base app already includes a fair number of features. Check that whatever you're about to build isn't already shipping — building a plugin to recreate something the host does natively is wasted effort. As of this writing the app has built-in: per-player fog of war / line of sight, full creature library with AI generation, spell library with PDF scanner, combat tracker with initiative, walls / doors / lights / magical-darkness / water zones, multi-floor maps, dice roller, sounds (one-shot effects + ambient), DM markers / pins on the map, treasure chest, handouts to players, and PDF export of character sheets. The plugin system is for the things on top of those.
+The base app already includes a fair number of features. Check that whatever you're about to build isn't already shipping — building a plugin to recreate something the host does natively is wasted effort. As of this writing the app has built-in: per-player fog of war / line of sight, full creature library with AI generation, spell library with PDF scanner, combat tracker with initiative, walls / doors / lights / magical-darkness / water zones, multi-floor maps, dice roller, sounds (one-shot effects + ambient), GM markers / pins on the map, treasure chest, handouts to players, and PDF export of character sheets. The plugin system is for the things on top of those.
 
 ### Calling host endpoints from a plugin
 
@@ -34,7 +34,7 @@ Plugins run as ordinary JavaScript on the same origin as the host, so any same-o
 const creatures = await fetch('/api/creatures').then((r) => r.json());
 
 // Generate a stat block via the host's AI proxy (uses the AI settings
-// the DM configured in Session → AI Integration; pull them with
+// the GM configured in Session → AI Integration; pull them with
 // context.getAiSettings)
 const ai = context.getAiSettings();
 const generated = await fetch('/api/ai/generate', {
@@ -56,7 +56,7 @@ for (const [k, v] of Object.entries(generated)) {
 // fd.append('image', someBlobOrFile);   // ← optional portrait
 const inserted = await fetch('/api/creatures', { method: 'POST', body: fd }).then((r) => r.json());
 
-// Generate a portrait via SwarmUI (only if the DM has enabled image
+// Generate a portrait via SwarmUI (only if the GM has enabled image
 // generation in Session → AI Integration). Returns a data: URL you
 // can decode to a Blob and attach to /api/creatures as `image`.
 if (ai.imageEnabled && ai.imageBaseUrl) {
@@ -105,7 +105,7 @@ The full creature column list — including which fields are JSONB and need `JSO
 
 #### Languages registry
 
-The host exposes a first-class language table at `/api/languages`. The SRD set (Common, Dwarvish, Draconic, etc.) is seeded on startup; DMs can `POST` custom entries which become available across the creature editor, the AI generator's prompt, and any plugin that reads from this endpoint.
+The host exposes a first-class language table at `/api/languages`. The SRD set (Common, Dwarvish, Draconic, etc.) is seeded on startup; GMs can `POST` custom entries which become available across the creature editor, the AI generator's prompt, and any plugin that reads from this endpoint.
 
 ```js
 const langs = await fetch('/api/languages').then((r) => r.json());
@@ -152,7 +152,7 @@ const data = await fetch(`/api/plugins/${pluginId}/asset/tables/encounters.json`
   .then((r) => r.json());
 ```
 
-**Browser autoplay policy.** Modern browsers refuse to play audio (or video with sound) until the user has interacted with the page — clicked, tapped, or pressed a key. The DM clicking a button in your plugin counts as interaction, so DM-side audio always works. But on the **player** side, if your audio is triggered by a `subscribe` event the browser may reject `audio.play()` with `NotAllowedError` until the player has clicked anywhere on their tab. Catch the rejection and either log a one-time warning or surface a "Click to enable audio" prompt in your plugin's UI.
+**Browser autoplay policy.** Modern browsers refuse to play audio (or video with sound) until the user has interacted with the page — clicked, tapped, or pressed a key. The GM clicking a button in your plugin counts as interaction, so GM-side audio always works. But on the **player** side, if your audio is triggered by a `subscribe` event the browser may reject `audio.play()` with `NotAllowedError` until the player has clicked anywhere on their tab. Catch the rejection and either log a one-time warning or surface a "Click to enable audio" prompt in your plugin's UI.
 
 ### Distribution
 
@@ -174,15 +174,15 @@ If a plugin imports creatures or spells into the host library — the **content-
 | `treasure_loaded_v1`    | `true`     | Once-flag for any treasure-chest items pushed via `window.__tabletopForge.treasure.addItems` |
 | `install_status`        | `object`   | Last install state, surfaced in your tab UI |
 
-When a DM clicks **Delete** in the plugin manager:
+When a GM clicks **Delete** in the plugin manager:
 
 1. The host reads `inserted_creature_ids` + `inserted_spell_ids` from plugin KV.
 2. Deletes the listed rows from `creatures` and `spell_library`.
 3. Removes the five tracking keys above from plugin KV.
 4. Removes the plugin's files and registry row.
-5. Other KV keys (per-DM preferences, caches) are preserved so a later re-install restores them.
+5. Other KV keys (per-GM preferences, caches) are preserved so a later re-install restores them.
 
-The DM also has a **Clean up orphaned plugin content** button in the manager that runs the same cleanup for any tracking rows whose plugin row is already gone — useful after upgrading from a host version that didn't auto-clean on Delete.
+The GM also has a **Clean up orphaned plugin content** button in the manager that runs the same cleanup for any tracking rows whose plugin row is already gone — useful after upgrading from a host version that didn't auto-clean on Delete.
 
 **For plugin authors:** if your plugin imports library content, follow the once-flag pattern. Set `content_loaded_v1` after the first successful `/api/creatures/import` + `/api/spell-library/import` call, gate further imports on it, and clear it inside `unregister` only when your tracked-ids array is empty (i.e. the cleanup actually finished). The bundled `content-exporter` plugin's runtime template is the canonical example.
 
@@ -241,7 +241,7 @@ export default {
 };
 ```
 
-`register()` is called once when the plugin loads (per browser tab, per session). It's also re-called if the DM disables and re-enables the plugin without refreshing — design your `register()` so re-running it is idempotent.
+`register()` is called once when the plugin loads (per browser tab, per session). It's also re-called if the GM disables and re-enables the plugin without refreshing — design your `register()` so re-running it is idempotent.
 
 ### What `register` receives
 
@@ -272,9 +272,9 @@ Runtime environment for your plugin. Fields:
 | `notifyChange` | `() => void` | Forces every host component subscribed to the registry to re-render. Call this after a state change that should be visible immediately. See §7. |
 | `subscribe` | `(handler) => unsubscribe` | Subscribe to incoming `plugin_event` frames addressed to your plugin. See §6. |
 | `emitEvent` | `(type, payload) => void` | Broadcast a custom event to every other client in the session. See §6. |
-| `setPanelTab` | `(tabId: string) => void` | DM only. Programmatically switch the active panel tab. Works for built-in tab ids (`'map'`, `'session'`, etc.), plugin-supplied tab ids (`'plugin:<pluginId>'`), and tabs currently hidden via `panelTabHidden`. |
+| `setPanelTab` | `(tabId: string) => void` | GM only. Programmatically switch the active panel tab. Works for built-in tab ids (`'map'`, `'session'`, etc.), plugin-supplied tab ids (`'plugin:<pluginId>'`), and tabs currently hidden via `panelTabHidden`. |
 | `subscribeRegistry` | `(handler) => unsubscribe` | Subscribe to *every* registry version bump in the host. Use this when your plugin's UI needs to react to OTHER plugins' contributions changing (e.g. a tab manager listing every plugin's `dmTabs` — when a new plugin loads its tab should show up live without a page refresh). Don't use this for re-rendering on your own state changes — call your local notify pump for that. |
-| `getAiSettings` | `() => (object \| null)` | DM only. Returns the host's currently-configured AI settings (the same object the Session tab's AI Integration panel writes). Reads fresh on every call so a config change mid-session is picked up without reloading the plugin. Returns `null` when AI hasn't been configured yet. Stat-block fields: `provider`, `baseUrl`, `apiKey`, `model`. Image-generation fields (only meaningful when the DM has enabled image gen): `imageEnabled`, `imageProvider`, `imageBaseUrl`, `imageModel`, `imagePromptTemplate`, `imageNegativePrompt`, `imageAllowNsfw`, `imageWidth`, `imageHeight`, `imageSteps`, `imageCfgScale`. Use it together with `fetch('/api/ai/generate', {...})` and `fetch('/api/ai/generate-image', {...})` to ask the host's AI proxies for content. |
+| `getAiSettings` | `() => (object \| null)` | GM only. Returns the host's currently-configured AI settings (the same object the Session tab's AI Integration panel writes). Reads fresh on every call so a config change mid-session is picked up without reloading the plugin. Returns `null` when AI hasn't been configured yet. Stat-block fields: `provider`, `baseUrl`, `apiKey`, `model`. Image-generation fields (only meaningful when the GM has enabled image gen): `imageEnabled`, `imageProvider`, `imageBaseUrl`, `imageModel`, `imagePromptTemplate`, `imageNegativePrompt`, `imageAllowNsfw`, `imageWidth`, `imageHeight`, `imageSteps`, `imageCfgScale`. Use it together with `fetch('/api/ai/generate', {...})` and `fetch('/api/ai/generate-image', {...})` to ask the host's AI proxies for content. |
 
 ### What `unregister` receives
 
@@ -320,7 +320,7 @@ Each registry is a `Map`. Your plugin adds entries via `register({ registries })
 registries.spellTemplateDecorators.set(pluginId, (template, baseProps) => ReactNode)
 ```
 
-For every spell template currently on the map (including those placed by the DM and visible to all clients), the host calls your function with:
+For every spell template currently on the map (including those placed by the GM and visible to all clients), the host calls your function with:
 
 - `template` — the persisted template object: `{ id, type: 'circle'|'cone'|'line'|'square', points: number[], color, label, ... }`.
 - `baseProps` — `{ kind, x, y, radius?, width?, height?, angle?, rotation?, points? }` describing the base shape geometry the host already rendered. Use this to position your overlay relative to the template without re-deriving its shape.
@@ -335,7 +335,7 @@ Wrap the returned node in a React component if you need state or animation hooks
 registries.templateEditorExtensions.set(pluginId, (template) => ReactNode)
 ```
 
-DM-only. The host renders your returned node inside the template-edit popup, after its built-in fields. Use this to add controls bound to the selected template — element pickers, custom labels, anything specific to one template.
+GM-only. The host renders your returned node inside the template-edit popup, after its built-in fields. Use this to add controls bound to the selected template — element pickers, custom labels, anything specific to one template.
 
 The host renders this with normal DOM React (not Konva) — return `<div>`, `<select>`, etc. as JSX or `React.createElement` calls.
 
@@ -349,7 +349,7 @@ registries.dmTabs.set(pluginId, {
 })
 ```
 
-DM-only. Adds a new tab to the right-hand DM panel. The render function is called with `{ sessionId, role, socket }` and should return the full tab content (the host wraps it in a scroll container).
+GM-only. Adds a new tab to the right-hand GM panel. The render function is called with `{ sessionId, role, socket }` and should return the full tab content (the host wraps it in a scroll container).
 
 This is **DOM React, not Konva** — return ordinary HTML elements (`<div>`, `<button>`, `<select>` …) created with `React.createElement`. The host's CSS is already loaded into the page, so plugin tabs can use Tailwind utility classes (`text-sm`, `bg-gray-800`, `rounded-lg`, etc.) and the project's branded colour tokens (`text-dnd-gold`, `bg-dnd-panel`) directly. Don't reach for Konva primitives here — those only work inside `mapDecorations` / `spellTemplateDecorators`, which render to the canvas Stage.
 
@@ -403,13 +403,13 @@ General-purpose "draw stuff on the map". Your function is called every render wi
 - `ctx.isPlayer` — whether this is the player view.
 - `ctx.playerTokenId` — id of the player's own character token (player view only).
 
-Returned nodes are drawn in a single non-interactive Konva Layer **above the token layer**, so you can occlude tokens. The Layer has `listening: false` — players cannot click your decorations. If you need clicks (e.g. DM-side editing), use `mapClickHandlers` to do your own hit-testing.
+Returned nodes are drawn in a single non-interactive Konva Layer **above the token layer**, so you can occlude tokens. The Layer has `listening: false` — players cannot click your decorations. If you need clicks (e.g. GM-side editing), use `mapClickHandlers` to do your own hit-testing.
 
-If you want different content for the DM and players, branch on `ctx.isPlayer` and return different nodes (or `null`).
+If you want different content for the GM and players, branch on `ctx.isPlayer` and return different nodes (or `null`).
 
 #### Decorations follow tokens automatically
 
-Your function is called every render with a fresh `ctx.tokens` snapshot. If the host updates a token's `grid_col` / `grid_row` (because the DM dragged it, or a player-owned token moved), your next call gets the new coordinates and the decoration re-renders at the new position. You don't need to subscribe to anything or maintain your own copy of token positions — just compute from `ctx.tokens` each time and the host re-renders for you.
+Your function is called every render with a fresh `ctx.tokens` snapshot. If the host updates a token's `grid_col` / `grid_row` (because the GM dragged it, or a player-owned token moved), your next call gets the new coordinates and the decoration re-renders at the new position. You don't need to subscribe to anything or maintain your own copy of token positions — just compute from `ctx.tokens` each time and the host re-renders for you.
 
 #### Map-spanning effects
 
@@ -423,11 +423,11 @@ Each entry in `ctx.tokens` is an object with these fields you'll commonly need:
 |---|---|---|
 | `id` | `number` | Stable token id within the session. Compare with `===`; player ids may arrive as numbers but climb-state keys you store yourself should `String(id)` to be safe. |
 | `name` | `string` | Display name. |
-| `nickname` | `string` | DM-set override; usually shown to players in place of `name` if present. |
+| `nickname` | `string` | GM-set override; usually shown to players in place of `name` if present. |
 | `grid_col`, `grid_row` | `number` | Top-left grid cell of the token. May be fractional (smooth movement). |
 | `size` | `string` | One of `'tiny' \| 'small' \| 'medium' \| 'large' \| 'huge' \| 'gargantuan'`. Cell footprint is 1×1 for tiny/small/medium, 2×2 for large, 3×3 for huge, 4×4 for gargantuan. |
 | `is_player` | `boolean` | True if the token represents a PC. |
-| `is_hidden` | `boolean` | DM-only flag. Hidden tokens are not in the player's `ctx.tokens` at all — but they ARE in the DM's, so filter `!t.is_hidden` if you want to ignore them on the DM side. |
+| `is_hidden` | `boolean` | GM-only flag. Hidden tokens are not in the player's `ctx.tokens` at all — but they ARE in the GM's, so filter `!t.is_hidden` if you want to ignore them on the GM side. |
 | `is_dead` | `boolean` | Useful if you want effects to drop off dead targets. |
 | `current_hp`, `max_hp`, `temp_hp` | `number` | HP state, useful for damage indicators / health-bar plugins. |
 | `conditions` | `string[]` | Array of condition ids (e.g. `'invisible'`, `'prone'`). |
@@ -490,7 +490,7 @@ registries.mapClickHandlers.set(pluginId, {
 registries.panelTabHidden.set(pluginId, new Set(['spells', 'markers']))
 ```
 
-Plugins can hide built-in DM panel tabs from the tab bar. The host filters the bar by the **union** of every plugin's set, so multiple plugins can independently mark tabs hidden without trampling each other.
+Plugins can hide built-in GM panel tabs from the tab bar. The host filters the bar by the **union** of every plugin's set, so multiple plugins can independently mark tabs hidden without trampling each other.
 
 Hiding only removes the BUTTON. The corresponding tab body is still rendered when active — i.e. you can call `context.setPanelTab('spells')` to land the user inside a hidden tab even though it's missing from the bar. This is the standard pattern for a tab-management plugin: "hide from clutter, but keep reachable via plugin UI".
 
@@ -527,7 +527,7 @@ registries.customSubclasses.set(pluginId, {
 
 Adds subclass names per class. Keys can be base SRD classes (`'Wizard'`, `'Cleric'`) or plugin-supplied classes from `customClasses` (`'Blood Hunter'`). Lookups in the host (`getAllSubclasses(charClass)`) match keys case-insensitively, so capitalisation drift between your plugin's stored data and the host's class list won't drop entries.
 
-The subclass dropdown on the player character sheet pulls from this registry plus the host's `BASE_SUBCLASSES` map (curated SRD 2014/2024 set, no edition suffixes — duplicates dropped). The dropdown re-renders whenever any plugin updates the registry, so DM-side additions reflect on every player's sheet without a reload.
+The subclass dropdown on the player character sheet pulls from this registry plus the host's `BASE_SUBCLASSES` map (curated SRD 2014/2024 set, no edition suffixes — duplicates dropped). The dropdown re-renders whenever any plugin updates the registry, so GM-side additions reflect on every player's sheet without a reload.
 
 Same persistence rules as `customClasses`: only affects rendering. Existing `char_subclass` values in the database stay even if your plugin is later disabled — the dropdown shows them as a `(custom)` fallback option.
 
@@ -546,7 +546,7 @@ Built-in section ids:
 - `'dice_reference'` — Quick Dice Reference
 - `'ai_integration'` — AI Integration settings
 
-Plugins / Plugin Manager / Leave Session render outside the collapsible wrappers, so hiding sections never locks the DM out of plugin management. Use this together with `panelTabHidden` (whole-tab hide) for a tab-management plugin that gives the DM coarse + fine declutter controls.
+Plugins / Plugin Manager / Leave Session render outside the collapsible wrappers, so hiding sections never locks the GM out of plugin management. Use this together with `panelTabHidden` (whole-tab hide) for a tab-management plugin that gives the GM coarse + fine declutter controls.
 
 ### `playerMapOverride`
 
@@ -564,9 +564,9 @@ Use this together with the `window.__tabletopForge.player` getters (player-side 
 const myName = window.__tabletopForge?.player?.getName?.();
 ```
 
-The bundled `split-the-party` plugin is the canonical user — it persists DM-set assignments in plugin KV and registers a getter that returns the current player's mapId.
+The bundled `split-the-party` plugin is the canonical user — it persists GM-set assignments in plugin KV and registers a getter that returns the current player's mapId.
 
-**Server endpoint pairing:** `GET /api/maps/:id/state?session_id=<sid>` returns the full per-map slice `{ map, walls, doors, lights, magicalDarkness, dmMarkers, tokens, spawnPoint }` for a map belonging to the named session. Plugins driving overrides don't usually call this directly — PlayerView fetches it whenever the override changes — but it's available if you need it for previews / DM-side thumbnails.
+**Server endpoint pairing:** `GET /api/maps/:id/state?session_id=<sid>` returns the full per-map slice `{ map, walls, doors, lights, magicalDarkness, dmMarkers, tokens, spawnPoint }` for a map belonging to the named session. Plugins driving overrides don't usually call this directly — PlayerView fetches it whenever the override changes — but it's available if you need it for previews / GM-side thumbnails.
 
 ### `panelTabExtensions`
 
@@ -587,7 +587,7 @@ One extension per plugin per tab. If you need multiple chunks, return a Fragment
 
 #### Session tab layout — collapsible sections
 
-As of v1.4.3 the host's built-in Session tab sections (**Session Info**, **Connected Players**, **Quick Dice Reference**, **AI Integration**) are wrapped in collapsible panels. Each has a `▼/▶` chevron header and the open/closed state is persisted per-DM in `localStorage` under the `dndvtt_session_section_collapsed_v1` key, keyed by section id.
+As of v1.4.3 the host's built-in Session tab sections (**Session Info**, **Connected Players**, **Quick Dice Reference**, **AI Integration**) are wrapped in collapsible panels. Each has a `▼/▶` chevron header and the open/closed state is persisted per-GM in `localStorage` under the `dndvtt_session_section_collapsed_v1` key, keyed by section id.
 
 What this means for `panelTabExtensions` targeting `tabId: 'session'`:
 
@@ -690,7 +690,7 @@ export default {
 };
 ```
 
-This is the canonical pattern that lets a DM-side change appear on every player's view without anyone polling.
+This is the canonical pattern that lets a GM-side change appear on every player's view without anyone polling.
 
 ---
 
@@ -718,7 +718,7 @@ A single call re-renders every host component that consumes a registry, in one p
 - All `mapDecorations` outputs.
 - The `templateOverlays` consumer (the host's water-canvas effect re-derives its synthetic zones).
 
-That's almost always what you want. If you specifically need finer-grained re-render control — e.g. updating a piece of your DM tab without redrawing the map — keep a private subscriber set inside your plugin module and only fire that one:
+That's almost always what you want. If you specifically need finer-grained re-render control — e.g. updating a piece of your GM tab without redrawing the map — keep a private subscriber set inside your plugin module and only fire that one:
 
 ```js
 const tabSubs = new Set();
@@ -794,7 +794,7 @@ registries.mapDecorations.set(pluginId, (ctx) =>
 );
 ```
 
-Each `<Effect>` runs its own RAF loop (per the pattern above) and reads `performance.now() - item.spawnTime` to derive its phase. `key={p.id}` so React mounts a fresh component per entry — when `setTimeout` purges the entry, the component unmounts, its `useEffect` cleanup cancels the RAF, no leaks. The DM-side trigger emits `context.emitEvent('pop', { tokenId, value, ... })` — every client (including the sender) sees the event and renders the effect, so you don't need separate "show locally" logic.
+Each `<Effect>` runs its own RAF loop (per the pattern above) and reads `performance.now() - item.spawnTime` to derive its phase. `key={p.id}` so React mounts a fresh component per entry — when `setTimeout` purges the entry, the component unmounts, its `useEffect` cleanup cancels the RAF, no leaks. The GM-side trigger emits `context.emitEvent('pop', { tokenId, value, ... })` — every client (including the sender) sees the event and renders the effect, so you don't need separate "show locally" logic.
 
 ### Mode-switch animation pattern
 
@@ -829,7 +829,7 @@ If you want JSX, use `React.createElement(...)` — Vite isn't compiling your pl
 
 ### Listening to template lifecycle
 
-If your plugin attaches state to spell templates (like the bundled `elemental-templates`), templates can be deleted by the DM at any time — but `data.delete` for the template's key won't be auto-fired by the host. Either:
+If your plugin attaches state to spell templates (like the bundled `elemental-templates`), templates can be deleted by the GM at any time — but `data.delete` for the template's key won't be auto-fired by the host. Either:
 
 - Subscribe to the host's broadcast for template deletion (currently not exposed via the plugin API; track template ids you've seen and prune).
 - Live with stale KV entries (cheap — they take effect again if the template id is ever reused, which never happens because ids are UUIDs).
@@ -842,13 +842,13 @@ Your `client.js` is loaded once per tab. Module-level state (`const cache = new 
 
 ### Disabling a plugin live
 
-When the DM toggles your plugin off, the host calls `unregister`, strips your registry entries, drops your event subscriptions, and bumps the registry version (forcing a re-render so your overlays vanish). Your KV data is left intact. Re-enabling re-imports your module and re-runs `register` — make sure `register` is idempotent.
+When the GM toggles your plugin off, the host calls `unregister`, strips your registry entries, drops your event subscriptions, and bumps the registry version (forcing a re-render so your overlays vanish). Your KV data is left intact. Re-enabling re-imports your module and re-runs `register` — make sure `register` is idempotent.
 
 ---
 
 ## 9. Worked example — minimal animated decorator
 
-A complete plugin that adds a slowly-pulsing yellow ring around every Large+ token visible to both DM and players. Two files:
+A complete plugin that adds a slowly-pulsing yellow ring around every Large+ token visible to both GM and players. Two files:
 
 `plugin.json`:
 ```json
@@ -906,4 +906,4 @@ export default {
 };
 ```
 
-That's it. Drop those two files in `backend/plugins/big-token-glow/`, restart the backend (or upload as a zip via the manager), enable in the Plugins UI. The DM and every player immediately see a pulsing ring around every Large+ token.
+That's it. Drop those two files in `backend/plugins/big-token-glow/`, restart the backend (or upload as a zip via the manager), enable in the Plugins UI. The GM and every player immediately see a pulsing ring around every Large+ token.

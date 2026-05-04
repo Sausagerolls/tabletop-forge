@@ -460,7 +460,7 @@ private struct ItemRow: View {
                 DetailLine(label: "Light", value: "\(bright) ft bright / \(dim) ft dim")
             }
             // Freeform description always last so the player has the
-            // full DM-written paragraph in context with the stats.
+            // full GM-written paragraph in context with the stats.
             if let desc = item.desc, !desc.isEmpty {
                 Text(desc).font(.footnote).foregroundStyle(.secondary).padding(.top, 2)
             }

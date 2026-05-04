@@ -1,8 +1,8 @@
-// NPC Chat — one-way DM-to-player speech with per-language scrambling.
+// NPC Chat — one-way GM-to-player speech with per-language scrambling.
 //
 // What it does
 // ────────────
-//   * DM tab: pick a language (from the host's canonical list at
+//   * GM tab: pick a language (from the host's canonical list at
 //     /api/languages — same source the creature editor uses) and an
 //     NPC name, type a line, hit Speak.
 //   * Every player in the session receives the line via emitEvent.
@@ -296,14 +296,14 @@ export default {
     const { role, subscribe, emitEvent } = context;
 
     // Pull the canonical language list. Failure isn't fatal — the
-    // dropdown will just be empty and the DM can retry via the refresh
+    // dropdown will just be empty and the GM can retry via the refresh
     // button on the tab.
     fetch('/api/languages')
       .then((r) => (r.ok ? r.json() : []))
       .then((rows) => { canonicalLanguages = Array.isArray(rows) ? rows : []; pingTab(); })
       .catch((err) => console.warn('npc-chat: /api/languages fetch failed', err));
 
-    // Capture map ctx for player popup + DM token list.
+    // Capture map ctx for player popup + GM token list.
     registries.mapDecorations.set(PLUGIN_ID, (ctx) => {
       lastCtx = ctx;
       return React.createElement(ReactKonva.Group, { listening: false });
@@ -528,7 +528,7 @@ export default {
     });
 
     // ── Top-bar flyout button ────────────────────────────────────────
-    // Lets the DM open NPC Chat from anywhere without losing the
+    // Lets the GM open NPC Chat from anywhere without losing the
     // currently-open tab. Same content as the dmTab, just rendered
     // inside a flyout positioned next to the existing Dice button.
     function NPCChatTopBarButton() {

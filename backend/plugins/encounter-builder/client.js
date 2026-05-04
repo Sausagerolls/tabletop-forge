@@ -7,7 +7,7 @@
 //     encounter description.
 //   * Each rolled creature is matched against the existing creature
 //     library (GET /api/creatures). Matches show "✓ in library".
-//   * If a creature isn't in the library AND the DM has configured AI
+//   * If a creature isn't in the library AND the GM has configured AI
 //     under Session → AI Integration, the plugin asks the host's
 //     /api/ai/generate endpoint to produce a stat block, then POSTs it
 //     to /api/creatures so the new monster lives in the library and can
@@ -416,9 +416,9 @@ export default {
         history = [result, ...history].slice(0, HISTORY_LIMIT);
         pingTab();
         data.write(HISTORY_KEY, history);
-        // Note: generation is opt-in. The DM clicks "Generate now" on a
+        // Note: generation is opt-in. The GM clicks "Generate now" on a
         // history row to fire the AI. Auto-gen would burn tokens on
-        // creatures the DM never plans to actually use.
+        // creatures the GM never plans to actually use.
       }
       function clearHistory() {
         if (!confirm('Clear encounter history?')) return;

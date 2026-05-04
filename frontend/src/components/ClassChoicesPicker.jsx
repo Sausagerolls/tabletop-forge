@@ -38,6 +38,8 @@ export default function ClassChoicesPicker({
   charLevel,
   choices,                // ClassChoice[] for the active class
   classState,             // current creature.class_state
+  proficientSkills,       // string[] of skill keys the character is already proficient in
+  weaponProficiencies,    // string[] of weapon names the character has proficiency with
   onApply,                // (picks) => void
   onRemove,               // () => void
 }) {
@@ -54,8 +56,11 @@ export default function ClassChoicesPicker({
   if (!charClass || !choices || choices.length === 0) return null;
 
   // Filter choices by char level so a Bard L1 doesn't see Expertise (L2)
-  // until they level up.
-  const dueChoices = choices.filter((c) => (c.at_level || 1) <= (charLevel || 1));
+  // until they level up. Auto-kind choices are hidden — they apply via
+  // a useEffect in CreatureForm and have no picker UI.
+  const dueChoices = choices.filter((c) =>
+    c.kind !== 'auto' && (c.at_level || 1) <= (charLevel || 1)
+  );
   if (dueChoices.length === 0) return null;
 
   function setPick(choiceId, payload) {
@@ -110,6 +115,7 @@ export default function ClassChoicesPicker({
             <SkillMultiPick
               picks={picks[c.id]?.picks || []}
               max={c.pick_count || 2}
+              available={proficientSkills}
               onChange={(arr) => setPick(c.id, { kind: 'multi-skills', picks: arr })}
             />
           )}
@@ -117,6 +123,7 @@ export default function ClassChoicesPicker({
             <WeaponMultiPick
               picks={picks[c.id]?.picks || []}
               max={c.pick_count || 3}
+              available={weaponProficiencies}
               onChange={(arr) => setPick(c.id, { kind: 'multi-weapons', picks: arr })}
             />
           )}
@@ -144,7 +151,14 @@ function isValid(choice, pick) {
   return false;
 }
 
-function SkillMultiPick({ picks, max, onChange }) {
+function SkillMultiPick({ picks, max, onChange, available }) {
+  // Restrict to skills the character is already proficient with —
+  // Expertise upgrades existing proficiency, it doesn't grant new
+  // proficiency. Falls back to ALL skills only when the caller didn't
+  // supply a list (homebrew flexibility).
+  const pool = Array.isArray(available) && available.length > 0
+    ? Object.entries(SKILL_LABELS).filter(([k]) => available.includes(k))
+    : Object.entries(SKILL_LABELS);
   const set = new Set(picks);
   function toggle(skill) {
     if (set.has(skill)) {
@@ -153,11 +167,20 @@ function SkillMultiPick({ picks, max, onChange }) {
       onChange([...picks, skill]);
     }
   }
+  if (pool.length === 0) {
+    return (
+      <div className="text-[11px] text-amber-300 italic bg-amber-900/20 border border-amber-800 rounded px-2 py-1">
+        No skill proficiencies on this character yet. Add proficiencies on the Saves &amp; Skills tab first, then Expertise will be selectable here.
+      </div>
+    );
+  }
   return (
     <div>
-      <div className="text-[11px] text-gray-500 mb-1">Pick {max} (currently {set.size}/{max})</div>
+      <div className="text-[11px] text-gray-500 mb-1">
+        Pick {max} from skills you're already proficient in ({set.size}/{max})
+      </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-0.5">
-        {Object.entries(SKILL_LABELS).map(([k, label]) => {
+        {pool.map(([k, label]) => {
           const checked = set.has(k);
           const disabled = !checked && set.size >= max;
           return (
@@ -177,23 +200,50 @@ function SkillMultiPick({ picks, max, onChange }) {
   );
 }
 
-function WeaponMultiPick({ picks, max, onChange }) {
-  // Free-form: a row per pick, each a text input. Lets the player
-  // type any weapon name (handy for plugin-added or homebrew weapons).
+function WeaponMultiPick({ picks, max, onChange, available }) {
+  // Restrict to weapons the character is already proficient with —
+  // Weapon Mastery only works on weapons you have proficiency with.
+  // Falls back to a free-form text input when the proficiency list
+  // is empty so a fresh character can still record picks (and Save +
+  // Skills tab can be filled in afterwards).
   const slots = Array.from({ length: max }, (_, i) => picks[i] || '');
+  const updateSlot = (i, v) => {
+    const next = [...slots];
+    next[i] = v;
+    onChange(next.filter((s) => s));
+  };
+  const havePool = Array.isArray(available) && available.length > 0;
   return (
     <div className="space-y-1">
-      <div className="text-[11px] text-gray-500">Pick {max} weapons</div>
-      {slots.map((v, i) => (
+      <div className="text-[11px] text-gray-500">
+        Pick {max} weapons {havePool
+          ? 'from those you have proficiency with'
+          : '(set Weapon Proficiencies field below to see a list)'}
+      </div>
+      {!havePool && (
+        <div className="text-[11px] text-amber-300 italic bg-amber-900/20 border border-amber-800 rounded px-2 py-1">
+          No Weapon Proficiencies recorded — falling back to free-form input.
+          Set them on this tab once you've picked them.
+        </div>
+      )}
+      {slots.map((v, i) => havePool ? (
+        <select key={i} value={v}
+          onChange={(e) => updateSlot(i, e.target.value)}
+          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white">
+          <option value="">— Pick weapon {i + 1} —</option>
+          {available.map((w) => (
+            <option key={w} value={w}
+              disabled={picks.includes(w) && picks[i] !== w}>
+              {w}
+            </option>
+          ))}
+        </select>
+      ) : (
         <input key={i}
           className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white"
           placeholder={`Weapon ${i + 1}`}
           value={v}
-          onChange={(e) => {
-            const next = [...slots];
-            next[i] = e.target.value;
-            onChange(next.filter((s) => s));
-          }} />
+          onChange={(e) => updateSlot(i, e.target.value)} />
       ))}
     </div>
   );

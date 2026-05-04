@@ -1,14 +1,14 @@
 // /api/settings — generic key/value JSONB store for global app settings.
 //
-// Currently used by the DM view for AI config (LM Studio / Ollama /
+// Currently used by the GM view for AI config (LM Studio / Ollama /
 // SwarmUI URLs, models, prompt templates). Stored server-side so the
-// values follow the DM across phones, browsers, and incognito tabs —
+// values follow the GM across phones, browsers, and incognito tabs —
 // localStorage couldn't promise any of that.
 //
 // Auth model: same as the rest of /api/* — there's no per-route auth in
 // this codebase yet, the assumption is the deploy is reverse-proxied
 // to a known audience. If you tighten that later, gate writes here on
-// the DM master password.
+// the GM master password.
 
 const express = require('express');
 const db = require('../db');

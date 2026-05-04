@@ -5,7 +5,7 @@ const router = express.Router();
 // Pull the canonical language list at request time and embed it into
 // the system prompt. The host stores languages in a first-class table
 // (see backend/src/routes/languages.js); this keeps AI output in sync
-// with whatever languages the DM has registered, including custom
+// with whatever languages the GM has registered, including custom
 // ones — without burning a token-budget on the entire creature schema
 // repeated per request, we just inject the names.
 async function fetchLanguageNames() {
@@ -334,7 +334,7 @@ router.post('/generate', async (req, res) => {
   if (!promptData?.name) return res.status(400).json({ error: 'promptData.name is required' });
 
   // Build the system prompt fresh each request so the canonical
-  // language list reflects whatever the DM has registered (including
+  // language list reflects whatever the GM has registered (including
   // custom additions). Falls back to the SRD core 16 if the DB read
   // fails — see buildSystemPrompt() at the top of the file.
   let languageNames;
@@ -393,7 +393,7 @@ router.post('/generate', async (req, res) => {
     // model fills nearly every slot it's almost always the lazy
     // "everything proficient" failure mode rather than an
     // intentionally specialised creature, so we reset the lot and let
-    // the DM hand-pick.
+    // the GM hand-pick.
     const SAVE_FIELDS = ['save_str','save_dex','save_con','save_int','save_wis','save_cha'];
     const proficientSaves = SAVE_FIELDS.filter((f) => creature[f] != null).length;
     if (proficientSaves >= 5) {
@@ -995,16 +995,16 @@ router.post('/generate-image', async (req, res) => {
 });
 
 // ── Player-facing image generation ──────────────────────────────────────────
-// Players don't have access to the DM's AI settings (provider URLs, API
+// Players don't have access to the GM's AI settings (provider URLs, API
 // keys), so they can't drive /generate-image directly. These two endpoints
-// let players generate a character portrait via the DM's saved config:
+// let players generate a character portrait via the GM's saved config:
 //
 //   GET  /api/ai/player-status            → { imageEnabled: bool }
 //   POST /api/ai/player-generate-image    → { image, prompt }
 //
 // The server reads the saved ai_config from app_settings, validates it,
 // and only exposes whether image gen is *available* (not the URL/key).
-// The image is generated server-side with the DM's credentials so secrets
+// The image is generated server-side with the GM's credentials so secrets
 // never leave the host.
 
 async function loadDmAiConfig() {
@@ -1028,7 +1028,7 @@ router.post('/player-generate-image', async (req, res) => {
   try {
     const cfg = await loadDmAiConfig();
     if (!cfg || !cfg.imageEnabled || !cfg.imageBaseUrl) {
-      return res.status(503).json({ error: 'Image generation is not configured by the DM.' });
+      return res.status(503).json({ error: 'Image generation is not configured by the GM.' });
     }
     const { name, appearance } = req.body || {};
     if (!name && !appearance) {
@@ -1038,7 +1038,7 @@ router.post('/player-generate-image', async (req, res) => {
     const adapter = IMAGE_PROVIDERS[provider];
     if (!adapter) return res.status(400).json({ error: `Unknown image provider: ${provider}` });
     if (adapter.needsApiKey && !cfg.imageApiKey) {
-      return res.status(503).json({ error: `${adapter.label} requires an API key but the DM hasn't set one.` });
+      return res.status(503).json({ error: `${adapter.label} requires an API key but the GM hasn't set one.` });
     }
     const prompt = buildImagePrompt(cfg.imagePromptTemplate || '', name || '', appearance || '');
     let finalNeg = '';

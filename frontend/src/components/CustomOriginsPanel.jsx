@@ -1,6 +1,6 @@
-// CustomOriginsPanel — DM-only list of custom races + backgrounds.
+// CustomOriginsPanel — GM-only list of custom races + backgrounds.
 // Lives as a panel tab in DMView. Provides create / edit / delete /
-// JSON-export. The view filters down to just the DM-authored rows so
+// JSON-export. The view filters down to just the GM-authored rows so
 // the SRD content the app already knows isn't repeated here.
 
 import React, { useEffect, useState, useMemo } from 'react';
@@ -93,7 +93,7 @@ export default function CustomOriginsPanel() {
       </div>
 
       <div className="text-xs text-gray-500 italic">
-        This view shows only DM-authored content — the SRD races and backgrounds
+        This view shows only GM-authored content — the SRD races and backgrounds
         the app ships with are not listed here.
       </div>
 

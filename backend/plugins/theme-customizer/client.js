@@ -3,13 +3,13 @@
 //
 // What it does
 // ────────────
-//   * Adds a "Theme" DM tab. The DM tweaks colours / fonts / wallpaper;
-//     changes are live for the DM and every player in the session.
+//   * Adds a "Theme" GM tab. The GM tweaks colours / fonts / wallpaper;
+//     changes are live for the GM and every player in the session.
 //   * Persists the theme under `theme_<sessionId>` so every campaign on
 //     one backend gets its own palette.
-//   * Loads on both DM and player views (the plugin runs on both); the
+//   * Loads on both GM and player views (the plugin runs on both); the
 //     player view never shows the tab, but it still applies whatever
-//     theme the DM has picked.
+//     theme the GM has picked.
 //
 // How the override works
 // ──────────────────────
@@ -18,7 +18,7 @@
 //   a single `<style>` element AFTER the page's stylesheet so its
 //   rules win by load order — it remaps every dnd-gold / dnd-panel /
 //   dnd-dark utility to a CSS variable, then sets the variables to
-//   whatever the DM picked. Resetting to defaults removes the tag, so
+//   whatever the GM picked. Resetting to defaults removes the tag, so
 //   the plugin never permanently mutates the host's CSS.
 
 const PLUGIN_ID = 'theme-customizer';
@@ -39,7 +39,7 @@ const FONT_PRESETS = {
 // Background presets. Colours are deliberately several stops away
 // from the host default (#111827 / #1a1a2e) so the change is visible
 // at a glance — earlier iterations were close enough to the defaults
-// that DMs thought the picker was broken.
+// that GMs thought the picker was broken.
 const BG_PRESETS = {
   classic:  { label: 'Classic dark',    kind: 'solid',   color: '#1a1a2e' },
   obsidian: { label: 'Obsidian',        kind: 'solid',   color: '#05050a' },
@@ -179,7 +179,7 @@ export default {
     });
 
     // Player view loads the plugin to receive theme broadcasts but
-    // doesn't need a tab — the DM is the only one who edits.
+    // doesn't need a tab — the GM is the only one who edits.
     if (role !== 'dm') return;
 
     function ThemeTab() {
@@ -225,7 +225,7 @@ export default {
         { className: 'p-4 space-y-4' },
         React.createElement('h3', { className: 'text-sm font-semibold text-dnd-gold mb-1' }, 'Theme Customizer'),
         React.createElement('p', { className: 'text-xs text-gray-400 leading-snug' },
-          'Edit colours, fonts, and backdrop. Changes apply live to the DM and every player in the session.'),
+          'Edit colours, fonts, and backdrop. Changes apply live to the GM and every player in the session.'),
 
         // ── Colours ──
         React.createElement('div', { className: 'space-y-2 bg-gray-800 border border-gray-700 rounded-lg p-3' },
@@ -272,7 +272,7 @@ export default {
     });
   },
 
-  // Strip the injected style tag when the DM disables the plugin so the
+  // Strip the injected style tag when the GM disables the plugin so the
   // host's original colours come back without a refresh.
   unregister() {
     removeStyleTag();

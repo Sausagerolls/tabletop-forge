@@ -10,7 +10,10 @@ import {
   combinedRaceTraits,
 } from '../data/races.js';
 import { BACKGROUNDS_2024, findBackground, SKILL_LABELS } from '../data/backgrounds.js';
+import { resourcesForCreature } from '../data/resources.js';
+import socket from '../socket.js';
 import ClassChoicesPicker from './ClassChoicesPicker.jsx';
+import MulticlassRow from './MulticlassRow.jsx';
 
 const XIcon = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="w-3.5 h-3.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>);
 const DragonIcon = () => (<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10 text-gray-500"><path d="M44 12c4-2 8 0 10 4s0 10-4 12l-4 2" /><path d="M20 12c-4-2-8 0-10 4s0 10 4 12l4 2" /><ellipse cx="32" cy="32" rx="14" ry="10" fill="currentColor" stroke="none" opacity="0.15" /><path d="M18 28c0 10 6 18 14 18s14-8 14-18" /><path d="M26 24c0-2 2-4 6-4s6 2 6 4" /><circle cx="27" cy="26" r="1.5" fill="currentColor" stroke="none" /><circle cx="37" cy="26" r="1.5" fill="currentColor" stroke="none" /><path d="M28 36c1 2 3 3 4 3s3-1 4-3" /></svg>);
@@ -199,6 +202,9 @@ const defaultForm = {
   tool_proficiencies: '',
   weapon_proficiencies: '',
   class_state: {},
+  multiclasses: [],
+  resource_state: {},
+  inspiration_die: '',
   heroic_inspiration: false,
   death_save_successes: 0,
   death_save_failures: 0,
@@ -542,7 +548,7 @@ function SpellLibraryPicker({ onLearn, charClass }) {
             </p>
           )}
           {loaded && spells.length === 0 && (
-            <p className="text-xs text-gray-500 italic">No spells match. Switch class filter to "All classes" or ask your DM to scan a PDF.</p>
+            <p className="text-xs text-gray-500 italic">No spells match. Switch class filter to "All classes" or ask your GM to scan a PDF.</p>
           )}
           <div className="space-y-1 max-h-64 overflow-y-auto">
             {spells.map(s => (
@@ -736,6 +742,23 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   // plugin-supplied choices for this class.
   const classChoices = useClassChoices(form.char_class);
 
+  // Auto-grant choices (Ranger's Hunter's Mark) apply the moment the
+  // class is set — no picker. Re-runs whenever the class changes;
+  // applyClassChoices is idempotent so repeated runs are safe.
+  useEffect(() => {
+    if (!form.char_class) return;
+    const autoChoices = (classChoices || []).filter((c) => c.kind === 'auto');
+    if (autoChoices.length === 0) return;
+    const prevState = form.class_state || {};
+    const alreadyApplied = prevState.class_id === form.char_class
+      && (prevState.added?.spells || []).length > 0;
+    if (alreadyApplied) return;
+    // Pass the FULL choice list (with picks) so any pickable choices
+    // already saved survive the re-apply.
+    applyClassChoices(classChoices, prevState.choices || {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.char_class, classChoices.length]);
+
   const tabs = isPlayerCharacter
     ? ['basic', 'combat', 'abilities', 'skills', 'traits', 'spells', 'inventory', 'weapons']
     : ['basic', 'combat', 'abilities', 'skills', 'traits', 'spells', 'inventory', 'loot'];
@@ -758,9 +781,9 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
 
   // Player-side AI portrait generation. Availability is fetched once on
   // mount via /api/ai/player-status — the endpoint just returns whether
-  // the DM has image gen configured, never the URLs/keys themselves.
+  // the GM has image gen configured, never the URLs/keys themselves.
   // The actual generation hits /api/ai/player-generate-image which reads
-  // the DM's saved config server-side, so credentials never reach the
+  // the GM's saved config server-side, so credentials never reach the
   // player's browser.
   const [aiPortraitAvailable, setAiPortraitAvailable] = useState(false);
   const [aiPortraitLoading, setAiPortraitLoading] = useState(false);
@@ -837,6 +860,30 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   const [bgEquipment, setBgEquipment] = useState('a');         // 'a' | 'b'
 
   const [showItemLibrary, setShowItemLibrary] = useState(false);
+  // Bardic Inspiration "Grant" picker — opened from the BI row in the
+  // Resources panel. Holds the def (so we know which die size + total)
+  // until the user picks a target or cancels.
+  const [bardicGrant, setBardicGrant] = useState(null);   // { def, total, used } | null
+  const [bardicTargets, setBardicTargets] = useState([]); // array of Creature
+  const [bardicLoading, setBardicLoading] = useState(false);
+  const [bardicError, setBardicError] = useState('');
+  useEffect(() => {
+    if (!bardicGrant) return;
+    let cancelled = false;
+    setBardicLoading(true);
+    setBardicError('');
+    fetch('/api/creatures?filter=characters')
+      .then((r) => (r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`)))
+      .then((rows) => {
+        if (cancelled) return;
+        setBardicTargets(Array.isArray(rows)
+          ? rows.filter((c) => c?.id && c.id !== creature?.id)
+          : []);
+      })
+      .catch((err) => { if (!cancelled) setBardicError(String(err)); })
+      .finally(() => { if (!cancelled) setBardicLoading(false); });
+    return () => { cancelled = true; };
+  }, [bardicGrant, creature?.id]);
   const [itemLibraryRows, setItemLibraryRows] = useState([]);
   const [itemLibrarySearch, setItemLibrarySearch] = useState('');
   const [itemLibraryType, setItemLibraryType] = useState('');
@@ -919,7 +966,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     setShowItemLibrary(false);
   }
 
-  // Custom DM-authored races + backgrounds — fetched once on mount,
+  // Custom GM-authored races + backgrounds — fetched once on mount,
   // merged with the static SRD lists so the existing picker sees them
   // as if they were always there.
   const [customRaces, setCustomRaces] = useState([]);
@@ -1055,7 +1102,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       spells_pending: allSpellRefs,
       resistances:    [...(race.addsResistances || []), ...(sub?.addsResistances || [])],
       languages:      [...(race.addsLanguages   || []), ...(sub?.addsLanguages   || [])],
-      // Skills — DM-authored races can grant proficiency or expertise
+      // Skills — GM-authored races can grant proficiency or expertise
       // through addsSkills: [{ skill, level }]. SRD races leave this
       // blank.
       skills:         [...((race.addsSkills || [])), ...((sub?.addsSkills || []))],
@@ -1176,7 +1223,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       if (added.speed_climb)  next.speed_climb  = added.speed_climb;
       if (added.speed_burrow) next.speed_burrow = added.speed_burrow;
 
-      // Skills — DM-authored races may grant proficiency / expertise.
+      // Skills — GM-authored races may grant proficiency / expertise.
       // Strip prev race's skill grants first (handled above for senses
       // etc., now do it here).
       if (Array.isArray(prevAdded.skills) && prevAdded.skills.length > 0) {
@@ -1491,7 +1538,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         next[stat] = Math.min(20, (next[stat] || 10) + n);
       }
       // Skills entry can be either a plain string (= proficient) or
-      // { skill, level: 'proficient' | 'expertise' } so DM-authored
+      // { skill, level: 'proficient' | 'expertise' } so GM-authored
       // backgrounds can grant expertise. Expertise doubles the prof
       // bonus on that skill AND flips the skill_expertise flag.
       const newExpertise = { ...(next.skill_expertise || {}) };
@@ -1599,11 +1646,14 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   // each pick's effects onto the live form. Strip-prev semantics
   // mirror the race / background appliers.
   function applyClassChoices(choiceList, picks /* { [choiceId]: pickPayload } */) {
+    // All primary-class contributions tagged "cls:primary:..." so a
+    // multiclass slot's tags ("cls:mc:<id>:...") aren't touched when
+    // the primary picker re-applies.
     const sourceTagFor = (choice, optionOrPicks) => {
       if (choice.kind === 'single') {
-        return `class:${form.char_class}:${choice.id}:${optionOrPicks}`;
+        return `cls:primary:${form.char_class}:${choice.id}:${optionOrPicks}`;
       }
-      return `class:${form.char_class}:${choice.id}`;
+      return `cls:primary:${form.char_class}:${choice.id}`;
     };
 
     setForm((f) => {
@@ -1612,14 +1662,14 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       const next = { ...f };
       const profBonus = next.proficiency_bonus ?? 2;
 
-      // Strip ALL previous class:* tagged rows up front.
+      // Strip only the PRIMARY class's prior contributions.
       const stripBy = (rows, prefix) => (rows || []).filter((r) =>
         !(typeof r?.__source === 'string' && r.__source.startsWith(prefix))
       );
-      next.special_abilities = stripBy(f.special_abilities, 'class:');
-      next.actions           = stripBy(f.actions, 'class:');
-      next.bonus_actions     = stripBy(f.bonus_actions, 'class:');
-      next.reactions         = stripBy(f.reactions, 'class:');
+      next.special_abilities = stripBy(f.special_abilities, 'cls:primary:');
+      next.actions           = stripBy(f.actions, 'cls:primary:');
+      next.bonus_actions     = stripBy(f.bonus_actions, 'cls:primary:');
+      next.reactions         = stripBy(f.reactions, 'cls:primary:');
 
       // Roll back skills + expertise that prev choices set.
       if (Array.isArray(prevAdded.skills) && prevAdded.skills.length) {
@@ -1655,72 +1705,78 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0 };
       const expert = { ...(next.skill_expertise || {}) };
 
+      // Helper: apply an `adds` block onto `next`, recording into `added`.
+      // Used by both single-pick and auto-grant choices.
+      function applyAdds(adds, tag) {
+        if (!adds) return;
+        for (const a of (adds.armor || [])) {
+          if (a === 'light')   next.prof_light_armor  = true;
+          if (a === 'medium')  next.prof_medium_armor = true;
+          if (a === 'heavy')   next.prof_heavy_armor  = true;
+          if (a === 'shields') next.prof_shields      = true;
+          added.armor.push(a);
+        }
+        if (adds.weapons && adds.weapons.length) {
+          const have = String(next.weapon_proficiencies || '')
+            .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean);
+          for (const w of adds.weapons) {
+            if (!have.some((p) => p.toLowerCase() === w.toLowerCase())) {
+              have.push(w);
+              added.weapons.push(w);
+            }
+          }
+          next.weapon_proficiencies = have.join(', ');
+        }
+        for (const sObj of (adds.skills || [])) {
+          const sk = typeof sObj === 'string' ? sObj : sObj.skill;
+          const lvl = typeof sObj === 'string' ? 'proficient' : (sObj.level || 'proficient');
+          if (!sk || !STAT_OF_SKILL[sk]) continue;
+          const m = Math.floor(((next[STAT_OF_SKILL[sk]] ?? 10) - 10) / 2);
+          const mult = lvl === 'expertise' ? 2 : 1;
+          next[sk] = m + profBonus * mult;
+          if (lvl === 'expertise') expert[sk] = true;
+          added.skills.push(sk);
+        }
+        for (const t of (adds.traits || [])) {
+          const target = t.category === 'action' ? 'actions'
+            : t.category === 'bonusAction' ? 'bonus_actions'
+            : t.category === 'reaction' ? 'reactions'
+            : 'special_abilities';
+          next[target] = [
+            ...(next[target] || []),
+            { name: t.name, desc: t.desc, __source: tag },
+          ];
+          added.traits_count++;
+        }
+        for (const sp of (adds.spells || [])) {
+          if (!sp?.name) continue;
+          const has = (next.spells || []).some((s) =>
+            String(s.name || '').toLowerCase() === sp.name.toLowerCase()
+          );
+          if (!has) {
+            next.spells = [
+              ...(next.spells || []),
+              { id: Date.now() + Math.random(), name: sp.name, level: sp.level ?? 0, prepared: true, __source: tag },
+            ];
+            added.spells.push(sp.name);
+          }
+        }
+      }
+
       for (const choice of choiceList) {
+        // Auto-grant choices apply unconditionally — no pick needed.
+        if (choice.kind === 'auto') {
+          applyAdds(choice.adds, `cls:primary:${f.char_class}:${choice.id}:auto`);
+          continue;
+        }
+
         const pick = picks[choice.id];
         if (!pick) continue;
 
         if (choice.kind === 'single') {
           const opt = (choice.options || []).find((o) => o.id === pick.option_id);
           if (!opt) continue;
-          const tag = sourceTagFor(choice, opt.id);
-          const adds = opt.adds || {};
-          // armor
-          for (const a of (adds.armor || [])) {
-            if (a === 'light')   next.prof_light_armor  = true;
-            if (a === 'medium')  next.prof_medium_armor = true;
-            if (a === 'heavy')   next.prof_heavy_armor  = true;
-            if (a === 'shields') next.prof_shields      = true;
-            added.armor.push(a);
-          }
-          // weapons
-          if (adds.weapons && adds.weapons.length) {
-            const have = String(next.weapon_proficiencies || '')
-              .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean);
-            for (const w of adds.weapons) {
-              if (!have.some((p) => p.toLowerCase() === w.toLowerCase())) {
-                have.push(w);
-                added.weapons.push(w);
-              }
-            }
-            next.weapon_proficiencies = have.join(', ');
-          }
-          // skills
-          for (const sObj of (adds.skills || [])) {
-            const sk = typeof sObj === 'string' ? sObj : sObj.skill;
-            const lvl = typeof sObj === 'string' ? 'proficient' : (sObj.level || 'proficient');
-            if (!sk || !STAT_OF_SKILL[sk]) continue;
-            const m = Math.floor(((next[STAT_OF_SKILL[sk]] ?? 10) - 10) / 2);
-            const mult = lvl === 'expertise' ? 2 : 1;
-            next[sk] = m + profBonus * mult;
-            if (lvl === 'expertise') expert[sk] = true;
-            added.skills.push(sk);
-          }
-          // traits / actions / bonus actions / reactions
-          for (const t of (adds.traits || [])) {
-            const target = t.category === 'action' ? 'actions'
-              : t.category === 'bonusAction' ? 'bonus_actions'
-              : t.category === 'reaction' ? 'reactions'
-              : 'special_abilities';
-            next[target] = [
-              ...(next[target] || []),
-              { name: t.name, desc: t.desc, __source: tag },
-            ];
-            added.traits_count++;
-          }
-          // spells
-          for (const sp of (adds.spells || [])) {
-            if (!sp?.name) continue;
-            const has = (next.spells || []).some((s) =>
-              String(s.name || '').toLowerCase() === sp.name.toLowerCase()
-            );
-            if (!has) {
-              next.spells = [
-                ...(next.spells || []),
-                { id: Date.now() + Math.random(), name: sp.name, level: sp.level ?? 0, prepared: true, __source: tag },
-              ];
-              added.spells.push(sp.name);
-            }
-          }
+          applyAdds(opt.adds, sourceTagFor(choice, opt.id));
         }
 
         if (choice.kind === 'multi-weapons') {
@@ -1765,10 +1821,10 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       const stripBy = (rows, prefix) => (rows || []).filter((r) =>
         !(typeof r?.__source === 'string' && r.__source.startsWith(prefix))
       );
-      next.special_abilities = stripBy(f.special_abilities, 'class:');
-      next.actions           = stripBy(f.actions, 'class:');
-      next.bonus_actions     = stripBy(f.bonus_actions, 'class:');
-      next.reactions         = stripBy(f.reactions, 'class:');
+      next.special_abilities = stripBy(f.special_abilities, 'cls:primary:');
+      next.actions           = stripBy(f.actions, 'cls:primary:');
+      next.bonus_actions     = stripBy(f.bonus_actions, 'cls:primary:');
+      next.reactions         = stripBy(f.reactions, 'cls:primary:');
       if (Array.isArray(prevAdded.skills) && prevAdded.skills.length) {
         const expert = { ...(next.skill_expertise || {}) };
         for (const sk of prevAdded.skills) { next[sk] = null; delete expert[sk]; }
@@ -1796,6 +1852,252 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         );
       }
       next.class_state = {};
+      return next;
+    });
+  }
+
+  // ── Multiclass row management + per-row choice apply/remove ──
+  // The primary class lives in char_class/char_subclass/char_level/
+  // class_state. Each additional class is one entry in the
+  // `multiclasses` array, with its own level + class_state. Tags use
+  // the prefix "cls:mc:<mcId>:" so an apply on row A doesn't clobber
+  // row B's contributions.
+  function addMulticlass() {
+    setForm((f) => ({
+      ...f,
+      multiclasses: [
+        ...(f.multiclasses || []),
+        {
+          id: `mc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          class: '',
+          subclass: '',
+          level: 1,
+          class_state: {},
+        },
+      ],
+    }));
+  }
+
+  function updateMulticlass(mcId, patch) {
+    setForm((f) => ({
+      ...f,
+      multiclasses: (f.multiclasses || []).map((m) =>
+        m.id === mcId ? { ...m, ...patch } : m
+      ),
+    }));
+  }
+
+  function removeMulticlassRow(mcId) {
+    // Strip the row's tagged contributions before deleting it so
+    // cleanup is automatic.
+    removeMulticlassChoices(mcId);
+    setForm((f) => ({
+      ...f,
+      multiclasses: (f.multiclasses || []).filter((m) => m.id !== mcId),
+    }));
+  }
+
+  function applyMulticlassChoices(mcId, choiceList, picks) {
+    setForm((f) => {
+      const slot = (f.multiclasses || []).find((m) => m.id === mcId);
+      if (!slot) return f;
+      const slotPrefix = `cls:mc:${mcId}:`;
+      const sourceTagFor = (choice, optionOrPicks) =>
+        choice.kind === 'single'
+          ? `${slotPrefix}${slot.class}:${choice.id}:${optionOrPicks}`
+          : `${slotPrefix}${slot.class}:${choice.id}`;
+
+      const prevState = slot.class_state || {};
+      const prevAdded = prevState.added || {};
+      const next = { ...f };
+      const profBonus = next.proficiency_bonus ?? 2;
+
+      const stripBy = (rows, prefix) => (rows || []).filter((r) =>
+        !(typeof r?.__source === 'string' && r.__source.startsWith(prefix))
+      );
+      next.special_abilities = stripBy(f.special_abilities, slotPrefix);
+      next.actions           = stripBy(f.actions, slotPrefix);
+      next.bonus_actions     = stripBy(f.bonus_actions, slotPrefix);
+      next.reactions         = stripBy(f.reactions, slotPrefix);
+
+      if (Array.isArray(prevAdded.skills) && prevAdded.skills.length) {
+        const expert = { ...(next.skill_expertise || {}) };
+        for (const sk of prevAdded.skills) { next[sk] = null; delete expert[sk]; }
+        next.skill_expertise = expert;
+      }
+      const stripCsv = (csv, removeLower) => String(csv || '')
+        .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean)
+        .filter((p) => !removeLower.has(p.toLowerCase())).join(', ');
+      if (Array.isArray(prevAdded.weapons) && prevAdded.weapons.length) {
+        next.weapon_proficiencies = stripCsv(
+          f.weapon_proficiencies,
+          new Set(prevAdded.weapons.map((s) => s.toLowerCase())),
+        );
+      }
+      if (Array.isArray(prevAdded.armor) && prevAdded.armor.length) {
+        for (const a of prevAdded.armor) {
+          if (a === 'light')   next.prof_light_armor  = false;
+          if (a === 'medium')  next.prof_medium_armor = false;
+          if (a === 'heavy')   next.prof_heavy_armor  = false;
+          if (a === 'shields') next.prof_shields      = false;
+        }
+      }
+      if (Array.isArray(prevAdded.spells) && prevAdded.spells.length) {
+        const drop = new Set(prevAdded.spells.map((s) => String(s).toLowerCase()));
+        next.spells = (f.spells || []).filter((s) =>
+          !drop.has(String(s.name || '').toLowerCase())
+        );
+      }
+
+      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0 };
+      const expert = { ...(next.skill_expertise || {}) };
+
+      function applyAdds(adds, tag) {
+        if (!adds) return;
+        for (const a of (adds.armor || [])) {
+          if (a === 'light')   next.prof_light_armor  = true;
+          if (a === 'medium')  next.prof_medium_armor = true;
+          if (a === 'heavy')   next.prof_heavy_armor  = true;
+          if (a === 'shields') next.prof_shields      = true;
+          added.armor.push(a);
+        }
+        if (adds.weapons && adds.weapons.length) {
+          const have = String(next.weapon_proficiencies || '')
+            .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean);
+          for (const w of adds.weapons) {
+            if (!have.some((p) => p.toLowerCase() === w.toLowerCase())) {
+              have.push(w);
+              added.weapons.push(w);
+            }
+          }
+          next.weapon_proficiencies = have.join(', ');
+        }
+        for (const sObj of (adds.skills || [])) {
+          const sk = typeof sObj === 'string' ? sObj : sObj.skill;
+          const lvl = typeof sObj === 'string' ? 'proficient' : (sObj.level || 'proficient');
+          if (!sk || !STAT_OF_SKILL[sk]) continue;
+          const m = Math.floor(((next[STAT_OF_SKILL[sk]] ?? 10) - 10) / 2);
+          const mult = lvl === 'expertise' ? 2 : 1;
+          next[sk] = m + profBonus * mult;
+          if (lvl === 'expertise') expert[sk] = true;
+          added.skills.push(sk);
+        }
+        for (const t of (adds.traits || [])) {
+          const target = t.category === 'action' ? 'actions'
+            : t.category === 'bonusAction' ? 'bonus_actions'
+            : t.category === 'reaction' ? 'reactions'
+            : 'special_abilities';
+          next[target] = [
+            ...(next[target] || []),
+            { name: t.name, desc: t.desc, __source: tag },
+          ];
+          added.traits_count++;
+        }
+        for (const sp of (adds.spells || [])) {
+          if (!sp?.name) continue;
+          const has = (next.spells || []).some((s) =>
+            String(s.name || '').toLowerCase() === sp.name.toLowerCase()
+          );
+          if (!has) {
+            next.spells = [
+              ...(next.spells || []),
+              { id: Date.now() + Math.random(), name: sp.name, level: sp.level ?? 0, prepared: true, __source: tag },
+            ];
+            added.spells.push(sp.name);
+          }
+        }
+      }
+
+      for (const choice of choiceList) {
+        if (choice.kind === 'auto') {
+          applyAdds(choice.adds, `${slotPrefix}${slot.class}:${choice.id}:auto`);
+          continue;
+        }
+        const pick = picks[choice.id];
+        if (!pick) continue;
+        if (choice.kind === 'single') {
+          const opt = (choice.options || []).find((o) => o.id === pick.option_id);
+          if (!opt) continue;
+          applyAdds(opt.adds, sourceTagFor(choice, opt.id));
+        }
+        if (choice.kind === 'multi-weapons') {
+          const have = String(next.weapon_proficiencies || '')
+            .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean);
+          for (const w of (pick.picks || [])) {
+            if (!w) continue;
+            if (!have.some((p) => p.toLowerCase() === w.toLowerCase())) {
+              have.push(w);
+              added.weapons.push(w);
+            }
+          }
+          next.weapon_proficiencies = have.join(', ');
+        }
+        if (choice.kind === 'multi-skills') {
+          for (const sk of (pick.picks || [])) {
+            if (!sk || !STAT_OF_SKILL[sk]) continue;
+            const m = Math.floor(((next[STAT_OF_SKILL[sk]] ?? 10) - 10) / 2);
+            next[sk] = m + profBonus * 2;
+            expert[sk] = true;
+            added.skills.push(sk);
+          }
+        }
+      }
+
+      next.skill_expertise = expert;
+      next.multiclasses = (f.multiclasses || []).map((m) =>
+        m.id === mcId
+          ? { ...m, class_state: { class_id: slot.class || '', choices: picks, added } }
+          : m
+      );
+      return next;
+    });
+  }
+
+  function removeMulticlassChoices(mcId) {
+    setForm((f) => {
+      const slot = (f.multiclasses || []).find((m) => m.id === mcId);
+      if (!slot) return f;
+      const prevAdded = (slot.class_state && slot.class_state.added) || {};
+      const slotPrefix = `cls:mc:${mcId}:`;
+      const next = { ...f };
+      const stripBy = (rows, prefix) => (rows || []).filter((r) =>
+        !(typeof r?.__source === 'string' && r.__source.startsWith(prefix))
+      );
+      next.special_abilities = stripBy(f.special_abilities, slotPrefix);
+      next.actions           = stripBy(f.actions, slotPrefix);
+      next.bonus_actions     = stripBy(f.bonus_actions, slotPrefix);
+      next.reactions         = stripBy(f.reactions, slotPrefix);
+      if (Array.isArray(prevAdded.skills) && prevAdded.skills.length) {
+        const expert = { ...(next.skill_expertise || {}) };
+        for (const sk of prevAdded.skills) { next[sk] = null; delete expert[sk]; }
+        next.skill_expertise = expert;
+      }
+      const stripCsv = (csv, removeLower) => String(csv || '')
+        .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean)
+        .filter((p) => !removeLower.has(p.toLowerCase())).join(', ');
+      if (Array.isArray(prevAdded.weapons) && prevAdded.weapons.length) {
+        next.weapon_proficiencies = stripCsv(
+          f.weapon_proficiencies,
+          new Set(prevAdded.weapons.map((s) => s.toLowerCase())),
+        );
+      }
+      if (Array.isArray(prevAdded.armor) && prevAdded.armor.length) {
+        for (const a of prevAdded.armor) {
+          if (a === 'light')   next.prof_light_armor  = false;
+          if (a === 'medium')  next.prof_medium_armor = false;
+          if (a === 'heavy')   next.prof_heavy_armor  = false;
+          if (a === 'shields') next.prof_shields      = false;
+        }
+      }
+      if (Array.isArray(prevAdded.spells) && prevAdded.spells.length) {
+        const drop = new Set(prevAdded.spells.map((s) => String(s).toLowerCase()));
+        next.spells = (f.spells || []).filter((s) =>
+          !drop.has(String(s.name || '').toLowerCase())
+        );
+      }
+      next.multiclasses = (f.multiclasses || []).map((m) =>
+        m.id === mcId ? { ...m, class_state: {} } : m
+      );
       return next;
     });
   }
@@ -2162,7 +2464,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                       type="button"
                       onClick={handleGeneratePortrait}
                       disabled={aiPortraitLoading || !form.name?.trim()}
-                      title={!form.name?.trim() ? 'Enter a name first' : 'Generate a portrait via the DM\'s AI'}
+                      title={!form.name?.trim() ? 'Enter a name first' : 'Generate a portrait via the GM\'s AI'}
                       className={`w-full text-[11px] rounded px-2 py-1.5 transition-colors flex items-center justify-center gap-1.5 ${
                         aiPortraitLoading
                           ? 'bg-purple-900 text-purple-300'
@@ -2229,9 +2531,9 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
 
             {/* For player characters the Subtype field is fed by the
                 Race Picker below — no freeform input needed. Non-PC
-                creatures (NPCs / monsters / DM-managed rows) keep the
+                creatures (NPCs / monsters / GM-managed rows) keep the
                 free-text input so a goblin can still be flagged
-                "(goblinoid)" or whatever the DM types. */}
+                "(goblinoid)" or whatever the GM types. */}
             <div className="grid grid-cols-2 gap-3">
               {!isPlayerCharacter && (
                 <div>
@@ -2513,14 +2815,86 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                   );
                 })()}
 
-                <ClassChoicesPicker
-                  charClass={form.char_class}
-                  charLevel={form.char_level}
-                  choices={classChoices}
-                  classState={form.class_state}
-                  onApply={(picks) => applyClassChoices(classChoices, picks)}
-                  onRemove={removeClassChoices}
-                />
+                {(() => {
+                  const profSkills = Object.keys(STAT_OF_SKILL).filter((k) => form[k] != null);
+                  const weaponProfs = String(form.weapon_proficiencies || '')
+                    .split(/\s*,\s*/).map((p) => p.trim()).filter(Boolean);
+                  const mcs = form.multiclasses || [];
+                  // Total level = primary + sum(multiclass levels).
+                  const totalLevel = (Number(form.char_level) || 0)
+                    + mcs.reduce((acc, m) => acc + (Number(m.level) || 0), 0);
+                  return (
+                    <>
+                      <ClassChoicesPicker
+                        charClass={form.char_class}
+                        charLevel={form.char_level}
+                        choices={classChoices}
+                        classState={form.class_state}
+                        proficientSkills={profSkills}
+                        weaponProficiencies={weaponProfs}
+                        onApply={(picks) => applyClassChoices(classChoices, picks)}
+                        onRemove={removeClassChoices}
+                      />
+
+                      {/* Multiclasses ── extra classes layered on top of
+                          the primary. Each row gets its own ChoicesPicker
+                          tagged so applies don't bleed across rows. */}
+                      <div className="bg-gray-800/40 border border-gray-700 rounded-lg p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-xs uppercase tracking-wider text-purple-300">Multiclasses</div>
+                            <div className="text-[11px] text-gray-500">
+                              Total character level: <span className="text-amber-300">{totalLevel || 0}</span>
+                              {mcs.length > 0 && (
+                                <span className="text-gray-500">
+                                  {' '}({form.char_class || '—'} {form.char_level || 0}
+                                  {mcs.map((m) => ` / ${m.class || '—'} ${m.level || 0}`).join('')})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <button type="button" onClick={addMulticlass}
+                            className="text-xs bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700 text-purple-200 px-3 py-1.5 rounded">
+                            + Add Class
+                          </button>
+                        </div>
+                        {mcs.length === 0 && (
+                          <p className="text-[11px] text-gray-500 italic">
+                            No additional classes. Click "+ Add Class" to multiclass.
+                          </p>
+                        )}
+                        {mcs.map((mc) => {
+                          // Disable any class already taken by the
+                          // primary or another multiclass row. The
+                          // row's own current class is always
+                          // selectable so the user can keep editing
+                          // without their pick going grey.
+                          const taken = new Set();
+                          if (form.char_class) taken.add(String(form.char_class).toLowerCase());
+                          for (const other of mcs) {
+                            if (other.id !== mc.id && other.class) {
+                              taken.add(String(other.class).toLowerCase());
+                            }
+                          }
+                          return (
+                            <MulticlassRow
+                              key={mc.id}
+                              mc={mc}
+                              allClasses={allClasses}
+                              disabledClasses={taken}
+                              proficientSkills={profSkills}
+                              weaponProficiencies={weaponProfs}
+                              onChange={(patch) => updateMulticlass(mc.id, patch)}
+                              onRemove={() => removeMulticlassRow(mc.id)}
+                              onApplyChoices={(choices, picks) => applyMulticlassChoices(mc.id, choices, picks)}
+                              onRemoveChoices={() => removeMulticlassChoices(mc.id)}
+                            />
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
               </>
             )}
 
@@ -2602,6 +2976,133 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 </div>
               </div>
             )}
+
+            {/* ── Held Bardic Inspiration banner ──
+                Any character can hold one BI die at a time. When set,
+                show a banner with a "Use" button that rolls the die,
+                broadcasts to the dice log, and clears the field. */}
+            {isPlayerCharacter && form.inspiration_die && (
+              <div className="bg-purple-900/30 border border-purple-600 rounded-lg p-3 flex items-center gap-3">
+                <span className="text-2xl">🎵</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-purple-200">
+                    Bardic Inspiration: <span className="font-mono">{form.inspiration_die}</span>
+                  </div>
+                  <div className="text-[11px] text-purple-300/80">
+                    Roll after a d20 Test (attack, save or check) and add the result. Lasts 10 minutes.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const die = String(form.inspiration_die || '').trim();
+                    const faces = parseInt(die.replace(/^d/, ''), 10);
+                    if (!faces || !creature?.id) return;
+                    const roll = 1 + Math.floor(Math.random() * faces);
+                    socket.emit('roll_dice', {
+                      dice: `d${faces}`,
+                      count: 1,
+                      modifier: 0,
+                      label: `Bardic Inspiration (${die}) — ${form.name || 'character'} consumes it`,
+                    });
+                    // Local-only roll feedback in case the user wants to
+                    // see it before the server's broadcast lands.
+                    setField('inspiration_die', '');
+                    try {
+                      await fetch(`/api/creatures/${creature.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ inspiration_die: '' }),
+                      });
+                    } catch {}
+                    // Surface the roll on the screen briefly.
+                    window?.alert?.(`Bardic Inspiration ${die} → ${roll}`);
+                  }}
+                  className="text-xs bg-purple-700 hover:bg-purple-600 text-white px-3 py-1.5 rounded font-semibold"
+                >
+                  Use ({form.inspiration_die})
+                </button>
+              </div>
+            )}
+
+            {/* ── Class resource counters ──
+                Bardic Inspiration / Ki / Sorcery Points / Channel
+                Divinity / Action Surge / Rages / etc. The catalog
+                derives totals from the character's class + level;
+                only the mutable "used" count round-trips through
+                creature.resource_state. Bardic Inspiration's row also
+                gets a "Grant" button that PATCHes the chosen target's
+                inspiration_die so a Bard can hand the die out. */}
+            {isPlayerCharacter && (() => {
+              const resources = resourcesForCreature(form);
+              if (resources.length === 0) return null;
+              const state = form.resource_state || {};
+              const setUsed = (id, value) => {
+                setField('resource_state', {
+                  ...state,
+                  [id]: { ...(state[id] || {}), used: Math.max(0, value) },
+                });
+              };
+              const resetAll = () => setField('resource_state', {});
+              return (
+                <div className="bg-gray-800 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-dnd-gold">Resources</h4>
+                    <button
+                      type="button"
+                      onClick={resetAll}
+                      className="text-[11px] bg-gray-700 hover:bg-gray-600 text-gray-200 px-2 py-1 rounded"
+                    >
+                      Reset all (long rest)
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    {resources.map(({ def, total }) => {
+                      const used = Number(state[def.id]?.used) || 0;
+                      const remaining = total === Infinity ? Infinity : Math.max(0, total - used);
+                      const totalLabel = total === Infinity ? '∞' : total;
+                      const isBI = def.id === 'bardic-inspiration';
+                      return (
+                        <div key={def.id} className="flex items-center gap-2 text-sm bg-gray-900/40 border border-gray-700 rounded px-2 py-1.5">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-gray-100">{def.label}</div>
+                            {def.note && (
+                              <div className="text-[11px] text-gray-500 leading-snug">{def.note}</div>
+                            )}
+                          </div>
+                          {isBI && (
+                            <button
+                              type="button"
+                              disabled={used >= total}
+                              onClick={() => setBardicGrant({ def, total, used })}
+                              className="text-[11px] bg-purple-700 hover:bg-purple-600 disabled:opacity-30 text-white px-2 py-1 rounded font-semibold"
+                              title="Grant the die to another character"
+                            >Grant →</button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={total !== Infinity && used >= total}
+                            onClick={() => setUsed(def.id, used + 1)}
+                            className="w-7 h-7 rounded bg-red-900/40 hover:bg-red-800/60 disabled:opacity-30 border border-red-800 text-red-200 leading-none"
+                            title="Use one"
+                          >−</button>
+                          <span className="font-mono text-gray-100 min-w-[64px] text-center">
+                            {remaining === Infinity ? '∞' : remaining} / {totalLabel}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={used <= 0}
+                            onClick={() => setUsed(def.id, used - 1)}
+                            className="w-7 h-7 rounded bg-emerald-900/40 hover:bg-emerald-800/60 disabled:opacity-30 border border-emerald-800 text-emerald-200 leading-none"
+                            title="Restore one"
+                          >+</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {!isPlayerCharacter && (
               <div className="grid grid-cols-2 gap-3">
@@ -3974,6 +4475,87 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
 
       {/* Item-library picker modal — opened from "+ From library" in
           inventory. Click a row to push it onto the inventory list. */}
+      {bardicGrant && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          onClick={() => setBardicGrant(null)}>
+          <div onClick={(e) => e.stopPropagation()}
+            className="bg-gray-900 border border-purple-700 rounded-lg w-full max-w-md max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+              <h3 className="text-purple-300 font-semibold">
+                Grant {bardicGrant.def.label}
+              </h3>
+              <button type="button" onClick={() => setBardicGrant(null)}
+                className="text-gray-400 hover:text-gray-200 text-xl leading-none">×</button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-3 space-y-1">
+              {bardicLoading && <div className="text-xs text-gray-400 italic">Loading characters…</div>}
+              {bardicError && <div className="text-xs text-red-300">Failed: {bardicError}</div>}
+              {!bardicLoading && bardicTargets.length === 0 && !bardicError && (
+                <div className="text-xs text-gray-500 italic">
+                  No other player characters found in this server.
+                </div>
+              )}
+              {bardicTargets.map((tc) => {
+                const alreadyHolds = !!tc.inspiration_die;
+                return (
+                  <button
+                    key={tc.id}
+                    type="button"
+                    disabled={alreadyHolds}
+                    onClick={async () => {
+                      const die = bardicGrant.def.die || 'd6';
+                      try {
+                        // 1. Push the die onto the target.
+                        const r = await fetch(`/api/creatures/${tc.id}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ inspiration_die: die }),
+                        });
+                        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                        // 2. Bump our own used count locally; the form
+                        //    will persist on save like any other edit.
+                        const id = bardicGrant.def.id;
+                        const cur = Number(form.resource_state?.[id]?.used) || 0;
+                        setField('resource_state', {
+                          ...(form.resource_state || {}),
+                          [id]: { used: Math.min(bardicGrant.total, cur + 1) },
+                        });
+                        // 3. Tell the table what just happened.
+                        socket.emit('roll_dice', {
+                          dice: 'd1', count: 1, modifier: 0,
+                          label: `${form.name || 'Bard'} grants ${die} Bardic Inspiration to ${tc.name || 'someone'}`,
+                        });
+                        setBardicGrant(null);
+                      } catch (err) {
+                        setBardicError(String(err.message || err));
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2 rounded border border-gray-700 hover:border-purple-500 disabled:opacity-40 disabled:cursor-not-allowed bg-gray-800/40">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-100">{tc.name || '(unnamed)'}</span>
+                      {alreadyHolds && (
+                        <span className="text-[10px] text-purple-300">
+                          already holds {tc.inspiration_die}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-gray-500">
+                      {tc.char_class || 'No class'}
+                      {tc.char_level ? ` · Lv ${tc.char_level}` : ''}
+                      {tc.player_owner ? ` · ${tc.player_owner}` : ''}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="px-3 py-2 border-t border-gray-700 flex justify-end gap-2">
+              <button onClick={() => setBardicGrant(null)}
+                className="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showItemLibrary && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
           onClick={() => setShowItemLibrary(false)}>

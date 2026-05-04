@@ -19,11 +19,11 @@ import MapStage from './MapStage.jsx';
 //   We surface them as small chips along the top edge so the audience
 //   knows the rest of the party is somewhere else (and which map).
 //
-// Following the DM
+// Following the GM
 // ────────────────
 //   Spectator always renders the session's current map. There's no
 //   override fetch and no map-switch fade — the map just changes when
-//   the DM swaps it. A short "Switching to <Map>…" toast keeps the
+//   the GM swaps it. A short "Switching to <Map>…" toast keeps the
 //   audience oriented but isn't blocking.
 export default function SpectatorView() {
   const [searchParams] = useSearchParams();
@@ -74,7 +74,7 @@ export default function SpectatorView() {
     socket.on('session_joined', ({ state, userColors: uc }) => {
       setSession(state.session);
       setSpellTemplates(Array.isArray(state.spellTemplates) ? state.spellTemplates : []);
-      // Hidden tokens still hidden — the DM's audience shouldn't see the
+      // Hidden tokens still hidden — the GM's audience shouldn't see the
       // ambush before it triggers any more than the players do.
       setTokens((state.tokens || []).filter((t) => !t.is_hidden));
       setTerrain(state.terrain || []);
@@ -165,7 +165,7 @@ export default function SpectatorView() {
     socket.on('spell_template_removed', ({ id })     => setSpellTemplates((p) => p.filter((t) => t.id !== id)));
     socket.on('spell_templates_cleared', () => setSpellTemplates([]));
 
-    // ── Session-level settings the DM may toggle live ──────────────────
+    // ── Session-level settings the GM may toggle live ──────────────────
     socket.on('fow_changed',      ({ enabled }) => setFowEnabled(!!enabled));
     socket.on('fow_blur_changed', ({ blur })    => setFowBlur(Number(blur) || 0));
     socket.on('fow_color_changed',({ color })   => setFowColor(color || '#000000'));
@@ -255,7 +255,7 @@ export default function SpectatorView() {
         mapHeight={mapHeight}
         gridSize={gridSize}
         tokens={onMapTokens}
-        // isPlayer: gates out DM-only chrome (terrain handles, wall draw,
+        // isPlayer: gates out GM-only chrome (terrain handles, wall draw,
         // context menus, etc). Spectator should be locked down the same way.
         isPlayer
         // isSpectator: switches MapStage's visOrigins resolver to union
@@ -296,7 +296,7 @@ export default function SpectatorView() {
         </div>
       )}
 
-      {/* Map-switch toast — brief audience cue when the DM swaps maps so
+      {/* Map-switch toast — brief audience cue when the GM swaps maps so
           the change isn't disorienting. */}
       {mapSwitchToast && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 border border-dnd-gold/40 rounded-xl px-4 py-2 text-sm text-dnd-gold shadow-2xl z-30">

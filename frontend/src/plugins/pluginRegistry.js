@@ -29,7 +29,7 @@
 //     even if the plugin is later removed.)
 //
 // The login screen (Landing.jsx) intentionally never calls loadPlugins() so
-// a misbehaving plugin can never break DM auth.
+// a misbehaving plugin can never break GM auth.
 
 import React from 'react';
 import * as ReactKonva from 'react-konva';
@@ -44,10 +44,10 @@ export const registries = {
   // Rendered inside the spell-template-edit popup, after built-in fields.
   templateEditorExtensions: new Map(),
   // Map<pluginId, { id, label, icon, render: (ctx) => ReactNode }>
-  // Adds a new tab to the DM right-hand panel.
+  // Adds a new tab to the GM right-hand panel.
   dmTabs: new Map(),
   // Map<pluginId, { render: () => ReactNode }>
-  // Adds a button to the DM's top-right toolbar (alongside Actions /
+  // Adds a button to the GM's top-right toolbar (alongside Actions /
   // Sounds / Dice). Plugins render their own button + flyout popup,
   // so they own the open/close state and styling. Useful for "open
   // this plugin's quick-use UI without leaving the active tab" —
@@ -64,7 +64,7 @@ export const registries = {
   // General-purpose "draw stuff on the map" hook. The host renders all
   // returned nodes in a single non-interactive Konva Layer that sits ABOVE
   // the token layer (so trees/clouds/etc. can occlude tokens visually).
-  // Players see the same nodes the DM sees by default — plugins can
+  // Players see the same nodes the GM sees by default — plugins can
   // branch on `ctx.isPlayer` for split visibility/behaviour. Listening is
   // disabled at the layer level, so plugin nodes never intercept clicks;
   // use mapClickHandlers below for click handling.
@@ -77,14 +77,14 @@ export const registries = {
   // map-pick behaviour (e.g. "click to place a tree").
   mapClickHandlers: new Map(),
   // Map<pluginId, Set<tabId>>
-  // Plugins can hide built-in DM panel tabs by adding their ids here.
+  // Plugins can hide built-in GM panel tabs by adding their ids here.
   // The host filters the tab bar by the UNION of all sets. Hiding only
   // affects the bar — the tab's body still renders if it's the active
   // tab (so plugins can call context.setPanelTab to a hidden tab and
   // the user lands inside its UI).
   panelTabHidden: new Map(),
   // Map<pluginId, { tabId, render }>
-  // Plugins can append content to a specific built-in DM panel tab.
+  // Plugins can append content to a specific built-in GM panel tab.
   // The host renders the extension at the end of that tab's content,
   // just before any host-defined trailing UI like "Leave Session".
   // One extension per plugin per tab — return a Fragment if you need
@@ -127,7 +127,7 @@ export const registries = {
   // Map<pluginId, ({ sessionId, playerTokenId, defaultMapId }) => mapId | null>
   // Player-side only. When non-null, the PlayerView fetches that map's
   // state via /api/maps/:id/state and renders it instead of the session's
-  // current map. Driven by the split-the-party plugin so the DM can
+  // current map. Driven by the split-the-party plugin so the GM can
   // route different players onto different maps simultaneously.
   // Resolved on first paint and re-evaluated every time the registry
   // version bumps (use notifyChange() after writing).
@@ -193,7 +193,7 @@ function onPluginEventFrame({ pluginId, type, payload }) {
 // write() and delete() additionally broadcast a `plugin_event` over the
 // socket so the same plugin running on every other client in the session
 // can update its local cache. This is the mechanism that lets a plugin
-// modify things visible to BOTH the DM and the players: each client only
+// modify things visible to BOTH the GM and the players: each client only
 // has to react to the broadcast, not poll the API.
 function makeDataApi(pluginId, socket) {
   function broadcast(type, payload) {
@@ -285,7 +285,7 @@ export async function loadPlugins({ context = {} } = {}) {
         try { context.socket.emit('plugin_event', { pluginId: row.id, type, payload }); } catch {}
       };
       // Read the host's AI configuration fresh on every call so a plugin
-      // picks up settings the DM saves AFTER the plugin loaded. Returns
+      // picks up settings the GM saves AFTER the plugin loaded. Returns
       // null when AI hasn't been configured yet.
       const getAiSettings = () => {
         try { return JSON.parse(localStorage.getItem('dndvtt_ai_settings') || 'null'); }
@@ -300,7 +300,7 @@ export async function loadPlugins({ context = {} } = {}) {
         // call this after async data loads or user-triggered state
         // changes so decorators get re-invoked and stale UI flushes.
         // subscribe/emitEvent provide cross-client coordination so a
-        // plugin can mirror state from DM to players (or vice-versa)
+        // plugin can mirror state from GM to players (or vice-versa)
         // without each client polling the data API.
         // subscribeRegistry lets a plugin's UI re-render when *any*
         // plugin's registry contributions change — useful for plugins
@@ -330,7 +330,7 @@ export async function loadPlugins({ context = {} } = {}) {
 }
 
 // Tear down a single plugin's contributions across every registry. Used by
-// the manager when a plugin is disabled mid-session, so the DM doesn't have
+// the manager when a plugin is disabled mid-session, so the GM doesn't have
 // to refresh to see effects vanish.
 export function unloadPlugin(pluginId) {
   const entry = loaded.get(pluginId);

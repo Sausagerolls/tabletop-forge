@@ -191,7 +191,7 @@ async function refreshLibrary() {
 
 // Fetch every monster page from Open5e. Each page is up to 50 rows,
 // `next` URL chains until exhausted. We follow it manually so we can
-// surface progress to the DM tab.
+// surface progress to the GM tab.
 async function fetchAllOpen5e(url) {
   const out = [];
   let page = 0;
@@ -313,7 +313,7 @@ function itemToLoot(item, qty = 1) {
 
 // Send one item directly to a creature's inventory via the host's
 // existing /send_treasure socket — same protocol the host's Treasure
-// Chest tab uses. The DM picks a player creature, the plugin emits.
+// Chest tab uses. The GM picks a player creature, the plugin emits.
 function sendItemToCreature(item, creatureId) {
   if (!savedSocket || !creatureId) return false;
   try {
@@ -325,7 +325,7 @@ function sendItemToCreature(item, creatureId) {
   } catch { return false; }
 }
 
-// Download the items as a JSON file the DM can paste into the
+// Download the items as a JSON file the GM can paste into the
 // Treasure Chest tab's "Load" button. Format matches what the host's
 // import handler expects (`{ loot: [...] }`).
 function downloadAsTreasureJson(items, filename) {
@@ -361,7 +361,7 @@ export default {
 
       // Skip the install if we already have a populated set of inserted
       // ids (means a previous enable already finished). Saves the
-      // 30-second Open5e crawl when the DM toggles around.
+      // 30-second Open5e crawl when the GM toggles around.
       if (insertedIds.length === 0 || magicItems.length === 0) {
         await installPack();
       } else {

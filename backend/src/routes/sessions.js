@@ -13,7 +13,7 @@ function generateCode() {
 router.post('/', async (req, res) => {
   try {
     const { name, dmPassword } = req.body;
-    if (!name || !dmPassword) return res.status(400).json({ error: 'Name and DM password required' });
+    if (!name || !dmPassword) return res.status(400).json({ error: 'Name and GM password required' });
 
     const hash = await bcrypt.hash(dmPassword, 10);
     let code;
@@ -53,7 +53,7 @@ router.get('/:code', async (req, res) => {
   }
 });
 
-// POST /api/sessions/:code/verify-dm — verify DM password
+// POST /api/sessions/:code/verify-dm — verify GM password
 router.post('/:code/verify-dm', async (req, res) => {
   try {
     const { dmPassword } = req.body;
@@ -93,8 +93,8 @@ router.get('/:code/tokens', async (req, res) => {
 });
 
 // GET /api/sessions/:id/spawn-points — every named spawn point across
-// every map in this session. Used by the DM-only right-click "Send to
-// map → spawn point" submenu so it can list points for maps the DM
+// every map in this session. Used by the GM-only right-click "Send to
+// map → spawn point" submenu so it can list points for maps the GM
 // isn't currently viewing without firing one fetch per map.
 router.get('/:id/spawn-points', async (req, res) => {
   try {

@@ -2,16 +2,16 @@
 //
 // What it does
 // ────────────
-//   DM tab with four weather modes (Off / Rain / Snow / Fog), an
+//   GM tab with four weather modes (Off / Rain / Snow / Fog), an
 //   intensity slider, and a wind-angle slider. Animated effect renders
-//   across the entire map for DM and players. Per-session — two
+//   across the entire map for GM and players. Per-session — two
 //   simultaneous sessions on the same backend get independent weather.
 //
 // How it stays in sync
 // ────────────────────
 //   Single KV key `current_<sessionId>` stores `{ kind, intensity,
 //   windAngle }`. data.write auto-broadcasts every change to all
-//   clients in the session, so the DM's slider drag shows up on every
+//   clients in the session, so the GM's slider drag shows up on every
 //   player's map without anyone polling.
 
 const PLUGIN_ID = 'weather-effects';
@@ -21,7 +21,7 @@ const PLUGIN_ID = 'weather-effects';
 const DEFAULT_STATE = { kind: 'off', intensity: 0.5, windAngle: 200 };
 let state = { ...DEFAULT_STATE };
 
-// Local notify pump for the DM tab (the host's notifyChange re-renders
+// Local notify pump for the GM tab (the host's notifyChange re-renders
 // every registry consumer including the active tab, but a private set
 // keeps the tab fluid even when the map decorator is animating heavily).
 const tabSubs = new Set();
@@ -67,7 +67,7 @@ export default {
     // ── Cross-client sync ───────────────────────────────────────────
     // Every data.write/delete auto-broadcasts a `data` plugin_event to
     // every other client in the session. Mirror that here so a slider
-    // drag on the DM side updates the player view without polling.
+    // drag on the GM side updates the player view without polling.
     if (typeof subscribe === 'function') {
       subscribe(({ type, payload }) => {
         if (type !== 'data' || !payload || payload.key !== STATE_KEY) return;
@@ -224,7 +224,7 @@ export default {
         mapHeight: ctx.mapHeight,
       }));
 
-    // ── DM control panel ─────────────────────────────────────────────
+    // ── GM control panel ─────────────────────────────────────────────
     function WeatherTab() {
       const [, setTick] = React.useState(0);
       React.useEffect(() => {
@@ -239,7 +239,7 @@ export default {
         state = { ...state, ...updates };
         notifyChange();
         pingTab();
-        // Fire-and-forget — auto-broadcast handles DM↔player sync.
+        // Fire-and-forget — auto-broadcast handles GM↔player sync.
         data.write(STATE_KEY, state);
       }
 
@@ -251,7 +251,7 @@ export default {
           null,
           React.createElement('h3', { className: 'text-sm font-semibold text-dnd-gold mb-1' }, 'Weather'),
           React.createElement('p', { className: 'text-xs text-gray-400 mb-2 leading-snug' },
-            'Animated weather across the whole map. Both DM and players see the effect.')
+            'Animated weather across the whole map. Both GM and players see the effect.')
         ),
         // Mode picker — 4-up grid of toggle buttons
         React.createElement(

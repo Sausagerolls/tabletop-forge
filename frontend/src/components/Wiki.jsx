@@ -10,15 +10,15 @@ const SECTIONS = {
       content: [
         {
           heading: 'Creating a Session',
-          body: `Go to the TableTop Forge home page and click "New Session". Enter a name for your campaign and choose a DM password — share the session code and your password with no one else. Click "Create Session" to enter the DM view. Your session code (e.g. ABC123) is shown in the top-right corner of the DM panel; share this with your players.`,
+          body: `Go to the TableTop Forge home page and click "New Session". Enter a name for your campaign and choose a GM password — share the session code and your password with no one else. Click "Create Session" to enter the GM view. Your session code (e.g. ABC123) is shown in the top-right corner of the GM panel; share this with your players.`,
         },
         {
           heading: 'Rejoining a Session',
-          body: `Click "DM Login" on the home page, enter your session code and DM password, then click "Enter as Dungeon Master".`,
+          body: `Click "GM Login" on the home page, enter your session code and GM password, then click "Enter as Game Master".`,
         },
         {
           heading: 'Session Code',
-          body: `The 6-character session code is displayed in the header of the DM panel. Players use this code to join the session. It never changes once created.`,
+          body: `The 6-character session code is displayed in the header of the GM panel. Players use this code to join the session. It never changes once created.`,
         },
       ],
     },
@@ -29,7 +29,7 @@ const SECTIONS = {
       content: [
         {
           heading: 'Uploading a Map',
-          body: `In the DM panel, click the "Map" tab. Click "Upload Map" and select an image file (PNG, JPG, WEBP). The map will be uploaded to the server and displayed on the canvas for all connected players immediately.`,
+          body: `In the GM panel, click the "Map" tab. Click "Upload Map" and select an image file (PNG, JPG, WEBP). The map will be uploaded to the server and displayed on the canvas for all connected players immediately.`,
         },
         {
           heading: 'Grid Size',
@@ -52,7 +52,7 @@ const SECTIONS = {
       content: [
         {
           heading: 'Adding Creatures to the Map',
-          body: `In the "Creatures" tab of the DM panel, find a creature in the library or player character list. Click "Place" next to the creature to drop it onto the map at the centre of the current view.`,
+          body: `In the "Creatures" tab of the GM panel, find a creature in the library or player character list. Click "Place" next to the creature to drop it onto the map at the centre of the current view.`,
         },
         {
           heading: 'Moving Tokens',
@@ -72,11 +72,11 @@ const SECTIONS = {
         },
         {
           heading: 'Creature Library',
-          body: `The "Creatures" tab shows all non-PC creatures. Click "New Creature" to open the creation form. Creatures are stored per-session and persist between DM logins.`,
+          body: `The "Creatures" tab shows all non-PC creatures. Click "New Creature" to open the creation form. Creatures are stored per-session and persist between GM logins.`,
         },
         {
           heading: 'Player Characters',
-          body: `Player characters appear in a separate section of the Creatures tab. They are created by players when they join but the DM can also edit them.`,
+          body: `Player characters appear in a separate section of the Creatures tab. They are created by players when they join but the GM can also edit them.`,
         },
         {
           heading: 'Editing a Creature',
@@ -130,7 +130,7 @@ const SECTIONS = {
         },
         {
           heading: 'Opening / Closing Doors',
-          body: `Select the "Select" tool, then click a door to toggle it open or closed. Open doors allow vision and movement through them. Players can also click doors to open them if the DM has enabled this.`,
+          body: `Select the "Select" tool, then click a door to toggle it open or closed. Open doors allow vision and movement through them. Players can also click doors to open them if the GM has enabled this.`,
         },
         {
           heading: 'Erasing Walls',
@@ -149,7 +149,7 @@ const SECTIONS = {
         },
         {
           heading: 'Light Shapes',
-          body: `Before placing, choose a shape in the DM panel's Light section:
+          body: `Before placing, choose a shape in the GM panel's Light section:
 • Circle — emits light in all directions (default)
 • Cone — 60° arc in the facing direction
 • Panel — 180° arc (half-plane) in the facing direction`,
@@ -198,7 +198,7 @@ const SECTIONS = {
       content: [
         {
           heading: 'Starting Combat',
-          body: `In the "Combat" tab of the DM panel, click "Start Combat". An initiative tracker appears for all players.`,
+          body: `In the "Combat" tab of the GM panel, click "Start Combat". An initiative tracker appears for all players.`,
         },
         {
           heading: 'Adding Creatures to Initiative',
@@ -225,7 +225,7 @@ const SECTIONS = {
       content: [
         {
           heading: 'Treasure Panel',
-          body: `Open the "Treasure" tab in the DM panel. Here you can send items and currency to individual players.`,
+          body: `Open the "Treasure" tab in the GM panel. Here you can send items and currency to individual players.`,
         },
         {
           heading: 'Sending Currency',
@@ -244,7 +244,7 @@ const SECTIONS = {
       content: [
         {
           heading: 'Playing Ambient Sound',
-          body: `In the "Sound" tab of the DM panel, upload or select an audio file and click Play. The audio loops and plays for all connected players.`,
+          body: `In the "Sound" tab of the GM panel, upload or select an audio file and click Play. The audio loops and plays for all connected players.`,
         },
         {
           heading: 'Volume Control',
@@ -258,16 +258,16 @@ const SECTIONS = {
     },
     {
       id: 'dm-panel',
-      title: 'DM Panel',
+      title: 'GM Panel',
       icon: '🖥️',
       content: [
         {
           heading: 'Resizing the Panel',
-          body: `The DM panel is on the right side of the screen. Hover over the thin divider between the map and the panel — it will glow gold. Click and drag left or right to resize the panel between 260 px and 600 px wide.`,
+          body: `The GM panel is on the right side of the screen. Hover over the thin divider between the map and the panel — it will glow gold. Click and drag left or right to resize the panel between 260 px and 600 px wide.`,
         },
         {
           heading: 'Tabs',
-          body: `The DM panel has several tabs: Map (upload, grid, scale, lighting controls), Creatures (library and placed tokens), Combat (initiative tracker), Treasure (send items/currency), and Sound (ambient audio).`,
+          body: `The GM panel has several tabs: Map (upload, grid, scale, lighting controls), Creatures (library and placed tokens), Combat (initiative tracker), Treasure (send items/currency), and Sound (ambient audio).`,
         },
         {
           heading: 'Actions Reference',
@@ -284,7 +284,7 @@ const SECTIONS = {
       content: [
         {
           heading: 'How to Join',
-          body: `On the TableTop Forge home page, click "Join as Player". Enter your name and the 6-character session code given to you by your DM. Click "Next →".`,
+          body: `On the TableTop Forge home page, click "Join as Player". Enter your name and the 6-character session code given to you by your GM. Click "Next →".`,
         },
         {
           heading: 'Choosing a Character',
@@ -303,7 +303,7 @@ const SECTIONS = {
       content: [
         {
           heading: 'What You See',
-          body: `Your view shows the game map. Fog of war hides areas you haven't explored. As your token moves, nearby areas are revealed automatically. The DM can also reveal areas directly.`,
+          body: `Your view shows the game map. Fog of war hides areas you haven't explored. As your token moves, nearby areas are revealed automatically. The GM can also reveal areas directly.`,
         },
         {
           heading: 'Panning the Map',
@@ -311,7 +311,7 @@ const SECTIONS = {
         },
         {
           heading: 'Doors',
-          body: `Doors appear as thick coloured lines on walls. Click on a door to open or close it (if the DM allows player interaction with doors).`,
+          body: `Doors appear as thick coloured lines on walls. Click on a door to open or close it (if the GM allows player interaction with doors).`,
         },
       ],
     },
@@ -326,11 +326,11 @@ const SECTIONS = {
         },
         {
           heading: 'Editing Your Character',
-          body: `Click the pencil/edit icon next to your character name to open the full editing form. Changes save immediately and sync to the DM.`,
+          body: `Click the pencil/edit icon next to your character name to open the full editing form. Changes save immediately and sync to the GM.`,
         },
         {
           heading: 'Hit Points',
-          body: `Your current HP is shown prominently. The DM may update your HP during combat, and changes will appear automatically.`,
+          body: `Your current HP is shown prominently. The GM may update your HP during combat, and changes will appear automatically.`,
         },
         {
           heading: 'Printing Your Character',
@@ -353,7 +353,7 @@ const SECTIONS = {
         },
         {
           heading: 'Roll Results',
-          body: `Results appear in the dice tray and are broadcast to the DM and other players in the session log.`,
+          body: `Results appear in the dice tray and are broadcast to the GM and other players in the session log.`,
         },
         {
           heading: 'Custom Rolls',
@@ -368,15 +368,15 @@ const SECTIONS = {
       content: [
         {
           heading: 'Viewing Inventory',
-          body: `Scroll down your stat block to the Inventory section. All items granted by the DM or added during character creation appear here.`,
+          body: `Scroll down your stat block to the Inventory section. All items granted by the GM or added during character creation appear here.`,
         },
         {
           heading: 'Receiving Items',
-          body: `When the DM sends you an item, a notification pops up on screen. The item is automatically added to your inventory.`,
+          body: `When the GM sends you an item, a notification pops up on screen. The item is automatically added to your inventory.`,
         },
         {
           heading: 'Currency',
-          body: `Your Gold (GP), Silver (SP), and Copper (CP) are shown in the Currency section of your stat block. The DM can send currency to you during play; you'll see a 🪙 notification when this happens.`,
+          body: `Your Gold (GP), Silver (SP), and Copper (CP) are shown in the Currency section of your stat block. The GM can send currency to you during play; you'll see a 🪙 notification when this happens.`,
         },
         {
           heading: 'Weapons',
@@ -433,7 +433,7 @@ const SECTIONS = {
       content: [
         {
           heading: 'Treasure Notifications',
-          body: `When the DM sends you an item or currency, a notification banner appears at the top of your screen listing what you received. It disappears automatically after 6 seconds.`,
+          body: `When the GM sends you an item or currency, a notification banner appears at the top of your screen listing what you received. It disappears automatically after 6 seconds.`,
         },
         {
           heading: 'Combat Notifications',
@@ -525,7 +525,7 @@ export default function Wiki() {
                 : 'text-gray-400 hover:text-gray-200 border border-gray-600'
             }`}
           >
-            🎲 DM Guide
+            🎲 GM Guide
           </button>
           <button
             onClick={() => switchPerspective('player')}
@@ -547,7 +547,7 @@ export default function Wiki() {
             sections={currentSections}
             active={activeId}
             onSelect={setActiveId}
-            label={perspective === 'dm' ? 'DM Guide' : 'Player Guide'}
+            label={perspective === 'dm' ? 'GM Guide' : 'Player Guide'}
           />
         </aside>
 

@@ -328,8 +328,8 @@ router.post('/cleanup-orphans', async (req, res) => {
 // "Delete" from the manager actually fulfils the user's expectation
 // of "this plugin and its content are gone". The plugin_data KV that
 // drove that tracking is also removed in the same transaction; if the
-// DM re-installs later the runtime sees an empty slate and re-imports.
-// Other plugin_data keys (per-DM preferences, etc.) are still kept
+// GM re-installs later the runtime sees an empty slate and re-imports.
+// Other plugin_data keys (per-GM preferences, etc.) are still kept
 // because the no-data-loss rule applies to non-tracking state.
 router.delete('/:id', async (req, res) => {
   try {

@@ -2,10 +2,10 @@
 //
 // What it does
 // ────────────
-//   DM enters a value + kind (Damage / Healing / Temp HP) in the
+//   GM enters a value + kind (Damage / Healing / Temp HP) in the
 //   plugin's side-panel tab, hits Apply, then clicks a token on the
 //   map. The plugin emits a custom `pop` event over the plugin event
-//   bus; every client (DM and players) shows a colour-coded floating
+//   bus; every client (GM and players) shows a colour-coded floating
 //   number above that token that drifts up and fades out over ~2.4s.
 //
 // Why this plugin shape
@@ -22,8 +22,8 @@
 // ──────────────────────
 //   Damage / healing / temp HP are committed to the token's HP via
 //   the host's existing socket events (`update_token_hp` and
-//   `update_token_temp_hp`) — those are gated DM-only by the host, so
-//   the plugin only emits them in the DM-only click handler. Per 5e:
+//   `update_token_temp_hp`) — those are gated GM-only by the host, so
+//   the plugin only emits them in the GM-only click handler. Per 5e:
 //     * Damage  — temp HP absorbs first, overflow drops current HP
 //     * Healing — adds to current HP, capped at max HP
 //     * Temp HP — replace if the new value is higher (no stacking)
@@ -36,10 +36,10 @@ const POP_RISE_PX     = 70;     // distance the number floats upward
 // between every register() call within one tab (per docs §8 — one
 // module instance per tab).
 let popups = [];                 // [{ id, tokenId, value, kind, spawnTime }]
-let pickingFor = null;           // { value, kind } when DM is in pick mode
+let pickingFor = null;           // { value, kind } when GM is in pick mode
 let lastCtx = null;              // latest mapDecorations ctx — used for hit-test
 
-// Local notify pump so the DM tab re-renders without re-rendering the
+// Local notify pump so the GM tab re-renders without re-rendering the
 // whole map (per docs §7's optional fine-grained pattern).
 const tabSubs = new Set();
 function pingTab() { for (const fn of tabSubs) try { fn(); } catch {} }
@@ -209,8 +209,8 @@ export default {
       );
     });
 
-    // ── mapClickHandlers: pick a token while in pick mode (DM only) ──
-    // Returns true to consume the click whenever the DM is mid-pick,
+    // ── mapClickHandlers: pick a token while in pick mode (GM only) ──
+    // Returns true to consume the click whenever the GM is mid-pick,
     // so the click doesn't fall through to whatever the active toolbar
     // tool happens to be. Empty-space clicks while picking just cancel.
     registries.mapClickHandlers.set(PLUGIN_ID, {
@@ -247,7 +247,7 @@ export default {
       },
     });
 
-    // ── DM tab UI ────────────────────────────────────────────────────
+    // ── GM tab UI ────────────────────────────────────────────────────
     function DamageTab() {
       const [value, setValue] = React.useState(10);
       const [kind, setKind]   = React.useState('damage');
@@ -337,7 +337,7 @@ export default {
 
     // ── Top-bar flyout button ────────────────────────────────────────
     // Same content as the dmTab, but accessible from the always-visible
-    // top toolbar so the DM doesn't have to leave whichever panel
+    // top toolbar so the GM doesn't have to leave whichever panel
     // they're in to drop a damage number.
     function DamageTopBarButton() {
       const [open, setOpen] = React.useState(false);

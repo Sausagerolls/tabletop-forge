@@ -5,7 +5,7 @@
 // 2024 SRD (SRD 5.2, released January 2025 under CC-BY 4.0) is NOT
 // yet exposed by Open5e v1, so this importer only handles 2014 for
 // now. When Open5e adds 2024 we extend the document filter; until
-// then the DM toggle defaults to 'both' which surfaces every spell
+// then the GM toggle defaults to 'both' which surfaces every spell
 // in the table regardless.
 //
 // Run from inside the backend container (or against a running pg):

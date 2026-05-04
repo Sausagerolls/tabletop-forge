@@ -33,7 +33,7 @@ struct HomeView: View {
 
     // Compound key: the .task fires both when the player adopts a
     // different token (id changes) AND when the server signals the
-    // sheet was edited DM-side (refresh tick bumped). Either way we
+    // sheet was edited GM-side (refresh tick bumped). Either way we
     // pull a fresh REST creature row.
     private struct RefreshKey: Equatable, Hashable {
         let cid: Int?
@@ -96,7 +96,7 @@ struct HomeView: View {
             guard let latest = socket.npcSays.last else { return }
             popupNpcSay = latest
             // Lighter haptic than whispers — NPC chatter is a more
-            // common, less critical event than a private DM whisper.
+            // common, less critical event than a private GM whisper.
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }
         .sheet(item: $popupNpcSay) { say in
@@ -134,7 +134,7 @@ private struct BannerLabel: View {
 }
 
 // NpcSayPopupSheet — same modal pattern as WhisperPopupSheet but
-// styled for ambient NPC chatter rather than private DM-to-player
+// styled for ambient NPC chatter rather than private GM-to-player
 // communication. Speaker name is prominent; understood lines render
 // in plain dialogue style, untranslated lines render in italicised
 // monospace and surface a "you don't recognise this language" caption
@@ -217,8 +217,8 @@ private struct NpcSayPopupSheet: View {
     }
 }
 
-// WhisperPopupSheet — modal-style takeover that surfaces a DM whisper
-// loud and clear. Centered envelope icon + "DM whispers to you" title
+// WhisperPopupSheet — modal-style takeover that surfaces a GM whisper
+// loud and clear. Centered envelope icon + "GM whispers to you" title
 // + the message in scroll-when-long body type + a single big Dismiss
 // button. Sheet detents are [.medium, .large] so a long whisper can
 // be expanded to full height by the player; short ones stay compact.
@@ -234,7 +234,7 @@ private struct WhisperPopupSheet: View {
                 .font(.system(size: 56))
                 .foregroundStyle(.purple)
 
-            Text("DM whispers to you")
+            Text("GM whispers to you")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(.purple)
 

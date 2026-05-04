@@ -13,7 +13,7 @@ export const TOKEN_SIZES = {
   gargantuan: { gridW: 4, gridH: 4, scale: 0.92, label: 'Gargantuan' },
 };
 
-// DM marker visual config — kept in sync with DMView's DM_MARKER_TYPES
+// GM marker visual config — kept in sync with DMView's DM_MARKER_TYPES
 export const DM_MARKER_ICONS = {
   trap:        '🪤',
   hazard:      '⚠️',
@@ -439,7 +439,7 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
       {showLabel && (() => {
         const dmgTaken = Math.max(0, token.max_hp - token.current_hp);
         // HP text is now rendered INSIDE the bar. When dead the bar reads
-        // "Dead" regardless of whether DM/player visibility would otherwise
+        // "Dead" regardless of whether GM/player visibility would otherwise
         // hide HP numbers — death is public information.
         const hpText = isDead
           ? 'Dead'
@@ -926,7 +926,7 @@ function LightPreview({ preview, gridSize }) {
   );
 }
 
-// ── Spell template shapes (DM-only) ─────────────────────────────────────────
+// ── Spell template shapes (GM-only) ─────────────────────────────────────────
 function colorToFillStroke(color) {
   const c = typeof color === 'string' && color.startsWith('#') ? color : '#a855f7';
   // Use the hex color directly for stroke; build a translucent fill from it.
@@ -961,7 +961,7 @@ function templateShapeProps(t, fill, stroke, dash, gridSize = 50) {
   if (t.type === 'line' && p.length >= 4) {
     // Line templates are rendered as a thin rotated rectangle: 1 ft
     // wide (gridSize / 5 since one cell = 5 ft in 5e), with the
-    // length being whatever the DM dragged. Plugins (e.g. elemental-
+    // length being whatever the GM dragged. Plugins (e.g. elemental-
     // templates) read `ax/ay` as the source point and `bx/by` as the
     // tip so directional effects can flow along the line.
     const ax = p[0], ay = p[1], bx = p[2], by = p[3];
@@ -1054,12 +1054,12 @@ function TemplatePreview({ preview, gridSize }) {
 
   // Live feet readout while dragging — matches the style used by the
   // measurement tool's MeasureOverlay (black rounded chip + bold label).
-  // Position varies per shape so the label sits next to the bit the DM
+  // Position varies per shape so the label sits next to the bit the GM
   // is actually adjusting (centre for circles, far corner for squares,
   // tip for cones, midpoint for lines).
   function readoutNode() {
     if (!gridSize) return null;
-    // Big, easily-readable chip — sized for a DM zoomed out to see the
+    // Big, easily-readable chip — sized for a GM zoomed out to see the
     // whole battlefield rather than zoomed in on the click. Tweak both
     // CHIP_H and FONT_SIZE together to keep the text vertically centred.
     const FONT_SIZE = 36;
@@ -1098,7 +1098,7 @@ function TemplatePreview({ preview, gridSize }) {
     }
     if (props.kind === 'rect') {
       // Squares are drawn corner-to-corner — show width × height in ft so
-      // the DM gets both axes if they're not perfectly square.
+      // the GM gets both axes if they're not perfectly square.
       const wFt = pxToFt(props.width,  gridSize);
       const hFt = pxToFt(props.height, gridSize);
       const text = wFt === hFt ? `${wFt} ft` : `${wFt} × ${hFt} ft`;
@@ -1114,7 +1114,7 @@ function TemplatePreview({ preview, gridSize }) {
     }
     if (props.kind === 'wedge') {
       // Cone: place the chip at the tip along the cone's centerline so
-      // the reading sits next to the part the DM is dragging.
+      // the reading sits next to the part the GM is dragging.
       const ft = pxToFt(props.radius, gridSize);
       const text = `${ft} ft`;
       const w = chipFor(text);
@@ -1212,7 +1212,7 @@ function findNearestTemplate(mapX, mapY, templates, threshold, gridSize = 50) {
       // Old version returned `hypot(mapX-p[0], mapY-p[1])` — distance
       // from the cone's apex only. That meant clicking ANY direction
       // 30 px away from the apex registered as a hit, including the
-      // half of the map BEHIND the caster, which is why the DM saw
+      // half of the map BEHIND the caster, which is why the GM saw
       // templates jump when they thought they were clicking empty
       // ground. Proper hit-test:
       //   - inside the 60° wedge AND within range  → 0
@@ -1426,15 +1426,15 @@ export default function MapStage({
   tokenNameFontSize = 45,
   onTokenContextMenu = null,
   // Named per-map spawn points (Phase 2 — split-the-party):
-  // an array of { id, label, grid_col, grid_row }. Glyphs are DM-only.
+  // an array of { id, label, grid_col, grid_row }. Glyphs are GM-only.
   // The 'spawn-named' tool fires `onSpawnNamedAdd(col, row)` on click;
   // the parent prompts for a label and emits the socket event itself.
   spawnPoints = [],
-  // Fired when the DM finalises a polygon (Enter / double-click) with
+  // Fired when the GM finalises a polygon (Enter / double-click) with
   // the spawn-named tool. Parent collects the points + label and
   // persists via add_spawn_point.
   onSpawnNamedAdd = null,
-  // Fired when the DM drags an existing named spawn-point glyph to a
+  // Fired when the GM drags an existing named spawn-point glyph to a
   // new tile. Parent persists via the update_spawn_point socket event.
   onSpawnPointMove = null,
   // Map-terrain rendering. Each item carries its library-joined
@@ -1446,7 +1446,7 @@ export default function MapStage({
   onTerrainMove = null,
   onTerrainResize = null,
   onTerrainContextMenu = null,
-  // When non-null the DM is in "place from library" mode — clicking
+  // When non-null the GM is in "place from library" mode — clicking
   // the canvas drops a piece at the click point.
   pendingTerrain = null,
   onTerrainPlace = null,
@@ -1662,7 +1662,7 @@ export default function MapStage({
     }
   }, [activeTool]);
 
-  // Discard a spawn polygon mid-draw if the DM picks a different tool.
+  // Discard a spawn polygon mid-draw if the GM picks a different tool.
   useEffect(() => {
     if (activeTool !== 'spawn-named') {
       spawnPolyDrawRef.current = null;
@@ -2089,7 +2089,7 @@ export default function MapStage({
         color: l.color || '#fbbf24',
         dir: l.direction ?? 0,
         spread: l.spread_angle ?? 360,
-        // DM-controlled per-light: false → render as a steady glow (sun
+        // GM-controlled per-light: false → render as a steady glow (sun
         // shafts, magical continual flame, daylight spell, etc).
         flicker: l.flicker !== false,
       })),
@@ -2683,7 +2683,7 @@ export default function MapStage({
   useEffect(() => {
     const baseWaterZones = (magicalDarkness || []).filter(dz => dz.zone_type === 'water');
     // Merge in plugin-tagged template water zones so they get the same
-    // slice-distortion ripple + tint as DM-drawn water zones.
+    // slice-distortion ripple + tint as GM-drawn water zones.
     const waterZones = [...baseWaterZones, ...pluginWaterZones];
     const fogZones   = (magicalDarkness || []).filter(dz => dz.zone_type === 'heavy-fog');
     const canvas = waterCanvasRef.current;
@@ -2699,7 +2699,7 @@ export default function MapStage({
     let offscreen = null; // reused each frame to avoid per-frame allocation
 
     // Returns true if any sample point of a zone is inside at least one LOS polygon.
-    // When FoW is disabled (DM view) always returns true.
+    // When FoW is disabled (GM view) always returns true.
     function zoneIsVisible(dz, czX, czY) {
       if (!fogOfWarRef.current) return true;
       const vp = visPolysRef.current;
@@ -3038,7 +3038,7 @@ export default function MapStage({
   useEffect(() => { onSpawnNamedAddRef.current = onSpawnNamedAdd; }, [onSpawnNamedAdd]);
   // Polygon-draw scratch space for the spawn-named tool. Holds a flat
   // [x, y, x, y, ...] array of vertices in map-pixel coords while the
-  // DM is dragging vertices in. Cleared on finalise / Esc.
+  // GM is dragging vertices in. Cleared on finalise / Esc.
   const spawnPolyDrawRef = useRef(null);
   const [spawnPolyPreview, setSpawnPolyPreview] = useState(null);
   const onSpawnPointMoveRef = useRef(onSpawnPointMove);
@@ -3200,7 +3200,7 @@ export default function MapStage({
 
     // Picks the named spawn-point glyph under the given map-space
     // coords. Hits anywhere inside the polygon (or bubble / halo for
-    // legacy circle rows). DM-only path; players are passed an empty
+    // legacy circle rows). GM-only path; players are passed an empty
     // spawnPoints list.
     function hitSpawnPoint(mapX, mapY) {
       const gs = gridSizeRef.current;
@@ -3240,11 +3240,11 @@ export default function MapStage({
     let rightPanning = false;
     let rightPanStart = { cx: 0, cy: 0, sx: 0, sy: 0 };
     let rightPanMoved = false;
-    // DM-only spawn-point drag. Captured on mousedown when the cursor
+    // GM-only spawn-point drag. Captured on mousedown when the cursor
     // is inside a spawn glyph; live preview updates on mousemove; the
     // committed grid coords go to the parent on mouseup.
     let spawnDrag = null; // { id, origCol, origRow }
-    // DM-only terrain drag. Same pattern as spawnDrag — pickup on
+    // GM-only terrain drag. Same pattern as spawnDrag — pickup on
     // mousedown, live preview on mousemove, commit on mouseup.
     let terrainDrag = null; // { id, startCol, startRow, offsetCol, offsetRow }
     let terrainResize = null; // { id, mode, startW, startH, startCol, startRow, startMapX, startMapY }
@@ -3266,7 +3266,7 @@ export default function MapStage({
       const tool = activeToolRef.current;
       const mc   = toMap(e.clientX, e.clientY);
 
-      // DM-only: clicking off the selected terrain piece deselects
+      // GM-only: clicking off the selected terrain piece deselects
       // it. Doesn't consume the click — whatever tool was active
       // still gets to react.
       if (!isPlayer && selectedTerrainIdRef.current != null
@@ -3276,8 +3276,8 @@ export default function MapStage({
         onTerrainSelectRef.current?.(null);
       }
 
-      // DM-only: terrain place mode. When the parent has set
-      // `pendingTerrain` (the DM clicked a library piece), the next
+      // GM-only: terrain place mode. When the parent has set
+      // `pendingTerrain` (the GM clicked a library piece), the next
       // canvas click drops it here. Skip every other tool path.
       if (!isPlayer && pendingTerrainRef.current) {
         const gs = gridSizeRef.current;
@@ -3292,7 +3292,7 @@ export default function MapStage({
         return;
       }
 
-      // DM-only: resize / rotate handle on the selected piece —
+      // GM-only: resize / rotate handle on the selected piece —
       // checked before body-drag so a click on a handle resizes or
       // rotates instead of moving.
       if (!isPlayer && !hitToken(mc.x, mc.y)) {
@@ -3325,7 +3325,7 @@ export default function MapStage({
         }
       }
 
-      // DM-only: drag terrain. Tokens take priority over terrain
+      // GM-only: drag terrain. Tokens take priority over terrain
       // (so a token standing on a terrain piece is still grabbable).
       if (!isPlayer && !hitToken(mc.x, mc.y)) {
         const t = hitTerrain(mc.x, mc.y);
@@ -3348,7 +3348,7 @@ export default function MapStage({
         }
       }
 
-      // DM-only: if the click landed on a named spawn-point glyph
+      // GM-only: if the click landed on a named spawn-point glyph
       // and the move tool is active, start a spawn drag and skip
       // every other tool/dispatch path. Gating on the move tool means
       // the pan tool can pan freely across spawn zones without
@@ -3370,7 +3370,7 @@ export default function MapStage({
       // Plugins can intercept map clicks by registering in
       // pluginRegistries.mapClickHandlers. Returning true consumes the
       // click and skips the host's built-in tool handling. Role gating
-      // lets a plugin restrict its handler to DM or player only.
+      // lets a plugin restrict its handler to GM or player only.
       for (const [, entry] of pluginRegistries.mapClickHandlers.entries()) {
         if (!entry || typeof entry.handler !== 'function') continue;
         if (entry.role === 'dm' && isPlayer) continue;
@@ -3489,7 +3489,7 @@ export default function MapStage({
         return;
       }
 
-      // ── Spell template tools (DM only — players never have these tools) ─
+      // ── Spell template tools (GM only — players never have these tools) ─
       if (TEMPLATE_TOOLS.has(tool)) {
         const type = tool === 'tpl-cone' ? 'cone'
                    : tool === 'tpl-circle' ? 'circle'
@@ -3872,7 +3872,7 @@ export default function MapStage({
         return; // don't fall through to token/map logic
       }
 
-      // ── Template move complete / select on tap (DM only) ────────────────
+      // ── Template move complete / select on tap (GM only) ────────────────
       if (tool === 'tpl-edit' && templateMoveRef.current) {
         const dr = templateMoveRef.current;
         if (moved) {
@@ -3892,7 +3892,7 @@ export default function MapStage({
         return;
       }
 
-      // ── Spell template draw complete (DM only) ──────────────────────────
+      // ── Spell template draw complete (GM only) ──────────────────────────
       if (TEMPLATE_TOOLS.has(tool)) {
         if (templateDrawRef.current) {
           const dr = templateDrawRef.current;
@@ -4060,7 +4060,7 @@ export default function MapStage({
         tokenDragRef.current = null;
         setDragVis(null);
       } else if (!moved) {
-        // DM can click near a door (pan or move mode) to toggle it
+        // GM can click near a door (pan or move mode) to toggle it
         if (onDoorToggleRef.current) {
           const mc = toMap(e.clientX, e.clientY);
           const hit = findNearestDoor(mc.x, mc.y, doorsRef.current, 14 / scaleRef.current);
@@ -4152,7 +4152,7 @@ export default function MapStage({
         return;
       }
       // Token right-click takes priority over door-flip when a token is
-      // under the cursor — DM-only callback; player passes a no-op.
+      // under the cursor — GM-only callback; player passes a no-op.
       if (onTokenContextMenuRef.current) {
         const mc = toMap(e.clientX, e.clientY);
         const tk = hitToken(mc.x, mc.y);
@@ -4161,7 +4161,7 @@ export default function MapStage({
           return;
         }
       }
-      // Terrain right-click — DM-only menu (delete / reveal / edit).
+      // Terrain right-click — GM-only menu (delete / reveal / edit).
       // Falls through to the door-flip path below if no piece is hit.
       if (onTerrainContextMenuRef.current && !isPlayer) {
         const mc = toMap(e.clientX, e.clientY);
@@ -4370,7 +4370,7 @@ export default function MapStage({
         {/* Grid */}
         <Layer listening={false}>{gridLines}</Layer>
 
-        {/* Walls — DM only */}
+        {/* Walls — GM only */}
         {!fogOfWar && (
           <Layer listening={false}>
             {walls.map(w => <WallShape key={w.id} wall={w} />)}
@@ -4378,7 +4378,7 @@ export default function MapStage({
           </Layer>
         )}
 
-        {/* Doors — always rendered (players see doors; DM sees open/closed state).
+        {/* Doors — always rendered (players see doors; GM sees open/closed state).
             Door preview uses the wall preview yellow dashed style. */}
         <Layer listening={false}>
           {doors.map(d => <DoorShape key={d.id} door={d} />)}
@@ -4402,13 +4402,13 @@ export default function MapStage({
           </Layer>
         )}
 
-        {/* Spell templates — DM places and edits them, but the resulting
+        {/* Spell templates — GM places and edits them, but the resulting
             shapes (and any plugin-driven elemental overlays) render for
-            both DM and players so AOE effects are visible at the table. */}
+            both GM and players so AOE effects are visible at the table. */}
         <Layer listening={false}>
           {(spellTemplates || []).map(t => {
-            // DM-side live-translate during drag — players never see the
-            // half-finished position because the move preview is DM state.
+            // GM-side live-translate during drag — players never see the
+            // half-finished position because the move preview is GM state.
             const live = !isPlayer && templateMovePreview && templateMovePreview.id === t.id
               ? { ...t, points: templateMovePreview.points }
               : t;
@@ -4416,7 +4416,7 @@ export default function MapStage({
               <TemplateShapeWithDecorators
                 key={t.id}
                 template={live}
-                // Selection highlight is a DM affordance for editing — players
+                // Selection highlight is a GM affordance for editing — players
                 // get the unselected look regardless.
                 isSelected={!isPlayer && selectedTemplateId === t.id}
                 gridSize={gridSize}
@@ -4428,7 +4428,7 @@ export default function MapStage({
           )}
         </Layer>
 
-        {/* Lights — DM-only visual indicators; players see the lighting effect via FOW, not these circles */}
+        {/* Lights — GM-only visual indicators; players see the lighting effect via FOW, not these circles */}
         {!isPlayer && (
           <Layer listening={false}>
             {lights.map(l => <LightShape key={l.id} light={l} />)}
@@ -4450,7 +4450,7 @@ export default function MapStage({
           </Layer>
         )}
 
-        {/* Magical Darkness / Heavy Fog zones — DM-only visual indicators.
+        {/* Magical Darkness / Heavy Fog zones — GM-only visual indicators.
             Players experience these via the fog canvas re-fill step. */}
         {!isPlayer && (
           <Layer listening={false}>
@@ -4470,7 +4470,7 @@ export default function MapStage({
           </Layer>
         )}
 
-        {/* Spawn point marker — DM-only. When the map's spawn point has
+        {/* Spawn point marker — GM-only. When the map's spawn point has
             a radius, render the bubble that new tokens scatter into. */}
         {!isPlayer && spawnPoint != null && (
           <Layer listening={false}>
@@ -4490,9 +4490,9 @@ export default function MapStage({
           </Layer>
         )}
 
-        {/* Named spawn points — DM-only. Cyan to distinguish from the
+        {/* Named spawn points — GM-only. Cyan to distinguish from the
             map's default green spawn glyph; label rendered above. The
-            DM can drag the centre dot to relocate; on release the
+            GM can drag the centre dot to relocate; on release the
             grid-snapped col/row goes back to the parent. */}
         {!isPlayer && (
           <Layer listening={false}>
@@ -4509,7 +4509,7 @@ export default function MapStage({
               const poly = Array.isArray(sp.shape_points) ? sp.shape_points : null;
               const bubble = r > 0 ? r * gridSize : gridSize * 0.4;
               // Polygon mode: render the closed shape with the centre
-              // dot at the stored anchor (which the DM is dragging).
+              // dot at the stored anchor (which the GM is dragging).
               if (poly && poly.length >= 3) {
                 // Polygon points are stored absolute; we offset them
                 // from the dragged centre by the original anchor so a
@@ -4576,7 +4576,7 @@ export default function MapStage({
                 </Group>
               );
             })}
-            {/* In-progress polygon preview while the DM places vertices
+            {/* In-progress polygon preview while the GM places vertices
                 with the spawn-named tool. */}
             {spawnPolyPreview && spawnPolyPreview.points.length >= 2 && (() => {
               const pts = spawnPolyPreview.points;
@@ -4607,7 +4607,7 @@ export default function MapStage({
 
         {/* Map terrain — placed pieces from the global library. Below
             tokens so a creature standing on a tree renders on top. The
-            DM sees pieces flagged hide_until_revealed (until revealed)
+            GM sees pieces flagged hide_until_revealed (until revealed)
             with reduced opacity + a dashed border; players never see
             them at all (filtered server-side). The Group rotates
             around the piece's visual centre (offset = w/2, h/2). */}
@@ -4679,7 +4679,7 @@ export default function MapStage({
         </Layer>
 
         {/* Submerged tokens — below the water canvas so they get distorted.
-            DM sees them at reduced opacity to signal they are hidden from players. */}
+            GM sees them at reduced opacity to signal they are hidden from players. */}
         <Layer listening={false} ref={submergedTokensLayerRef} perfectDrawEnabled={false}>
           {sortByZBump(tokens).map(t => {
             const isSubmerged = Array.isArray(t.conditions) && t.conditions.includes('submerged');
@@ -4766,7 +4766,7 @@ export default function MapStage({
           })}
         </Layer>
 
-        {/* DM-only markers — rendered above tokens, never visible to players */}
+        {/* GM-only markers — rendered above tokens, never visible to players */}
         {dmMarkers.length > 0 && (
           <Layer>
             {dmMarkers.map((m) => {

@@ -1,8 +1,8 @@
-// Tab Controller — declutter the DM panel.
+// Tab Controller — declutter the GM panel.
 //
 // What it does
 // ────────────
-//   Adds a "Tab Visibility" section inside the Session tab. The DM
+//   Adds a "Tab Visibility" section inside the Session tab. The GM
 //   ticks two kinds of things:
 //
 //     * Built-in / plugin-supplied panel TABS, hidden from the tab
@@ -15,7 +15,7 @@
 //
 // Architecture
 // ────────────
-//   * State: two Sets (tabs / sub-sections) of ids the DM has chosen
+//   * State: two Sets (tabs / sub-sections) of ids the GM has chosen
 //     to hide. Persisted under `hidden_<sessionId>` and
 //     `sections_hidden_<sessionId>` in the plugin KV (per-session,
 //     so two campaigns on one backend get independent layouts).
@@ -27,14 +27,14 @@
 //     plugin code can change the active panel from anywhere.
 //   * UI placement: a `panelTabExtensions` entry targets the
 //     'session' tab. The whole plugin panel is itself collapsible
-//     (chevron header) so the DM can fold it away when not needed.
+//     (chevron header) so the GM can fold it away when not needed.
 //
 // Protected items
 // ───────────────
 //   Map, Token Library, Token List and Session itself are protected
-//   from being hidden so the DM can always reach them. Plugin-supplied
+//   from being hidden so the GM can always reach them. Plugin-supplied
 //   tabs are exposed; sub-sections inside the Session tab are all
-//   hideable except where doing so would lock the DM out (the plugin
+//   hideable except where doing so would lock the GM out (the plugin
 //   manager + Leave Session button live OUTSIDE the collapsible
 //   sections, so they remain reachable regardless).
 

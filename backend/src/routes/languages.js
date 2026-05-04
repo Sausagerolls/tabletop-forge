@@ -1,7 +1,7 @@
 // /api/languages — first-class language registry.
 //
 // Standard SRD entries are seeded at startup (see backend/src/index.js).
-// DMs can add their own; only custom entries (`is_custom = true`) can
+// GMs can add their own; only custom entries (`is_custom = true`) can
 // be deleted via this route, so a stray DELETE never wipes the SRD set.
 //
 // Creatures still store their list of known languages as comma-separated
@@ -58,7 +58,7 @@ router.post('/', async (req, res) => {
     if (!slug) return res.status(400).json({ error: 'name must contain at least one alphanumeric character' });
     const script = String(req.body?.script || '').trim().slice(0, 40);
 
-    // ON CONFLICT returns the existing row so the DM can keep typing
+    // ON CONFLICT returns the existing row so the GM can keep typing
     // even if they re-add a name that's already there.
     const result = await db.query(
       `INSERT INTO languages (slug, name, category, script, is_custom)

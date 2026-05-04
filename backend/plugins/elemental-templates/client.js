@@ -138,9 +138,9 @@ export default {
 
     // Cross-client sync: when ANY client (including ourselves) writes an
     // element via data.write/delete, the host relays a `plugin_event`
-    // through the socket. We subscribe so a player's view picks up DM
+    // through the socket. We subscribe so a player's view picks up GM
     // changes — which is the whole point of being able to "modify things
-    // for both the DM and the players" from a plugin.
+    // for both the GM and the players" from a plugin.
     if (typeof subscribe === 'function') {
       subscribe(({ type, payload }) => {
         if (type !== 'data' || !payload || !payload.key) return;

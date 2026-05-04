@@ -310,7 +310,7 @@ private struct SpellRow: View {
                     Text(desc).font(.footnote).foregroundStyle(.secondary).padding(.top, 2)
                 }
                 // Extra effects — freeform "on a hit" / upcast / etc.
-                // text written by the DM. Render with a small heading
+                // text written by the GM. Render with a small heading
                 // so it doesn't blend into the description above.
                 if let extra = spell.extra_effects, !extra.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {

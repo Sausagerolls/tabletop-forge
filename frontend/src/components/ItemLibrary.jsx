@@ -1,4 +1,4 @@
-// ItemLibrary — DM-facing browser over /api/item-library.
+// ItemLibrary — GM-facing browser over /api/item-library.
 // Mirror of SpellLibrary's "view" surface: search + filters + edition
 // toggle. PDF scan / manual edit aren't here yet because the SRD
 // importer (`node src/import_srd_items.js`) covers v1.
@@ -52,7 +52,7 @@ export default function ItemLibrary({
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4">
-      {/* SRD edition toggle — DM-only control, mirror of SpellLibrary */}
+      {/* SRD edition toggle — GM-only control, mirror of SpellLibrary */}
       {onChangeActiveSrdEdition && (
         <div className="flex items-center gap-2 bg-gray-800/40 border border-gray-700 rounded p-2">
           <span className="text-xs text-gray-400">Active SRD edition (players see):</span>

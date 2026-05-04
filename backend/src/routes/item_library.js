@@ -1,6 +1,6 @@
 // /api/item-library — read API for the SRD-imported equipment +
 // magic items. Mirror of the spell-library route's edition filter:
-// players see only the active SRD edition the DM has selected; DMs
+// players see only the active SRD edition the GM has selected; GMs
 // see every row.
 
 const express = require('express');

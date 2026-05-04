@@ -7,8 +7,8 @@ export default function SpellLibrary({ aiSettings, activeSrdEdition = 'both', on
   const CLASSES = useAllClasses();
   const [spells, setSpells] = useState([]);
   // Scan-PDF panel collapse state. Persisted under the same key shape as
-  // the host's CollapsibleSection in DMView so DMs reading the storage
-  // see a consistent layout. Defaults to OPEN — most DMs reach the
+  // the host's CollapsibleSection in DMView so GMs reading the storage
+  // see a consistent layout. Defaults to OPEN — most GMs reach the
   // panel to import a book, then forget it.
   const [scanOpen, setScanOpen] = useState(() => {
     try {
@@ -48,7 +48,7 @@ export default function SpellLibrary({ aiSettings, activeSrdEdition = 'both', on
   const [bulkRefreshState, setBulkRefreshState] = useState(null); // null | 'loading' | summary
   const [bulkRefreshErr, setBulkRefreshErr] = useState('');
   // Export modal state. Pulls a fresh list from /api with the modal's own
-  // filters so the DM can pick a subset (e.g. just Wizard L3 spells) without
+  // filters so the GM can pick a subset (e.g. just Wizard L3 spells) without
   // changing what the main library list is showing.
   const [exportOpen, setExportOpen] = useState(false);
   const [exportRows, setExportRows] = useState([]);
@@ -61,7 +61,7 @@ export default function SpellLibrary({ aiSettings, activeSrdEdition = 'both', on
   const [importStatus, setImportStatus] = useState('');
   // Open5e SRD ruleset — '2014' (5.1) or '2024' (5.2). Affects both the scan
   // fallback and the per-spell "Refresh from open5e" action. Persisted across
-  // reloads so the DM doesn't have to re-pick after every refresh.
+  // reloads so the GM doesn't have to re-pick after every refresh.
   const [ruleset, setRuleset] = useState(() => {
     try { return localStorage.getItem('spellRuleset') === '2024' ? '2024' : '2014'; }
     catch { return '2014'; }
@@ -87,10 +87,10 @@ export default function SpellLibrary({ aiSettings, activeSrdEdition = 'both', on
     }
   }
 
-  // Visible-spell derivation: applies the DM's active-SRD filter
+  // Visible-spell derivation: applies the GM's active-SRD filter
   // client-side. Anything whose `source` doesn't start with "SRD " is
   // treated as a manually-added spell and stays visible regardless
-  // of the toggle — that's how a DM keeps their homebrew always in
+  // of the toggle — that's how a GM keeps their homebrew always in
   // view even when they're filtering the SRD set.
   function isManualSpell(s) {
     return !s.source || !String(s.source).startsWith('SRD ');
@@ -104,7 +104,7 @@ export default function SpellLibrary({ aiSettings, activeSrdEdition = 'both', on
     }
     return spells;
   })();
-  // Counts driving the toggle's pip badges so the DM can see how
+  // Counts driving the toggle's pip badges so the GM can see how
   // many spells are in each edition before flipping.
   const editionCounts = spells.reduce((acc, s) => {
     if (s.edition === '2014') acc.c2014 += 1;
@@ -206,7 +206,7 @@ export default function SpellLibrary({ aiSettings, activeSrdEdition = 'both', on
       }
       setScanResult(final || { pages: 0, spellsFound: 0, spellsImported: 0, spellsSkippedDuplicates: 0, pageErrors: [] });
       await load();
-      // After the scan, surface any spells whose names look broken so the DM
+      // After the scan, surface any spells whose names look broken so the GM
       // can apply suggested fixes from the canonical 5e list.
       await openReview(true);
     } catch (err) {
@@ -304,14 +304,14 @@ export default function SpellLibrary({ aiSettings, activeSrdEdition = 'both', on
       const rows = Array.isArray(data) ? data : [];
       setExportRows(rows);
       // Pre-select everything that currently matches — most common case is
-      // "export this whole filtered subset", and the DM can untick outliers.
+      // "export this whole filtered subset", and the GM can untick outliers.
       setExportSelected(new Set(rows.map(r => r.id)));
     } catch (e) { console.error(e); }
     finally { setExportLoading(false); }
   }
   function openExport() {
     // Seed the modal's filters with whatever the main list is showing so the
-    // first visible result matches the DM's mental model.
+    // first visible result matches the GM's mental model.
     setExportSearch(search);
     setExportLevel(levelFilter);
     setExportClass(classFilter);
@@ -627,10 +627,10 @@ export default function SpellLibrary({ aiSettings, activeSrdEdition = 'both', on
 
       {/* Browse */}
       <div className="space-y-2">
-        {/* SRD edition filter — applies to BOTH the DM's view and the
+        {/* SRD edition filter — applies to BOTH the GM's view and the
             players' view via the same active_srd_edition session
             field. Manual / homebrew spells (source not starting with
-            "SRD ") stay visible regardless so the DM never loses
+            "SRD ") stay visible regardless so the GM never loses
             sight of their custom entries. */}
         {onChangeActiveSrdEdition && (
           <div className="bg-gray-800 border border-gray-700 rounded-lg p-2">

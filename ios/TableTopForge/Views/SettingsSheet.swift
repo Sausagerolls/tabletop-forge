@@ -1,13 +1,18 @@
 import SwiftUI
+import WebKit
 
-// SettingsSheet — minimal sheet with the connection details (read-only
-// reminder of what's been remembered) and the Logout button. Logout
-// disconnects the socket, clears UserDefaults, and the parent flips
-// store.loggedIn=false which routes back to LoginView.
+// SettingsSheet — connection summary + Logout + an "Edit Character on
+// Web" row that opens the full PlayerView in an in-app browser. The
+// web client renders the entire CreatureForm flow (race / background /
+// class / multiclass / inventory / spells / abilities / etc.), so
+// hosting it in a WKWebView gives us 100% parity with the desktop UI
+// without re-porting CreatureForm to SwiftUI.
 struct SettingsSheet: View {
     let store: SessionStore
     let socket: SocketClient
     @Binding var isPresented: Bool
+
+    @State private var showCharacterEditor = false
 
     var body: some View {
         NavigationStack {
@@ -18,6 +23,24 @@ struct SettingsSheet: View {
                         .font(.system(.body, design: .monospaced))
                     LabeledContent("Player", value: store.playerName)
                     LabeledContent("Status", value: statusLabel)
+                }
+                Section("Character") {
+                    Button {
+                        showCharacterEditor = true
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Edit Character on Web")
+                                Text("Opens the full character sheet editor — same as the desktop site.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "pencil.and.list.clipboard")
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                    .disabled(characterEditorURL == nil)
                 }
                 Section {
                     Button(role: .destructive) {
@@ -36,6 +59,21 @@ struct SettingsSheet: View {
                     Button("Done") { isPresented = false }
                 }
             }
+            .sheet(isPresented: $showCharacterEditor) {
+                if let url = characterEditorURL {
+                    NavigationStack {
+                        WebView(url: url)
+                            .ignoresSafeArea(edges: .bottom)
+                            .navigationTitle("Edit Character")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Done") { showCharacterEditor = false }
+                                }
+                            }
+                    }
+                }
+            }
         }
     }
 
@@ -46,6 +84,44 @@ struct SettingsSheet: View {
         case .reconnecting: return "Reconnecting…"
         case .disconnected: return "Disconnected"
         case .failed:       return "Failed"
+        }
+    }
+
+    // The PlayerView (web) accepts ?code= / ?name= / ?creatureId= so the
+    // user lands straight in their character sheet without re-typing
+    // any credentials. The mobile session already has all three.
+    private var characterEditorURL: URL? {
+        guard let base = store.baseURL else { return nil }
+        var comps = URLComponents(url: base.appendingPathComponent("play"),
+                                  resolvingAgainstBaseURL: false)
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "code", value: store.sessionCode),
+            URLQueryItem(name: "name", value: store.playerName),
+        ]
+        let cid = socket.creature?.id ?? store.lastCreatureId
+        if let cid { items.append(URLQueryItem(name: "creatureId", value: "\(cid)")) }
+        comps?.queryItems = items
+        return comps?.url
+    }
+}
+
+// Thin SwiftUI wrapper around WKWebView. Inline link clicks load
+// in-place; non-HTTP schemes (mailto, tel) open in the system handler.
+private struct WebView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> WKWebView {
+        let cfg = WKWebViewConfiguration()
+        cfg.allowsInlineMediaPlayback = true
+        let view = WKWebView(frame: .zero, configuration: cfg)
+        view.allowsBackForwardNavigationGestures = true
+        view.load(URLRequest(url: url))
+        return view
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        if uiView.url != url {
+            uiView.load(URLRequest(url: url))
         }
     }
 }

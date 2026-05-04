@@ -1,6 +1,6 @@
 // /api/custom-races and /api/custom-backgrounds
 //
-// CRUD + JSON export for DM-authored content. The `data` column is
+// CRUD + JSON export for GM-authored content. The `data` column is
 // the entire race / background object (same shape as the frontend's
 // hardcoded SRD entries) so the editor doesn't need its own column
 // per field — adding a new field is a frontend change only.

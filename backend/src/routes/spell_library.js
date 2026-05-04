@@ -827,7 +827,7 @@ function open5eV2ToSpell(o) {
   let save_ability = '';
   if (o.attack_roll) {
     // v2 doesn't distinguish melee/ranged — default to ranged (the common case
-    // for spells with attack rolls); DM can flip in the editor if needed.
+    // for spells with attack rolls); GM can flip in the editor if needed.
     attack_save = 'ranged';
   } else if (o.saving_throw_ability) {
     attack_save = 'save';
@@ -1068,7 +1068,7 @@ function normaliseSpell(raw) {
 
 // GET /review — list spells whose names look broken (OCR artefacts from the
 // PDF scanner) along with a suggested canonical replacement. Surfaced by the
-// frontend as a post-scan review modal so the DM can apply fixes per-row.
+// frontend as a post-scan review modal so the GM can apply fixes per-row.
 router.get('/review', async (req, res) => {
   try {
     const rows = (await db.query('SELECT id, name, level, school FROM spell_library ORDER BY name')).rows;
@@ -1086,7 +1086,7 @@ router.get('/review', async (req, res) => {
         level: r.level,
         school: r.school,
         // If the suggested name already exists in the library, applying would
-        // collide — UI should surface this so the DM can merge/delete instead.
+        // collide — UI should surface this so the GM can merge/delete instead.
         conflict: existingNames.has(sug.suggested) && sug.suggested !== r.name,
         reasons,
       });
@@ -1197,8 +1197,8 @@ router.get('/', async (req, res) => {
       conds.push(`EXISTS (SELECT 1 FROM jsonb_array_elements_text(allowed_classes) AS c WHERE LOWER(c) = LOWER($${params.length}))`);
     }
     // Edition filter: when a sessionCode + non-dm role is provided we
-    // honour the DM's active SRD setting so the player's spell picker
-    // only shows what the DM has greenlit. The DM's own queries
+    // honour the GM's active SRD setting so the player's spell picker
+    // only shows what the GM has greenlit. The GM's own queries
     // ignore the filter so they can still browse / edit any edition.
     if (sessionCode && role && role !== 'dm') {
       const sessRes = await db.query(
@@ -1381,7 +1381,7 @@ router.delete('/:id', async (req, res) => {
 // untouched (use PATCH /:id/rename first if it needs fixing). Accepts
 // `{ ruleset: '2014' | '2024' }` in the body or as a query param to choose
 // which SRD to pull from. Returns 404 if open5e doesn't have the spell so
-// the UI can tell the DM to fill fields manually. v2 (2024) responses fill
+// the UI can tell the GM to fill fields manually. v2 (2024) responses fill
 // extra fields (damage_entries, attack_save, save_ability, type) that v1
 // can't structure — preserve the row's existing values for those when
 // pulling from v1.

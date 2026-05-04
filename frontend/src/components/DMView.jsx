@@ -662,7 +662,7 @@ function CombatTracker({ tokens, combatTurn, onNext, onEnd }) {
 // removing plugins. Designed to keep working even if a plugin is broken:
 //   - Listing comes from the plugins table, not the live JS modules, so a
 //     plugin that throws on import still appears here and can be disabled.
-//   - The "stuck plugin" hint reminds the DM about the documented escape
+//   - The "stuck plugin" hint reminds the GM about the documented escape
 //     hatch: deleting backend/plugins/<id> on disk forces a clean reset.
 function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
   const [list, setList] = React.useState([]);
@@ -702,7 +702,7 @@ function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
       `Delete plugin "${id}"?\n\n` +
       `• Files removed from disk.\n` +
       `• Library content the plugin imported (creatures, spells) is removed too.\n` +
-      `• DM-side preferences for the plugin (its plugin_data) are KEPT so re-installing restores per-DM state.`
+      `• GM-side preferences for the plugin (its plugin_data) are KEPT so re-installing restores per-GM state.`
     )) return;
     setBusy(id); setActionErr('');
     try {
@@ -723,7 +723,7 @@ function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
   // Server-side cleanup for tracking rows whose plugin is gone. Useful
   // for libraries left behind by plugins removed before this version
   // shipped (DELETE didn't clean tracked content automatically until
-  // v1.4.9). Surfaces the count so the DM can see what got tidied.
+  // v1.4.9). Surfaces the count so the GM can see what got tidied.
   async function cleanupOrphans() {
     if (!confirm(
       'Scan for orphaned plugin content and remove it?\n\n' +
@@ -787,7 +787,7 @@ function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
           Plugins extend the app with new tools, tabs and overlays. <strong>Disable</strong> hides
           a plugin's features and asks it to clean up any library content it imported.
           <strong> Delete</strong> additionally removes the plugin's files; library content
-          (creatures, spells) imported by the plugin is removed too, but per-DM
+          (creatures, spells) imported by the plugin is removed too, but per-GM
           preferences are preserved so re-installing restores them. If a plugin breaks
           the app, exit and delete <code className="text-amber-300">backend/plugins/&lt;id&gt;</code> on
           disk — the manager picks up the change on next start.
@@ -904,7 +904,7 @@ function PluginTemplateEditorExtensions({ template }) {
 
 // Collapsible wrapper used by the Session tab so each subsection can be folded
 // away when the panel gets crowded. State persists per-id in localStorage so a
-// DM's collapsed/expanded preference survives reloads.
+// GM's collapsed/expanded preference survives reloads.
 //
 // Plugins can completely HIDE a section by adding its id to
 // `pluginRegistries.sessionSectionHidden[pluginId]`. The component subscribes
@@ -1033,7 +1033,7 @@ function PluginPanelTabExtensions({ tabId, ctx }) {
   );
 }
 
-// Renders any plugin-registered DM tabs as additional buttons in the panel
+// Renders any plugin-registered GM tabs as additional buttons in the panel
 // tab bar. Tabs are identified by their plugin id; the registry value is a
 // { label, icon, render } object. The render function is called with a
 // `ctx` of session/socket helpers when the tab is the active one.
@@ -1086,7 +1086,7 @@ function CombatPicker({ tokens, selection, onToggle, onConfirm, onCancel, mode =
     ? `Add (${selection.size})`
     : `Start (${selection.size})`;
   // Eligible viewers — non-hidden tokens, sorted by name. The dropdown lets
-  // the DM pick a viewer right here instead of cancelling out to select one
+  // the GM pick a viewer right here instead of cancelling out to select one
   // on the map first.
   const viewerCandidates = tokens
     .filter((t) => !t.is_hidden)
@@ -1235,7 +1235,7 @@ function TokenContextMenu({ menu, tokens, maps, currentMapId, spawnPointsByMapId
   });
 
   // Clamp to viewport so the menu doesn't render off-screen when the
-  // DM right-clicks near the edge of the canvas.
+  // GM right-clicks near the edge of the canvas.
   const left = Math.min(menu.x, window.innerWidth - 240);
   const top  = Math.min(menu.y, window.innerHeight - 240);
 
@@ -1320,7 +1320,7 @@ function TokenContextMenu({ menu, tokens, maps, currentMapId, spawnPointsByMapId
   );
 }
 
-// Label-prompt modal opened after the DM clicks the canvas with the
+// Label-prompt modal opened after the GM clicks the canvas with the
 // 'spawn-named' tool. The parent owns the pending coords and the
 // socket emit; we only collect the label and call back.
 function SpawnPointLabelModal({ onCancel, onSubmit }) {
@@ -1436,7 +1436,7 @@ function TerrainUploadModal({ onCancel, onSaved }) {
     const f = e.target.files?.[0] || null;
     setFile(f);
     if (!f) return;
-    // Auto-suggest the piece name from the filename's stem so the DM
+    // Auto-suggest the piece name from the filename's stem so the GM
     // doesn't have to retype it. Keeps any value they've already typed.
     if (!name) {
       const stem = f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ');
@@ -1506,7 +1506,7 @@ function TerrainUploadModal({ onCancel, onSaved }) {
           </label>
         </div>
         <div className="space-y-1.5 pt-1">
-          <label className="flex items-center gap-2 text-xs text-gray-200"><input type="checkbox" checked={hideUntilRevealed} onChange={(e) => setHideUntilRevealed(e.target.checked)} /> Hidden from players by default (DM reveals later)</label>
+          <label className="flex items-center gap-2 text-xs text-gray-200"><input type="checkbox" checked={hideUntilRevealed} onChange={(e) => setHideUntilRevealed(e.target.checked)} /> Hidden from players by default (GM reveals later)</label>
           <p className="text-[11px] text-gray-500 leading-snug">
             Walls are drawn manually after upload — open the piece's <em>Edit</em> from the library to paint blocking polygons over the artwork.
           </p>
@@ -1613,7 +1613,7 @@ function TerrainEditModal({ piece, onCancel, onSaved }) {
   );
 }
 
-// Wall-painter modal. The DM clicks vertices over the artwork to draw
+// Wall-painter modal. The GM clicks vertices over the artwork to draw
 // blocking polygons; coordinates are normalised to the piece's bbox so
 // the walls scale with width/height when placed.
 function TerrainWallEditor({ piece, initialWalls, onCancel, onSave }) {
@@ -1796,7 +1796,7 @@ export default function DMView() {
     }
   }
   const [panelTabs, setPanelTabs] = useState(() => {
-    // Always parks 'session' at the rightmost position. The DM can
+    // Always parks 'session' at the rightmost position. The GM can
     // still drag it elsewhere; this is just the default — including
     // when a stored order from before a new tab was added pushed
     // session out of the last slot.
@@ -1887,7 +1887,7 @@ export default function DMView() {
   // Plugin runtime — load enabled plugins once we have a session connection.
   // Errors per plugin are isolated by the loader; we just stash a summary
   // for the manager UI. Re-runs only when the session id changes (typically
-  // means the DM logged into a different session).
+  // means the GM logged into a different session).
   const [pluginLoadErrors, setPluginLoadErrors] = useState([]);
   const [pluginsTick, setPluginsTick] = useState(0); // increment to force re-list in manager
   useEffect(() => {
@@ -1913,7 +1913,7 @@ export default function DMView() {
   const [ambientFiles, setAmbientFiles] = useState([]);
   // Server-mirrored snapshot of which ambient is playing on which map
   // across the whole session. Keyed by mapId → { filename, volume }.
-  // Lets the DM see and control loops that are running on maps they
+  // Lets the GM see and control loops that are running on maps they
   // aren't currently viewing.
   const [runningAmbients, setRunningAmbients] = useState({});
   const [ambientVolume, setAmbientVolume] = useState(0.5);
@@ -1925,14 +1925,14 @@ export default function DMView() {
   const [treasureList, setTreasureList] = useState([]);
   const [sendingItemId, setSendingItemId] = useState(null);
   // ── Plugin bridge for the treasure chest ─────────────────────────────
-  // The treasure chest is purely DM-side ephemeral state — there's no
+  // The treasure chest is purely GM-side ephemeral state — there's no
   // backend table for it, so plugins (e.g. Content Exporter) can't reach
   // it through the usual /api/* endpoints. Expose a tiny, namespaced
-  // accessor on `window` so DM-side plugins can read the current items
+  // accessor on `window` so GM-side plugins can read the current items
   // and push new ones onto the list. We refresh the list on every
   // setTreasureList call via an effect — keeps the accessor's snapshot
   // in lockstep with React state without re-rendering anything else.
-  // Available only in the DM browser; on the player view this object is
+  // Available only in the GM browser; on the player view this object is
   // undefined and plugins should noop.
   const treasureListRef = useRef(treasureList);
   useEffect(() => { treasureListRef.current = treasureList; }, [treasureList]);
@@ -2012,17 +2012,17 @@ export default function DMView() {
   // surface a "we picked these for you" banner without re-running the LOS test.
   const [combatPickerAutoIds, setCombatPickerAutoIds] = useState(new Set());
   // Which token's POV we're using for the auto-select. Mutable from inside the
-  // modal so the DM can switch viewers without cancelling out.
+  // modal so the GM can switch viewers without cancelling out.
   const [combatPickerViewerId, setCombatPickerViewerId] = useState(null);
   const [userColors, setUserColors] = useState({});
   const [users, setUsers] = useState([]);
 
-  // ── DM-side bridge for the split-the-party plugin ────────────────
+  // ── GM-side bridge for the split-the-party plugin ────────────────
   // Exposes a snapshot of the data the plugin needs to render its
   // assignment UI: maps in this session, connected users, the live
   // session row, and the configured default spawn map. The plugin
   // subscribes once and gets re-rendered when any of these change.
-  // Like the treasure bridge, this is DM-only — players don't have a
+  // Like the treasure bridge, this is GM-only — players don't have a
   // tabletop-forge.dm namespace. Declared here (after `users`) so the
   // refs/effects don't hit a TDZ on the `users` state.
   const mapsRef = useRef(maps);
@@ -2032,7 +2032,7 @@ export default function DMView() {
   useEffect(() => { mapsRef.current = maps; }, [maps]);
   useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => { sessionRef.current = session; }, [session]);
-  // Tell the server which map the DM is currently viewing so it can
+  // Tell the server which map the GM is currently viewing so it can
   // route per-map ambient back to us when we switch maps mid-session.
   useEffect(() => {
     const id = session?.map_id ?? null;
@@ -2095,18 +2095,18 @@ export default function DMView() {
   const [fowColor, setFowColor] = useState('#000000');
   const [ambientLight, setAmbientLight] = useState('bright');
   // 'both' / '2014' / '2024' — what slice of the SRD spell library the
-  // players are allowed to browse. DM-controlled, syncs via socket.
+  // players are allowed to browse. GM-controlled, syncs via socket.
   const [activeSrdEdition, setActiveSrdEdition] = useState('both');
 
-  // DM markers
+  // GM markers
   const [dmMarkers, setDmMarkers] = useState([]);
   // Named per-map spawn points (Phase 2). Keyed by mapId so the
   // right-click "Send to map → spawn point" submenu can list points
-  // for ANY map in the campaign, not just the one the DM is currently
+  // for ANY map in the campaign, not just the one the GM is currently
   // viewing. Glyphs for the current map are derived from this via
   // `currentMapSpawnPoints` below.
   const [allSpawnPoints, setAllSpawnPoints] = useState({});
-  // DM-set per-player map overrides (native Split the Party). Keyed
+  // GM-set per-player map overrides (native Split the Party). Keyed
   // by player name → mapId. Mirrored from the server on session_joined
   // and kept in sync via player_map_override_changed broadcasts.
   const [playerMapOverrides, setPlayerMapOverrides] = useState({});
@@ -2118,7 +2118,7 @@ export default function DMView() {
   // `terrain` is the placed pieces on the current map (broadcast +
   // hydrated from session_joined). `terrainLibrary` is the global
   // catalogue of reusable pieces (fetched via REST). `pendingTerrain`
-  // holds a library piece while the DM is in click-to-place mode.
+  // holds a library piece while the GM is in click-to-place mode.
   const [terrain, setTerrain] = useState([]);
   const [terrainLibrary, setTerrainLibrary] = useState([]);
   const [pendingTerrain, setPendingTerrain] = useState(null);
@@ -2209,7 +2209,7 @@ export default function DMView() {
   };
 
   // AI settings live server-side in `app_settings` (key `ai_config`)
-  // so they follow the DM across phones, browsers, and incognito tabs.
+  // so they follow the GM across phones, browsers, and incognito tabs.
   // localStorage is kept as a SECOND-line read for two reasons:
   //   (a) instant first paint while the server fetch is in flight, and
   //   (b) plugins read settings via context.getAiSettings(), which
@@ -2343,12 +2343,12 @@ export default function DMView() {
       setReconnectAttempt(0);
       // Re-emit on every connect, including after a reconnect — the
       // server treats join_session as idempotent and re-hydrates state.
-      socket.emit('join_session', { sessionCode: code, role: 'dm', name: 'Dungeon Master', dmPassword: pass });
+      socket.emit('join_session', { sessionCode: code, role: 'dm', name: 'Game Master', dmPassword: pass });
     });
     socket.io.on('reconnect_attempt', (n) => setReconnectAttempt(n));
     socket.io.on('reconnect_failed', () => setReconnectAttempt(-1));
 
-    // DM's own rotate: navigate to the new ?code= so the effect re-runs
+    // GM's own rotate: navigate to the new ?code= so the effect re-runs
     // and the socket reconnects on the new session. Also clear the
     // in-memory session so the spinner shows briefly while the new
     // session_joined payload arrives — better UX than a flash of stale
@@ -2428,7 +2428,7 @@ export default function DMView() {
     });
 
     // A token was relocated to a different map (e.g. via the right-click
-    // "Send to" menu). The DM only loads tokens for the current map at a
+    // "Send to" menu). The GM only loads tokens for the current map at a
     // time, so:
     //   - If the token left this map → drop it from local state.
     //   - If the token arrived on this map → re-load tokens to pull the
@@ -2529,7 +2529,7 @@ export default function DMView() {
         [m]: (prev[m] || []).map(s => s.id === spawnPoint.id ? spawnPoint : s),
       }));
     });
-    // DM-set player map overrides (native Split the Party).
+    // GM-set player map overrides (native Split the Party).
     socket.on('player_map_override_changed', ({ playerName, mapId }) => {
       setPlayerMapOverrides(prev => {
         const next = { ...prev };
@@ -2586,7 +2586,7 @@ export default function DMView() {
       setDmMarkers([]);
       // Don't override the session's grid_size with the map's stored
       // value here — sessions.grid_size is the source of truth (set
-      // via the DM's grid-size slider) and the backend resolves
+      // via the GM's grid-size slider) and the backend resolves
       // terrain wall coords against it. Overriding made walls land
       // off the artwork after a map switch.
     });
@@ -2773,7 +2773,7 @@ export default function DMView() {
   useEffect(() => {
     fetch('/api/sounds').then(r => r.json()).then(setSoundFiles).catch(() => {});
     fetch('/api/sounds/ambient').then(r => r.json()).then(setAmbientFiles).catch(() => {});
-    // Create AudioContext for DM ambient playback; unlock on first gesture
+    // Create AudioContext for GM ambient playback; unlock on first gesture
     audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
     function unlock() {
       if (audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume();
@@ -3160,7 +3160,7 @@ export default function DMView() {
   function handleStartCombat() {
     if (!session) return;
     // Default the viewer to whatever's currently selected on the map. The
-    // dropdown inside the picker lets the DM swap viewers or clear it.
+    // dropdown inside the picker lets the GM swap viewers or clear it.
     setCombatPickerMode('start');
     applyViewerToPicker(selectedToken || null);
     setShowCombatPicker(true);
@@ -3168,7 +3168,7 @@ export default function DMView() {
 
   // One-click "add this token to combat" used by the per-token panel button.
   // Skips the picker entirely — useful when reinforcements walk in one at
-  // a time and the DM just wants them on the initiative track.
+  // a time and the GM just wants them on the initiative track.
   function handleAddSingleTokenToCombat(tokenId) {
     if (!session || !combatActive) return;
     const t = tokens.find((x) => x.id === tokenId);
@@ -3179,7 +3179,7 @@ export default function DMView() {
   }
 
   // Mid-combat reinforcement: opens the picker with no auto-selection so the
-  // DM can hand-pick which (already-on-map) tokens to add. Anything currently
+  // GM can hand-pick which (already-on-map) tokens to add. Anything currently
   // in_combat is filtered out by CombatPicker.
   function handleAddToCombat() {
     if (!session) return;
@@ -3283,14 +3283,14 @@ export default function DMView() {
   // Only show the full-screen connecting spinner BEFORE the first
   // session payload lands. Once `session` is populated, brief socket
   // drops (cell handover, iOS WebKit suspending the WS) get a small
-  // top banner instead of yanking the DM out of their working view.
+  // top banner instead of yanking the GM out of their working view.
   if (!session) {
     return (
       <div className="min-h-screen bg-dnd-dark flex items-center justify-center">
         <div className="flex flex-col items-center text-center">
           <div className="mb-4 text-dnd-gold"><SpinnerIcon /></div>
           <div className="text-gray-400">
-            {reconnectAttempt > 0 ? `Reconnecting (attempt ${reconnectAttempt})…` : 'Connecting as Dungeon Master...'}
+            {reconnectAttempt > 0 ? `Reconnecting (attempt ${reconnectAttempt})…` : 'Connecting as Game Master...'}
           </div>
         </div>
       </div>
@@ -3312,7 +3312,7 @@ export default function DMView() {
     <div className="flex h-full w-full overflow-hidden bg-gray-900">
       {/* Reconnect banner — visible while the socket is dropped, hidden
           the moment it reconnects. Stays out of the way of the live
-          UI so the DM can keep working with the last-known state
+          UI so the GM can keep working with the last-known state
           rather than being kicked back to the login spinner. */}
       {!connected && (
         <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-900/90 border border-yellow-600/60 text-yellow-100 px-3 py-1.5 rounded-lg text-xs font-medium shadow-lg flex items-center gap-2 pointer-events-none">
@@ -3951,7 +3951,7 @@ export default function DMView() {
         </div>
       </div>
 
-      {/* DM Panel */}
+      {/* GM Panel */}
       {panelOpen && (
         <>
         {/* Resize handle */}
@@ -4303,7 +4303,7 @@ export default function DMView() {
                       >Reset</button>
                     </div>
                     <div className="text-xs text-gray-400">
-                      Use the wall tools (W, R, P, O) in the left toolbar to draw LOS barriers. The DM always sees the full map.
+                      Use the wall tools (W, R, P, O) in the left toolbar to draw LOS barriers. The GM always sees the full map.
                     </div>
                     {walls.length > 0 && (
                       <button
@@ -4579,7 +4579,7 @@ export default function DMView() {
               </div>
             )}
 
-            {/* ── SPELLS TAB (DM library) ── */}
+            {/* ── SPELLS TAB (GM library) ── */}
             {panelTab === 'spells' && (
               <SpellLibrary
                 aiSettings={aiSettings}
@@ -4591,7 +4591,7 @@ export default function DMView() {
               />
             )}
 
-            {/* ── ITEMS TAB (DM library) ── */}
+            {/* ── ITEMS TAB (GM library) ── */}
             {panelTab === 'items' && (
               <ItemLibrary
                 activeSrdEdition={activeSrdEdition}
@@ -4602,7 +4602,7 @@ export default function DMView() {
               />
             )}
 
-            {/* ── ORIGINS TAB (custom DM-authored races + backgrounds) ── */}
+            {/* ── ORIGINS TAB (custom GM-authored races + backgrounds) ── */}
             {panelTab === 'origins' && (
               <CustomOriginsPanel />
             )}
@@ -4827,7 +4827,7 @@ export default function DMView() {
                       <button
                         onClick={() => {
                           // Default to "all selected" — the modal lets the
-                          // DM untick ones they don't want to export.
+                          // GM untick ones they don't want to export.
                           setTreasureExportSelected(new Set(treasureList.map(it => it.id)));
                           setShowTreasureExport(true);
                         }}
@@ -5378,7 +5378,7 @@ export default function DMView() {
                       <div className="bg-gray-800 rounded-xl p-3 space-y-2">
                         <p className="text-[11px] text-gray-400 leading-snug">
                           Pin a player to a specific map regardless of which map you're viewing or
-                          where their token is. "Follow DM" reverts them to the session's current
+                          where their token is. "Follow GM" reverts them to the session's current
                           map.
                         </p>
                         {playersOnly.map((u) => {
@@ -5404,10 +5404,10 @@ export default function DMView() {
                                   });
                                 }}
                               >
-                                <option value="">— Follow DM —</option>
+                                <option value="">— Follow GM —</option>
                                 {maps.map((m) => (
                                   <option key={m.id} value={String(m.id)}>
-                                    {(m.name || `Map #${m.id}`) + (m.id === session.map_id ? '  (DM viewing)' : '')}
+                                    {(m.name || `Map #${m.id}`) + (m.id === session.map_id ? '  (GM viewing)' : '')}
                                   </option>
                                 ))}
                               </select>
@@ -5779,7 +5779,7 @@ export default function DMView() {
                     Wrapped so the panel folds away with the same chevron
                     treatment as the other Session-tab sections. The
                     section id matches what tab-controller looks for if a
-                    DM later wants to hide the panel entirely. */}
+                    GM later wants to hide the panel entirely. */}
                 <CollapsibleSection id="plugins" title="Plugins">
                   <PluginManager
                     loadErrors={pluginLoadErrors}
@@ -6316,7 +6316,7 @@ export default function DMView() {
         </div>
       )}
 
-      {/* DM Marker Edit Popup */}
+      {/* GM Marker Edit Popup */}
       {editingMarker && (() => {
         const mtype = DM_MARKER_TYPES.find(t => t.type === editingMarker.marker_type);
         return (
@@ -6363,7 +6363,7 @@ export default function DMView() {
                       rows={4}
                       value={editingMarker.note || ''}
                       onChange={(e) => setEditingMarker(prev => ({ ...prev, note: e.target.value }))}
-                      placeholder="DM notes for this marker…"
+                      placeholder="GM notes for this marker…"
                     />
                   </div>
                 </>

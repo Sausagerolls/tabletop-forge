@@ -16,6 +16,7 @@
 //     modal with the parent pre-set)
 
 import React, { useEffect, useState } from 'react';
+import LanguagePicker from './LanguagePicker.jsx';
 
 const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
 const CREATURE_TYPES = [
@@ -224,8 +225,20 @@ export default function CustomRaceEditor({ initial, onClose, onSaved, parentRace
             placeholder="fire, poison, …" />
 
           <SectionHeading>Languages</SectionHeading>
-          <CsvIn value={data.addsLanguages} onChange={(arr) => patch({ addsLanguages: arr })}
-            placeholder="Common, Dwarvish, …" />
+          {/* The shared LanguagePicker reads/writes a comma-separated
+              string and writes new entries to /api/languages so they
+              propagate to every other surface that consults the
+              registry (NPC chat, other characters' pickers, AI
+              language normaliser). The race editor's stored shape is
+              an array, so we adapt at the boundary. */}
+          <LanguagePicker
+            value={Array.isArray(data.addsLanguages) ? data.addsLanguages.join(', ') : (data.addsLanguages || '')}
+            onChange={(csv) => patch({
+              addsLanguages: String(csv || '')
+                .split(/\s*,\s*/)
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })} />
 
           <SectionHeading>Innate Spells</SectionHeading>
           <Field label="Casting Ability">

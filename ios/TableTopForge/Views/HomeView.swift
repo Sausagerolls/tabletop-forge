@@ -21,6 +21,12 @@ struct HomeView: View {
     // this view stays oblivious to language logic.
     @State private var popupNpcSay: NpcSay? = nil
 
+    // Surface the result of the .task creature fetch so silent
+    // decoding/network failures don't leave StatsView blank with no
+    // explanation. When non-nil, we render a small banner at the top
+    // of HomeView with the message + URL we tried.
+    @State private var fetchDiag: String? = nil
+
     // Creature_id sourced from the matched token, falling back to the
     // value we stored on previous logins. Drives the .task below that
     // populates socket.creature for every tab — without it the light
@@ -61,23 +67,40 @@ struct HomeView: View {
                 .tabItem { Label("Dice & Settings", systemImage: "dice.fill") }
         }
         .task(id: refreshKey) {
-            guard
-                let cid = creatureId,
-                let base = store.baseURL
-            else { return }
+            guard let cid = creatureId else {
+                fetchDiag = "No creature id resolved (token=\(socket.playerTokenId.map(String.init) ?? "—"), tokens=\(socket.tokens.count), lastId=\(store.lastCreatureId.map(String.init) ?? "—"))"
+                return
+            }
+            guard let base = store.baseURL else {
+                fetchDiag = "Base URL is empty — check the Server field on login."
+                return
+            }
+            fetchDiag = nil
             do {
                 socket.creature = try await APIClient(baseURL: base).fetchCreature(id: cid)
                 store.lastCreatureId = cid
                 store.persist()
             } catch {
-                // Decoding errors / network blips are non-fatal here —
-                // StatsView surfaces a saveError if it can't load.
+                fetchDiag = "GET \(base.absoluteString)/api/creatures/\(cid) failed: \(error)"
             }
         }
         // Connection health banner — shown above the tab content when
         // the socket isn't healthy. Tap-to-dismiss isn't useful here
         // because the banner is purely informational.
-        .overlay(alignment: .top) { connectionBanner }
+        .overlay(alignment: .top) {
+            VStack(spacing: 4) {
+                connectionBanner
+                if let diag = fetchDiag, socket.creature == nil {
+                    Text(diag)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.red.opacity(0.85))
+                        .padding(.horizontal, 4)
+                }
+            }
+        }
         // Whisper popup driver — fires the moment socket.whispers
         // grows. Only watching the count keeps this cheap; we always
         // show the latest entry regardless of which one triggered it.

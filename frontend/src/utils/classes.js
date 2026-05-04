@@ -33,6 +33,52 @@ export const BASE_SUBCLASSES = {
   Wizard:     ['Abjurer', 'Diviner', 'Evoker', 'Illusionist'],
 };
 
+// SRD-canonical hit-die per class. Custom classes (added via the
+// custom-classes plugin) fall back to d8, the SRD majority.
+export const HIT_DIE_BY_CLASS = {
+  Barbarian: 'd12',
+  Fighter: 'd10', Paladin: 'd10', Ranger: 'd10',
+  Artificer: 'd8', Bard: 'd8', Cleric: 'd8', Druid: 'd8',
+  Monk: 'd8',     Rogue: 'd8',  Warlock: 'd8',
+  Sorcerer: 'd6', Wizard: 'd6',
+};
+
+export function hitDieFor(className) {
+  if (!className) return null;
+  return HIT_DIE_BY_CLASS[className] || 'd8';
+}
+
+// Compute the merged hit-dice pool for a player character. Same-die
+// classes stack into one row (Cleric 3 + Druid 2 → 5d8), different
+// dice get separate rows ordered d12 → d4. Returns null for non-PCs
+// since their hit dice are stat-block manual entries, not derived.
+const HIT_DIE_ORDER = ['d12', 'd10', 'd8', 'd6', 'd4'];
+export function computeHitDicePool(creature) {
+  if (!creature || !creature.is_player_character) return null;
+  const merged = new Map();
+  if (creature.char_class) {
+    const die = hitDieFor(creature.char_class);
+    const lvl = Math.max(1, Number(creature.char_level) || 1);
+    if (die) merged.set(die, (merged.get(die) || 0) + lvl);
+  }
+  const mcs = Array.isArray(creature.multiclasses) ? creature.multiclasses : [];
+  for (const mc of mcs) {
+    if (!mc?.class) continue;
+    const die = hitDieFor(mc.class);
+    const lvl = Math.max(1, Number(mc.level) || 1);
+    if (die) merged.set(die, (merged.get(die) || 0) + lvl);
+  }
+  return Array.from(merged.entries())
+    .sort((a, b) => HIT_DIE_ORDER.indexOf(a[0]) - HIT_DIE_ORDER.indexOf(b[0]))
+    .map(([type, qty]) => ({ type, qty }));
+}
+
+// "3d10 + 2d6" style summary string for stat-block readouts.
+export function formatHitDicePool(pool) {
+  if (!Array.isArray(pool) || pool.length === 0) return '';
+  return pool.map(p => `${p.qty}${p.type}`).join(' + ');
+}
+
 // Returns base + every plugin's contribution, de-duplicated case-insensitively
 // while preserving the first occurrence's casing. Base classes always come
 // first in their canonical order; plugin additions are appended in the order

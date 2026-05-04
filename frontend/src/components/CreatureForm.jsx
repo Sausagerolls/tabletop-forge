@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import LanguagePicker from './LanguagePicker.jsx';
-import { useAllClasses, useAllSubclasses, useClassChoices } from '../utils/classes.js';
+import { useAllClasses, useAllSubclasses, useClassChoices, computeHitDicePool, formatHitDicePool, hitDieFor } from '../utils/classes.js';
 import { formatDamageWithMod, formatDamageType } from '../utils/damage.js';
 import {
   RACE_EDITIONS,
@@ -195,6 +195,7 @@ const defaultForm = {
   hit_dice_qty: 0,
   hit_dice_type: '',
   hit_dice_used: 0,
+  hit_dice_used_by_type: {},
   char_class: '',
   char_subclass: '',
   background: '',
@@ -3278,50 +3279,48 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
               </div>
             </div>
 
-            {isPlayerCharacter && (
-              <div className="bg-gray-800 rounded-lg p-3 space-y-2">
-                <h4 className="text-sm font-semibold text-dnd-gold">Hit Dice Pool</h4>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <label className="flex items-center gap-1 text-sm text-gray-200">
-                    <span className="text-xs text-gray-400">Qty:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={30}
-                      className="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white text-center"
-                      value={form.hit_dice_qty || 0}
-                      onChange={(e) => setField('hit_dice_qty', Math.max(0, parseInt(e.target.value) || 0))}
-                    />
-                  </label>
-                  <label className="flex items-center gap-1 text-sm text-gray-200">
-                    <span className="text-xs text-gray-400">Type:</span>
-                    <select
-                      className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white"
-                      value={form.hit_dice_type || ''}
-                      onChange={(e) => setField('hit_dice_type', e.target.value)}
-                    >
-                      <option value="">—</option>
-                      {['d4','d6','d8','d10','d12','d20'].map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  </label>
-                </div>
-                {(form.hit_dice_qty || 0) > 0 && (
-                  <div className="flex flex-wrap items-center gap-1 text-xs text-gray-400">
-                    <span>Used:</span>
-                    {Array.from({ length: form.hit_dice_qty }).map((_, i) => (
-                      <input
-                        key={`hd${i}`}
-                        type="checkbox"
-                        checked={i < (form.hit_dice_used || 0)}
-                        onChange={(e) => setField('hit_dice_used', e.target.checked ? (form.hit_dice_used || 0) + 1 : (form.hit_dice_used || 0) - 1)}
-                        className="accent-dnd-red"
-                      />
-                    ))}
-                    <span className="ml-1">{(form.hit_dice_qty - (form.hit_dice_used || 0))}/{form.hit_dice_qty} available</span>
+            {isPlayerCharacter && (() => {
+              const pool = computeHitDicePool(form) || [];
+              const usedMap = (form.hit_dice_used_by_type && typeof form.hit_dice_used_by_type === 'object')
+                ? form.hit_dice_used_by_type : {};
+              return (
+                <div className="bg-gray-800 rounded-lg p-3 space-y-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-dnd-gold">Hit Dice Pool</h4>
+                    <span className="text-xs text-gray-500">Auto from class + multiclasses</span>
                   </div>
-                )}
-              </div>
-            )}
+                  {pool.length === 0 ? (
+                    <p className="text-xs text-gray-500">Pick a class to populate the pool.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {pool.map(({ type, qty }) => {
+                        const used = Math.max(0, Math.min(qty, Number(usedMap[type]) || 0));
+                        return (
+                          <div key={type} className="flex flex-wrap items-center gap-2 text-xs text-gray-300">
+                            <span className="font-mono w-14">{qty}{type}</span>
+                            <span>Used:</span>
+                            {Array.from({ length: qty }).map((_, i) => (
+                              <input
+                                key={`${type}-${i}`}
+                                type="checkbox"
+                                checked={i < used}
+                                onChange={(e) => {
+                                  const next = e.target.checked ? Math.min(qty, used + 1) : Math.max(0, used - 1);
+                                  setField('hit_dice_used_by_type', { ...usedMap, [type]: next });
+                                }}
+                                className="accent-dnd-red"
+                              />
+                            ))}
+                            <span className="ml-1 text-gray-400">{qty - used}/{qty} available</span>
+                          </div>
+                        );
+                      })}
+                      <p className="text-[11px] text-gray-500 pt-1">{formatHitDicePool(pool)}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <div>
               <h4 className="text-sm font-semibold text-dnd-gold mb-2">Speed (feet)</h4>

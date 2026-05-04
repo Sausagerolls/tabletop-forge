@@ -54,9 +54,10 @@ const CREATURE_FIELDS = [
   'race_state',
   'background', 'background_state', 'tool_proficiencies', 'weapon_proficiencies',
   'class_state', 'multiclasses', 'resource_state', 'inspiration_die',
+  'hit_dice_used_by_type',
 ];
 
-const JSONB_FIELDS = ['special_abilities', 'actions', 'bonus_actions', 'reactions', 'legendary_actions', 'senses', 'inventory', 'spells', 'spell_slots', 'loot', 'movement_actions', 'class_features', 'feats', 'skill_expertise', 'race_state', 'background_state', 'class_state', 'multiclasses', 'resource_state'];
+const JSONB_FIELDS = ['special_abilities', 'actions', 'bonus_actions', 'reactions', 'legendary_actions', 'senses', 'inventory', 'spells', 'spell_slots', 'loot', 'movement_actions', 'class_features', 'feats', 'skill_expertise', 'race_state', 'background_state', 'class_state', 'multiclasses', 'resource_state', 'hit_dice_used_by_type'];
 
 function parseBody(body) {
   const data = {};

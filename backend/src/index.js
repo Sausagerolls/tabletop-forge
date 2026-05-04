@@ -2794,6 +2794,11 @@ server.listen(PORT, async () => {
     //   [{ id, class, subclass, level, class_state }]
     // The character's total level = char_level + sum(level).
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS multiclasses JSONB DEFAULT '[]'`);
+    // Per-die-type spent count for the multi-pool hit dice system.
+    // Shape: { "d10": 2, "d6": 1 }. Populated only on PCs — non-PC
+    // monsters keep using the scalar hit_dice_used since their dice
+    // come from the stat block, not class levels.
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS hit_dice_used_by_type JSONB DEFAULT '{}'`);
 
     // ── Custom GM-authored races + backgrounds ──
     // Free-form JSONB so the editor can grow without migrations. The

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SpellBox } from './StatBlock.jsx';
+import { computeHitDicePool } from '../utils/classes.js';
 
 function WhisperPopup({ whisper, onClose }) {
   useEffect(() => {
@@ -65,7 +66,8 @@ function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHp
   const [local, setLocal] = useState(() => ({
     current_hp: playerToken?.current_hp ?? creature.hit_points ?? 0,
     temp_hp: Number(playerToken?.temp_hp) || 0,
-    hit_dice_used: creature.hit_dice_used ?? 0,
+    hit_dice_used_by_type: (creature.hit_dice_used_by_type && typeof creature.hit_dice_used_by_type === 'object')
+      ? { ...creature.hit_dice_used_by_type } : {},
     death_save_successes: creature.death_save_successes ?? 0,
     death_save_failures: creature.death_save_failures ?? 0,
     heroic_inspiration: !!creature.heroic_inspiration,
@@ -77,7 +79,8 @@ function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHp
     setLocal({
       current_hp: playerToken?.current_hp ?? creature.hit_points ?? 0,
       temp_hp: Number(playerToken?.temp_hp) || 0,
-      hit_dice_used: creature.hit_dice_used ?? 0,
+      hit_dice_used_by_type: (creature.hit_dice_used_by_type && typeof creature.hit_dice_used_by_type === 'object')
+        ? { ...creature.hit_dice_used_by_type } : {},
       death_save_successes: creature.death_save_successes ?? 0,
       death_save_failures: creature.death_save_failures ?? 0,
       heroic_inspiration: !!creature.heroic_inspiration,
@@ -98,8 +101,7 @@ function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHp
     }
   }
 
-  const hitDiceQty  = Number(creature.hit_dice_qty)  || 0;
-  const hitDiceType = creature.hit_dice_type || '';
+  const hitDicePool = computeHitDicePool(creature) || [];
   const maxHP = creature.hit_points ?? 0;
 
   let spells = [];
@@ -237,22 +239,33 @@ function QuickReferencePanel({ creature, playerToken, onClose, onSave, onTokenHp
             </div>
           </div>
         </div>
-        {/* Hit dice */}
-        {hitDiceQty > 0 && hitDiceType && (
+        {/* Hit dice — one row per die type. Toggle a checkbox to spend
+            (or restore) that specific type. */}
+        {hitDicePool.length > 0 && (
           <div className="space-y-1">
-            <div className="text-xs text-gray-400">Hit Dice ({hitDiceType})</div>
-            <div className="flex flex-wrap gap-1 items-center text-xs">
-              {Array.from({ length: hitDiceQty }).map((_, i) => (
-                <input
-                  key={`hd${i}`}
-                  type="checkbox"
-                  checked={i < local.hit_dice_used}
-                  onChange={(e) => patch('hit_dice_used', e.target.checked ? local.hit_dice_used + 1 : local.hit_dice_used - 1)}
-                  className="accent-dnd-red"
-                />
-              ))}
-              <span className="ml-1 text-gray-400">{hitDiceQty - local.hit_dice_used}/{hitDiceQty}</span>
-            </div>
+            <div className="text-xs text-gray-400">Hit Dice</div>
+            {hitDicePool.map(({ type, qty }) => {
+              const used = Math.max(0, Math.min(qty, Number(local.hit_dice_used_by_type?.[type]) || 0));
+              return (
+                <div key={type} className="flex flex-wrap gap-1 items-center text-xs">
+                  <span className="font-mono text-gray-300 w-12">{qty}{type}</span>
+                  {Array.from({ length: qty }).map((_, i) => (
+                    <input
+                      key={`${type}-${i}`}
+                      type="checkbox"
+                      checked={i < used}
+                      onChange={(e) => {
+                        const next = e.target.checked ? Math.min(qty, used + 1) : Math.max(0, used - 1);
+                        const map = { ...(local.hit_dice_used_by_type || {}), [type]: next };
+                        patch('hit_dice_used_by_type', map);
+                      }}
+                      className="accent-dnd-red"
+                    />
+                  ))}
+                  <span className="ml-1 text-gray-400">{qty - used}/{qty}</span>
+                </div>
+              );
+            })}
           </div>
         )}
         {/* Spell slots */}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { formatDamageWithMod, formatDamageType } from '../utils/damage.js';
+import { computeHitDicePool } from '../utils/classes.js';
 
 function mod(score) {
   const m = Math.floor((score - 10) / 2);
@@ -446,6 +447,11 @@ export default function StatBlock({ creature, onRoll = null }) {
   const hitDiceQty  = Number(creature.hit_dice_qty)  || 0;
   const hitDiceType = creature.hit_dice_type || '';
   const hitDiceUsed = Number(creature.hit_dice_used) || 0;
+  // PCs: derive the multi-pool from class + multiclasses. Non-PCs
+  // keep falling back to the scalar hit_dice_qty/type fields above.
+  const hitDicePool = computeHitDicePool(creature) || [];
+  const hitDiceUsedMap = (creature.hit_dice_used_by_type && typeof creature.hit_dice_used_by_type === 'object')
+    ? creature.hit_dice_used_by_type : {};
 
   return (
     <div className="stat-block rounded-lg p-4 text-sm space-y-2">
@@ -521,8 +527,14 @@ export default function StatBlock({ creature, onRoll = null }) {
         {creature.is_player_character && armorProfs.length > 0 && (
           <p><strong>Armor/Shield Proficiencies</strong> {armorProfs.join(', ')}</p>
         )}
-        {creature.is_player_character && hitDiceQty > 0 && hitDiceType && (
-          <p><strong>Hit Dice</strong> {Math.max(0, hitDiceQty - hitDiceUsed)}/{hitDiceQty} {hitDiceType}</p>
+        {creature.is_player_character && hitDicePool.length > 0 && (
+          <p>
+            <strong>Hit Dice</strong>{' '}
+            {hitDicePool.map(({ type, qty }) => {
+              const used = Math.max(0, Math.min(qty, Number(hitDiceUsedMap[type]) || 0));
+              return `${qty - used}/${qty} ${type}`;
+            }).join(' · ')}
+          </p>
         )}
         {creature.is_player_character && creature.heroic_inspiration && (
           <p><strong>Heroic Inspiration</strong> ✓</p>

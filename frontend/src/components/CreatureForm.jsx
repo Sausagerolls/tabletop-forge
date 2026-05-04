@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import LanguagePicker from './LanguagePicker.jsx';
 import { useAllClasses, useAllSubclasses, useClassChoices, computeHitDicePool, formatHitDicePool, hitDieFor } from '../utils/classes.js';
+import { getClassBuild, formatPrimaryAbility } from '../data/class_build.js';
 import { formatDamageWithMod, formatDamageType } from '../utils/damage.js';
 import {
   RACE_EDITIONS,
@@ -752,7 +753,9 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     if (autoChoices.length === 0) return;
     const prevState = form.class_state || {};
     const alreadyApplied = prevState.class_id === form.char_class
-      && (prevState.added?.spells || []).length > 0;
+      && ((prevState.added?.spells || []).length > 0
+          || (prevState.added?.saves  || []).length > 0
+          || (prevState.added?.armor  || []).length > 0);
     if (alreadyApplied) return;
     // Pass the FULL choice list (with picks) so any pickable choices
     // already saved survive the re-apply.
@@ -1463,6 +1466,16 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     skill_religion: 'intelligence',    skill_sleight_of_hand: 'dexterity',
     skill_stealth: 'dexterity',        skill_survival: 'wisdom',
   };
+  // Ability code → save bonus column / ability score column.
+  // Used by the class-kit save grant in applyAdds.
+  const SAVE_FIELD = {
+    STR: 'save_str', DEX: 'save_dex', CON: 'save_con',
+    INT: 'save_int', WIS: 'save_wis', CHA: 'save_cha',
+  };
+  const STAT_FIELD = {
+    STR: 'strength', DEX: 'dexterity', CON: 'constitution',
+    INT: 'intelligence', WIS: 'wisdom', CHA: 'charisma',
+  };
 
   function applyBackground(bg, asi /* { kind, plus2, plus1 } */, equipKey /* 'a' | 'b' */) {
     if (!bg) return;
@@ -1703,7 +1716,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       }
 
       // Apply new choices.
-      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0 };
+      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0, saves: [] };
       const expert = { ...(next.skill_expertise || {}) };
 
       // Helper: apply an `adds` block onto `next`, recording into `added`.
@@ -1727,6 +1740,17 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             }
           }
           next.weapon_proficiencies = have.join(', ');
+        }
+        // Save proficiencies — class kit grants two saves to first-class
+        // characters. Compute the bonus = ability mod + PB. Track in
+        // added.saves so removeClassChoices can null them on revert.
+        for (const ab of (adds.saves || [])) {
+          const field = SAVE_FIELD[ab];
+          const stat  = STAT_FIELD[ab];
+          if (!field || !stat) continue;
+          const m = Math.floor(((next[stat] ?? 10) - 10) / 2);
+          next[field] = m + profBonus;
+          added.saves.push(ab);
         }
         for (const sObj of (adds.skills || [])) {
           const sk = typeof sObj === 'string' ? sObj : sObj.skill;
@@ -1846,6 +1870,15 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           if (a === 'shields') next.prof_shields      = false;
         }
       }
+      // Saves granted by the previous class kit — null them on
+      // revert so changing class doesn't leave the old class's save
+      // proficiencies attached.
+      if (Array.isArray(prevAdded.saves) && prevAdded.saves.length) {
+        for (const ab of prevAdded.saves) {
+          const field = SAVE_FIELD[ab];
+          if (field) next[field] = null;
+        }
+      }
       if (Array.isArray(prevAdded.spells) && prevAdded.spells.length) {
         const drop = new Set(prevAdded.spells.map((s) => String(s).toLowerCase()));
         next.spells = (f.spells || []).filter((s) =>
@@ -1853,6 +1886,44 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         );
       }
       next.class_state = {};
+      return next;
+    });
+  }
+
+  // Starting equipment grant — one-shot kit application from the
+  // class's SRD options. Option A drops a bundle of items + gp into
+  // the sheet; Option B is a flat gp budget. Idempotent: tracks
+  // class_state.starting_equipment so the UI disables both buttons
+  // once one has been claimed. We DON'T auto-revert on class swap —
+  // items may have been consumed or sold by then; cleaner to leave
+  // the inventory alone and let the user prune manually.
+  function applyStartingEquipment(option /* 'A' | 'B' */) {
+    setForm((f) => {
+      const cls = f.char_class;
+      const build = getClassBuild(cls);
+      if (!build) return f;
+      const sa = build.startingEquipment || {};
+      const claim = option === 'A' ? sa.optionA : sa.optionB;
+      if (!claim) return f;
+      const next = { ...f };
+      // Stack identical item names into a single inventory row
+      // with qty = count, so 8 Javelins shows as one entry.
+      const items = claim.items || [];
+      if (items.length) {
+        const counts = new Map();
+        for (const name of items) counts.set(name, (counts.get(name) || 0) + 1);
+        const inv = [...(next.inventory || [])];
+        for (const [name, qty] of counts) {
+          inv.push({ name, qty, item_type: 'item', __source: `cls:primary:${cls}:starting-eq:${option}` });
+        }
+        next.inventory = inv;
+      }
+      const gp = Number(claim.gp) || 0;
+      if (gp) next.currency_gp = (Number(next.currency_gp) || 0) + gp;
+      next.class_state = {
+        ...(next.class_state || {}),
+        starting_equipment: option,
+      };
       return next;
     });
   }
@@ -1943,6 +2014,15 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           if (a === 'shields') next.prof_shields      = false;
         }
       }
+      // Saves granted by the previous class kit — null them on
+      // revert so changing class doesn't leave the old class's save
+      // proficiencies attached.
+      if (Array.isArray(prevAdded.saves) && prevAdded.saves.length) {
+        for (const ab of prevAdded.saves) {
+          const field = SAVE_FIELD[ab];
+          if (field) next[field] = null;
+        }
+      }
       if (Array.isArray(prevAdded.spells) && prevAdded.spells.length) {
         const drop = new Set(prevAdded.spells.map((s) => String(s).toLowerCase()));
         next.spells = (f.spells || []).filter((s) =>
@@ -1950,7 +2030,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         );
       }
 
-      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0 };
+      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0, saves: [] };
       const expert = { ...(next.skill_expertise || {}) };
 
       function applyAdds(adds, tag) {
@@ -1972,6 +2052,18 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             }
           }
           next.weapon_proficiencies = have.join(', ');
+        }
+        // Save proficiencies — multiclass kits don't grant saves
+        // (per the PHB), so this loop is a no-op for the slot path.
+        // Kept here so applyAdds stays symmetric with the primary
+        // copy and so a future plugin/auto-grant can add saves.
+        for (const ab of (adds.saves || [])) {
+          const field = SAVE_FIELD[ab];
+          const stat  = STAT_FIELD[ab];
+          if (!field || !stat) continue;
+          const m = Math.floor(((next[stat] ?? 10) - 10) / 2);
+          next[field] = m + profBonus;
+          added.saves.push(ab);
         }
         for (const sObj of (adds.skills || [])) {
           const sk = typeof sObj === 'string' ? sObj : sObj.skill;
@@ -2088,6 +2180,15 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           if (a === 'medium')  next.prof_medium_armor = false;
           if (a === 'heavy')   next.prof_heavy_armor  = false;
           if (a === 'shields') next.prof_shields      = false;
+        }
+      }
+      // Saves granted by the previous class kit — null them on
+      // revert so changing class doesn't leave the old class's save
+      // proficiencies attached.
+      if (Array.isArray(prevAdded.saves) && prevAdded.saves.length) {
+        for (const ab of prevAdded.saves) {
+          const field = SAVE_FIELD[ab];
+          if (field) next[field] = null;
         }
       }
       if (Array.isArray(prevAdded.spells) && prevAdded.spells.length) {
@@ -2721,6 +2822,65 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                     </select>
                   </div>
                 </div>
+                {/* Core class traits readout — primary ability, hit
+                    die, save profs, weapon + armor training,
+                    starting equipment options. Pure SRD reference,
+                    no inputs. Auto-applied profs/saves/equipment
+                    flow through the existing class-choices apply
+                    machinery (Phase 2). */}
+                {form.char_class && (() => {
+                  const build = getClassBuild(form.char_class);
+                  if (!build) return null;
+                  const sa = build.startingEquipment || {};
+                  const optA = sa.optionA?.items?.length
+                    ? `${sa.optionA.items.join(', ')}${sa.optionA.gp ? ` + ${sa.optionA.gp} gp` : ''}`
+                    : null;
+                  const optB = sa.optionB?.gp ? `${sa.optionB.gp} gp` : null;
+                  const claimed = form.class_state?.starting_equipment || null;
+                  return (
+                    <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 text-xs space-y-1">
+                      <h4 className="text-sm font-semibold text-dnd-gold mb-1">{form.char_class} — Core Traits</h4>
+                      <div><span className="text-gray-400">Primary Ability: </span>{formatPrimaryAbility(build.primary)}</div>
+                      <div><span className="text-gray-400">Hit Die: </span>{build.hitDie}</div>
+                      <div><span className="text-gray-400">Saving Throws: </span>{(build.saves || []).join(', ')}</div>
+                      <div><span className="text-gray-400">Armor Training: </span>{(build.armor || []).join(', ') || '—'}</div>
+                      <div><span className="text-gray-400">Weapons: </span>{(build.weapons || []).join(', ')}</div>
+                      {(optA || optB) && (
+                        <div className="pt-1 mt-1 border-t border-gray-700 space-y-1">
+                          <div className="text-gray-400">Starting Equipment</div>
+                          {optA && (
+                            <div className="ml-2 flex items-start gap-2">
+                              <button type="button"
+                                disabled={!!claimed}
+                                onClick={() => applyStartingEquipment('A')}
+                                className="text-[10px] bg-dnd-gold/30 hover:bg-dnd-gold/50 disabled:bg-gray-700 disabled:text-gray-500 border border-dnd-gold/50 px-2 py-0.5 rounded shrink-0">
+                                {claimed === 'A' ? 'Taken' : 'Take A'}
+                              </button>
+                              <span><span className="text-gray-500">A:</span> {optA}</span>
+                            </div>
+                          )}
+                          {optB && (
+                            <div className="ml-2 flex items-start gap-2">
+                              <button type="button"
+                                disabled={!!claimed}
+                                onClick={() => applyStartingEquipment('B')}
+                                className="text-[10px] bg-dnd-gold/30 hover:bg-dnd-gold/50 disabled:bg-gray-700 disabled:text-gray-500 border border-dnd-gold/50 px-2 py-0.5 rounded shrink-0">
+                                {claimed === 'B' ? 'Taken' : 'Take B'}
+                              </button>
+                              <span><span className="text-gray-500">B:</span> {optB}</span>
+                            </div>
+                          )}
+                          {claimed && (
+                            <p className="text-[10px] text-gray-500 ml-2">
+                              Equipment + gold added to inventory. Sell or drop unused items manually.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelClass}>Level</label>
@@ -2885,6 +3045,8 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                               disabledClasses={taken}
                               proficientSkills={profSkills}
                               weaponProficiencies={weaponProfs}
+                              creature={form}
+                              primaryClassName={form.char_class}
                               onChange={(patch) => updateMulticlass(mc.id, patch)}
                               onRemove={() => removeMulticlassRow(mc.id)}
                               onApplyChoices={(choices, picks) => applyMulticlassChoices(mc.id, choices, picks)}

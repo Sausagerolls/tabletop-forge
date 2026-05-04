@@ -147,7 +147,7 @@ export function useAllSubclasses(charClass) {
 // list across the static SRD-2024 catalog and any plugin
 // contributions for the same class. Choice ids are de-duped per
 // class (first registration wins, base SRD takes priority).
-export function getClassChoicesMerged(charClass) {
+export function getClassChoicesMerged(charClass, opts = {}) {
   if (!charClass) return [];
   const out = [];
   const seen = new Set();
@@ -158,6 +158,21 @@ export function getClassChoicesMerged(charClass) {
     seen.add(k);
     out.push(c);
   };
+  // Synthetic class-kit auto-choice — armor / weapon / save profs
+  // from the SRD class build. For first-class, the full kit; for
+  // multiclass, the per-class grants subset (e.g. Wizard MC grants
+  // nothing). The picker filters synthetic entries from its UI; the
+  // applier folds them into the regular adds-pipeline.
+  const kitAdds = buildClassKitAdds(charClass, !!opts.multiclass);
+  if (kitAdds) {
+    push({
+      id: 'class-kit',
+      label: 'Class Kit',
+      kind: 'auto',
+      synthetic: true,
+      adds: kitAdds,
+    });
+  }
   for (const c of (CLASS_CHOICES_2024[charClass] || [])) push(c);
   for (const map of registries.customClassChoices.values()) {
     if (!map || typeof map !== 'object') continue;
@@ -166,8 +181,30 @@ export function getClassChoicesMerged(charClass) {
   return out;
 }
 
-export function useClassChoices(charClass) {
+// Pulls the kit data straight off CLASS_BUILD without dragging in
+// the whole module at the top of this file (avoids circulars with
+// the data layer). Returns the existing `adds` shape (lowercase
+// armor keys, weapons CSV-friendly) plus the new `saves` entry.
+import { CLASS_BUILD } from '../data/class_build.js';
+function buildClassKitAdds(charClass, isMulticlass) {
+  const build = CLASS_BUILD[charClass];
+  if (!build) return null;
+  const src = isMulticlass ? (build.multiclass?.grants || {}) : build;
+  const armor   = (src.armor   || []).map(a => a.toLowerCase());
+  const weapons =  src.weapons || [];
+  const saves   = isMulticlass ? [] : (build.saves || []);
+  if (armor.length === 0 && weapons.length === 0 && saves.length === 0) {
+    return null;
+  }
+  const adds = {};
+  if (armor.length)   adds.armor   = armor;
+  if (weapons.length) adds.weapons = weapons;
+  if (saves.length)   adds.saves   = saves;
+  return adds;
+}
+
+export function useClassChoices(charClass, opts) {
   const [, setV] = useState(0);
   useEffect(() => subscribeRegistry(() => setV(n => n + 1)), []);
-  return getClassChoicesMerged(charClass);
+  return getClassChoicesMerged(charClass, opts);
 }

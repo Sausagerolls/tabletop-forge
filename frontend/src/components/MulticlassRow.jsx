@@ -7,6 +7,7 @@
 
 import React, { useEffect } from 'react';
 import { useAllSubclasses, useClassChoices } from '../utils/classes.js';
+import { meetsMulticlassPrereq, multiclassPrereqExplanation } from '../data/class_build.js';
 import ClassChoicesPicker from './ClassChoicesPicker.jsx';
 
 export default function MulticlassRow({
@@ -15,6 +16,8 @@ export default function MulticlassRow({
   disabledClasses,          // Set<string> of class names taken by primary + other rows (not this row)
   proficientSkills,
   weaponProficiencies,
+  creature,                 // current sheet — used for the multiclass ability prereq check
+  primaryClassName,         // primary char_class — its prereq must also pass to multiclass anywhere
   onChange,                 // (patch) => void  — partial update for this row
   onRemove,                 // () => void      — drop the row + revert its tags
   onApplyChoices,           // (choices, picks) => void
@@ -22,7 +25,7 @@ export default function MulticlassRow({
 }) {
   const taken = disabledClasses instanceof Set ? disabledClasses : new Set();
   const subs = useAllSubclasses(mc.class);
-  const choices = useClassChoices(mc.class);
+  const choices = useClassChoices(mc.class, { multiclass: true });
 
   // Auto-grant choices for this row apply the moment the class is set.
   useEffect(() => {
@@ -30,7 +33,9 @@ export default function MulticlassRow({
     const auto = (choices || []).filter((c) => c.kind === 'auto');
     if (auto.length === 0) return;
     const already = mc.class_state?.class_id === mc.class
-      && (mc.class_state.added?.spells || []).length > 0;
+      && ((mc.class_state.added?.spells || []).length > 0
+          || (mc.class_state.added?.armor  || []).length > 0
+          || (mc.class_state.added?.weapons || []).length > 0);
     if (already) return;
     onApplyChoices(choices, mc.class_state?.choices || {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -56,13 +61,41 @@ export default function MulticlassRow({
               onChange({ class: e.target.value, subclass: '' });
             }}>
             <option value="">— Select —</option>
-            {allClasses.map((c) => (
-              <option key={c} value={c}
-                disabled={taken.has(c.toLowerCase()) && c !== mc.class}>
-                {c}{taken.has(c.toLowerCase()) && c !== mc.class ? ' (taken)' : ''}
-              </option>
-            ))}
+            {allClasses.map((c) => {
+              const isTaken = taken.has(c.toLowerCase()) && c !== mc.class;
+              // Prereq check: the candidate must hit its own prereq AND
+              // the primary class's prereq (per PHB 2024). Skips when
+              // selecting the row's current value to keep it editable
+              // even if scores have since dipped.
+              const failsNew = !!creature
+                && c !== mc.class
+                && !meetsMulticlassPrereq(creature, c);
+              const failsPrimary = !!creature && primaryClassName
+                && c !== mc.class
+                && !meetsMulticlassPrereq(creature, primaryClassName);
+              const failsPrereq = failsNew || failsPrimary;
+              const reason = isTaken
+                ? ' (taken)'
+                : failsNew  ? ' (prereq)'
+                : failsPrimary ? ' (primary prereq)'
+                : '';
+              return (
+                <option key={c} value={c}
+                  disabled={isTaken || failsPrereq}>
+                  {c}{reason}
+                </option>
+              );
+            })}
           </select>
+          {/* Inline reason when the chosen class fails its prereq —
+              caused by a stat being lowered after the row was added,
+              or by the player editing scores while the row was
+              already on the sheet. */}
+          {mc.class && creature && !meetsMulticlassPrereq(creature, mc.class) && (
+            <p className="text-[11px] text-red-300 mt-1">
+              {multiclassPrereqExplanation(creature, mc.class)}
+            </p>
+          )}
         </div>
         <div>
           <label className="text-[11px] text-gray-400 block mb-0.5">Subclass</label>

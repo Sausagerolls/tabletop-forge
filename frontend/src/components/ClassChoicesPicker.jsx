@@ -59,7 +59,7 @@ export default function ClassChoicesPicker({
   // until they level up. Auto-kind choices are hidden — they apply via
   // a useEffect in CreatureForm and have no picker UI.
   const dueChoices = choices.filter((c) =>
-    c.kind !== 'auto' && (c.at_level || 1) <= (charLevel || 1)
+    c.kind !== 'auto' && !c.synthetic && (c.at_level || 1) <= (charLevel || 1)
   );
   if (dueChoices.length === 0) return null;
 

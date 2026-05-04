@@ -193,7 +193,11 @@ if ! $SSH_CMD "${DEPLOY_USER}@${DEPLOY_HOST}" "test -d '${DEPLOY_PATH}'"; then
   exit 1
 fi
 
-RSYNC_FLAGS="-avz --delete-after"
+# Exclude mobile/ — APKs are uploaded out-of-band (separate scp from
+# the android build pipeline) and live only on the server. Without
+# this exclude, --delete-after wipes them on every deploy because the
+# directory doesn't exist locally.
+RSYNC_FLAGS="-avz --delete-after --exclude=mobile/"
 [ "$DRY_RUN" = "1" ] && RSYNC_FLAGS="$RSYNC_FLAGS --dry-run"
 
 rsync $RSYNC_FLAGS -e "$SSH_CMD" website/ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TableTop Forge — Self-Hosted D&D 5e Virtual Tabletop</title>
-<meta name="description" content="A self-hosted virtual tabletop for D&D 5e. Per-player instanced fog of war, AI-powered token generation, combat tracking, and full DM control. Runs on Docker, stays on your own machine.">
+<meta name="description" content="A self-hosted virtual tabletop for D&D 5e. Per-player instanced fog of war, AI-powered token generation, combat tracking, and full GM control. Runs on Docker, stays on your own machine.">
 <meta name="theme-color" content="#060404">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet">
 <script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="giantmushroomstudio" data-description="Support me on Buy me a coffee!" data-message="" data-color="#BD5FFF" data-position="Right" data-x_margin="18" data-y_margin="18"></script>
@@ -644,7 +644,7 @@ footer {
       </div>
       <h1 class="hero-title">Your table.<br><span class="grad">Your rules.</span><br>Your server.</h1>
       <p class="hero-desc">
-        A fully self-hosted virtual tabletop for D&amp;D 5e. Per-player instanced fog of war, AI-generated tokens, real-time combat tracking, and complete DM control — all running on your own machine with Docker.
+        A fully self-hosted virtual tabletop for D&amp;D 5e. Per-player instanced fog of war, AI-generated tokens, real-time combat tracking, and complete GM control — all running on your own machine with Docker.
       </p>
       <div class="hero-btns">
         <a href="#download" class="btn-primary">
@@ -696,7 +696,7 @@ footer {
     <div class="features-header">
       <div class="eyebrow">What It Does</div>
       <h2 class="sec-title">Built for the Table</h2>
-      <p class="sec-body">Everything a Dungeon Master needs to run a compelling session — and everything players need to feel genuinely present in the world.</p>
+      <p class="sec-body">Everything a Game Master needs to run a compelling session — and everything players need to feel genuinely present in the world.</p>
     </div>
 
     <div class="features-grid">
@@ -768,7 +768,7 @@ footer {
       <div class="feat-card highlight">
         <div class="feat-icon">🧩</div>
         <div class="feat-title">Plugin System</div>
-        <div class="feat-desc">Drop in a folder, restart, and extend the app. Plugins can add animated map effects, custom DM tabs, click-to-place tools, and shared state that auto-syncs between the DM and players. A documented contract keeps plugins from touching login or doing permanent damage — disabling or deleting one always restores the base app cleanly.
+        <div class="feat-desc">Drop in a folder, restart, and extend the app. Plugins can add animated map effects, custom GM tabs, click-to-place tools, and shared state that auto-syncs between the GM and players. A documented contract keeps plugins from touching login or doing permanent damage — disabling or deleting one always restores the base app cleanly.
           <br><br>
           <a href="https://github.com/Sausagerolls/tabletop-forge/blob/main/PLUGINS.md" target="_blank" rel="noopener" style="color: var(--gold-l); text-decoration: underline; text-decoration-color: rgba(232,184,96,0.4);">Read the plugin authoring guide →</a>
         </div>
@@ -982,7 +982,7 @@ cd TabletopForge</div>
             </div>
             <div class="ai-step">
               <div class="ai-step-num">4</div>
-              <div class="ai-step-text">In TableTop Forge's DM view, open the Session tab and paste <code>http://localhost:1234</code> as the AI Base URL. Enter any model name shown in LM Studio.</div>
+              <div class="ai-step-text">In TableTop Forge's GM view, open the Session tab and paste <code>http://localhost:1234</code> as the AI Base URL. Enter any model name shown in LM Studio.</div>
             </div>
           </div>
         </div>
@@ -1034,7 +1034,7 @@ cd TabletopForge</div>
             </div>
             <div class="ai-step">
               <div class="ai-step-num">4</div>
-              <div class="ai-step-text">In TableTop Forge's DM view → <strong>Session</strong> tab → <strong>AI Integration</strong>, scroll down and tick <strong>Generate token images</strong>. Enter the SwarmUI URL (e.g. <code>http://host.docker.internal:7801</code> when SwarmUI is on the same machine as Docker, or the LAN IP when remote), then click <strong>Test Image Connection</strong>. The Model field can be left blank to auto-pick the first installed model.</div>
+              <div class="ai-step-text">In TableTop Forge's GM view → <strong>Session</strong> tab → <strong>AI Integration</strong>, scroll down and tick <strong>Generate token images</strong>. Enter the SwarmUI URL (e.g. <code>http://host.docker.internal:7801</code> when SwarmUI is on the same machine as Docker, or the LAN IP when remote), then click <strong>Test Image Connection</strong>. The Model field can be left blank to auto-pick the first installed model.</div>
             </div>
           </div>
         </div>
@@ -1044,7 +1044,7 @@ cd TabletopForge</div>
       <div class="ai-connect">
         <div class="ai-connect-title">Connecting to TableTop Forge</div>
         <div class="ai-connect-body">
-          Once your local AI is running, open the DM view and go to the <strong>Session</strong> tab in the right panel. Enter your AI server's base URL and model name. The <strong>✨ AI</strong> button in the Creature Library will then be active — click it to generate a complete stat block from a text description.
+          Once your local AI is running, open the GM view and go to the <strong>Session</strong> tab in the right panel. Enter your AI server's base URL and model name. The <strong>✨ AI</strong> button in the Creature Library will then be active — click it to generate a complete stat block from a text description.
           <div class="ai-rec">
             <strong>Recommended model:</strong> Gemma 4 (Google) performs excellently at structured D&amp;D stat block generation. A 4B parameter variant runs well on most modern laptops with 8GB+ VRAM, and the 12B variant produces more creative and detailed results on higher-end hardware. You can also use any OpenAI-compatible endpoint — including the OpenAI API itself — by entering your API base URL and key.
           </div>
@@ -1081,7 +1081,7 @@ cd TabletopForge</div>
       <div class="plugins-header">
         <div class="eyebrow">Plugin Store</div>
         <h2 class="sec-title">Plugins for Your Forge</h2>
-        <p class="sec-body">Plugins extend the app with new map effects, custom DM tabs, click-to-place tools, and shared state that auto-syncs between the DM and players. Install via the <strong>Plugins</strong> section of the <strong>Session</strong> tab in the DM view.</p>
+        <p class="sec-body">Plugins extend the app with new map effects, custom GM tabs, click-to-place tools, and shared state that auto-syncs between the GM and players. Install via the <strong>Plugins</strong> section of the <strong>Session</strong> tab in the GM view.</p>
       </div>
 
       <div class="plugins-grid">
@@ -1096,7 +1096,7 @@ cd TabletopForge</div>
             </div>
           </div>
           <div class="plugin-card-body">
-            Animated elemental overlays on spell templates — fire, water, ice, lightning, void, and acid/poison. Tag a template in the edit popup; the effect renders for both DM and players. Cone-aware: every effect originates at the cone's apex and stays constrained inside the wedge shape. <strong>v1.1.4</strong> — line templates are now 1ft-wide rotated rectangles and elemental effects emit from the line's start point along its length: fire travels down the line, lightning bolts fork start-to-tip with zig-zag wobble.
+            Animated elemental overlays on spell templates — fire, water, ice, lightning, void, and acid/poison. Tag a template in the edit popup; the effect renders for both GM and players. Cone-aware: every effect originates at the cone's apex and stays constrained inside the wedge shape. <strong>v1.1.4</strong> — line templates are now 1ft-wide rotated rectangles and elemental effects emit from the line's start point along its length: fire travels down the line, lightning bolts fork start-to-tip with zig-zag wobble.
           </div>
           <div class="plugin-card-foot">
             <a href="plugins/elemental-templates-v1.1.4.zip" class="plugin-download-btn" download>
@@ -1117,14 +1117,14 @@ cd TabletopForge</div>
             </div>
           </div>
           <div class="plugin-card-body">
-            DM-controlled animated weather across the whole map — rain, snow, fog — with intensity and wind-angle controls. Visible to all players in the session. Per-session, so two simultaneous campaigns get their own weather. Particles scale with map size so it looks right on small skirmish maps and giant outdoor battlemaps alike.
+            GM-controlled animated weather across the whole map — rain, snow, fog — with intensity and wind-angle controls. Visible to all players in the session. Per-session, so two simultaneous campaigns get their own weather. Particles scale with map size so it looks right on small skirmish maps and giant outdoor battlemaps alike.
           </div>
           <div class="plugin-card-foot">
             <a href="plugins/weather-effects-v1.0.0.zip" class="plugin-download-btn" download>
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Download .zip
             </a>
-            <span class="plugin-meta-text">Upload via DM view → Session tab → Plugins.</span>
+            <span class="plugin-meta-text">Upload via GM view → Session tab → Plugins.</span>
           </div>
         </div>
 
@@ -1138,14 +1138,14 @@ cd TabletopForge</div>
             </div>
           </div>
           <div class="plugin-card-body">
-            DM enters a value, picks Damage / Healing / Temp HP, then clicks a token on the map. A colour-coded number floats up above the token and fades while the token's HP is updated using 5e rules — temp HP absorbs damage first, healing caps at max HP, temp HP doesn't stack. Visible to every player in the session.
+            GM enters a value, picks Damage / Healing / Temp HP, then clicks a token on the map. A colour-coded number floats up above the token and fades while the token's HP is updated using 5e rules — temp HP absorbs damage first, healing caps at max HP, temp HP doesn't stack. Visible to every player in the session.
           </div>
           <div class="plugin-card-foot">
             <a href="plugins/damage-popups-v1.1.0.zip" class="plugin-download-btn" download>
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Download .zip
             </a>
-            <span class="plugin-meta-text">Upload via DM view → Session tab → Plugins.</span>
+            <span class="plugin-meta-text">Upload via GM view → Session tab → Plugins.</span>
           </div>
         </div>
 
@@ -1159,14 +1159,14 @@ cd TabletopForge</div>
             </div>
           </div>
           <div class="plugin-card-body">
-            Adds custom character class names (Blood Hunter, Mystic…), custom subclasses scoped per class, and class-level "build choices" (Cleric Divine Order, Fighter Weapon Mastery, Rogue Expertise, etc.). Choices appear on the character form once the class is picked — single-option, multi-skill, and multi-weapon kinds are supported, and picks rewrite skills, weapon/armor proficiencies, spells and traits with clean revert on class swap. Lists sync live across DM and players.
+            Adds custom character class names (Blood Hunter, Mystic…), custom subclasses scoped per class, and class-level "build choices" (Cleric Divine Order, Fighter Weapon Mastery, Rogue Expertise, etc.). Choices appear on the character form once the class is picked — single-option, multi-skill, and multi-weapon kinds are supported, and picks rewrite skills, weapon/armor proficiencies, spells and traits with clean revert on class swap. Lists sync live across GM and players.
           </div>
           <div class="plugin-card-foot">
             <a href="plugins/custom-classes-v1.2.0.zip" class="plugin-download-btn" download>
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Download .zip
             </a>
-            <span class="plugin-meta-text">Upload via DM view → Session tab → Plugins.</span>
+            <span class="plugin-meta-text">Upload via GM view → Session tab → Plugins.</span>
           </div>
         </div>
 
@@ -1180,14 +1180,14 @@ cd TabletopForge</div>
             </div>
           </div>
           <div class="plugin-card-body">
-            Hide rarely-used DM panel tabs AND individual collapsible sub-sections inside the Session tab (Session Info, Connected Players, Quick Dice Reference, AI Integration, Plugins). Hidden tabs stay reachable via the Open button; hidden sub-sections re-appear only by re-ticking them. Map, Token Library, Token List and Session itself are protected from being hidden. v1.2.0 adds the Terrain, Items and Origins tabs to the controllable list.
+            Hide rarely-used GM panel tabs AND individual collapsible sub-sections inside the Session tab (Session Info, Connected Players, Quick Dice Reference, AI Integration, Plugins). Hidden tabs stay reachable via the Open button; hidden sub-sections re-appear only by re-ticking them. Map, Token Library, Token List and Session itself are protected from being hidden. v1.2.0 adds the Terrain, Items and Origins tabs to the controllable list.
           </div>
           <div class="plugin-card-foot">
             <a href="plugins/tab-controller-v1.2.0.zip" class="plugin-download-btn" download>
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Download .zip
             </a>
-            <span class="plugin-meta-text">Upload via DM view → Session tab → Plugins.</span>
+            <span class="plugin-meta-text">Upload via GM view → Session tab → Plugins.</span>
           </div>
         </div>
 
@@ -1222,14 +1222,14 @@ cd TabletopForge</div>
             </div>
           </div>
           <div class="plugin-card-body">
-            DM-tunable accent colour, panel and window backgrounds, and UI font family. Pick from gradient backdrops (Forest, Ember, Nebula, Cinnabar dusk, Deep ocean) or a flat colour, and choose between Cinzel, Crimson Pro, or system fonts. Changes apply live to the DM and every player in the session, and revert cleanly when the plugin is disabled.
+            GM-tunable accent colour, panel and window backgrounds, and UI font family. Pick from gradient backdrops (Forest, Ember, Nebula, Cinnabar dusk, Deep ocean) or a flat colour, and choose between Cinzel, Crimson Pro, or system fonts. Changes apply live to the GM and every player in the session, and revert cleanly when the plugin is disabled.
           </div>
           <div class="plugin-card-foot">
             <a href="plugins/theme-customizer-v1.0.0.zip" class="plugin-download-btn" download>
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Download .zip
             </a>
-            <span class="plugin-meta-text">Upload via DM view → Session tab → Plugins.</span>
+            <span class="plugin-meta-text">Upload via GM view → Session tab → Plugins.</span>
           </div>
         </div>
 
@@ -1243,14 +1243,14 @@ cd TabletopForge</div>
             </div>
           </div>
           <div class="plugin-card-body">
-            One-way speech from the DM to players, with per-language scrambling. Pick a language and an NPC name, type a line, hit Speak; players whose character knows that language see plain text in a popup, others see deterministic gibberish keyed to the language. Pulls the language list from the host's first-class language registry — every language you add to a creature shows up here automatically. Players who don't understand are told only that the speaker uses a tongue they don't know, so they can't deduce the language from the modal.
+            One-way speech from the GM to players, with per-language scrambling. Pick a language and an NPC name, type a line, hit Speak; players whose character knows that language see plain text in a popup, others see deterministic gibberish keyed to the language. Pulls the language list from the host's first-class language registry — every language you add to a creature shows up here automatically. Players who don't understand are told only that the speaker uses a tongue they don't know, so they can't deduce the language from the modal.
           </div>
           <div class="plugin-card-foot">
             <a href="plugins/npc-chat-v1.1.0.zip" class="plugin-download-btn" download>
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Download .zip
             </a>
-            <span class="plugin-meta-text">Upload via DM view → Session tab → Plugins.</span>
+            <span class="plugin-meta-text">Upload via GM view → Session tab → Plugins.</span>
           </div>
         </div>
 
@@ -1306,14 +1306,14 @@ cd TabletopForge</div>
             </div>
           </div>
           <div class="plugin-card-body">
-            Pick creatures, spells, AND treasure-chest items, fill in a manifest, and download a self-contained installable plugin .zip. The exported pack imports its library content (creatures + spells) ONCE on first enable — guarded by a once-flag so reloading the page doesn't accumulate duplicates — and removes it on disable using tracked IDs. Bundled treasure items are pushed into the destination DM's treasure chest once on first install. The zip is built in-browser with an inline STORE-method ZIP encoder, so no external dependencies and the whole file is reproducible.
+            Pick creatures, spells, AND treasure-chest items, fill in a manifest, and download a self-contained installable plugin .zip. The exported pack imports its library content (creatures + spells) ONCE on first enable — guarded by a once-flag so reloading the page doesn't accumulate duplicates — and removes it on disable using tracked IDs. Bundled treasure items are pushed into the destination GM's treasure chest once on first install. The zip is built in-browser with an inline STORE-method ZIP encoder, so no external dependencies and the whole file is reproducible.
           </div>
           <div class="plugin-card-foot">
             <a href="plugins/content-exporter-v1.3.0.zip" class="plugin-download-btn" download>
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Download .zip
             </a>
-            <span class="plugin-meta-text">Upload via DM view → Session tab → Plugins.</span>
+            <span class="plugin-meta-text">Upload via GM view → Session tab → Plugins.</span>
           </div>
         </div>
 
@@ -1348,14 +1348,14 @@ cd TabletopForge</div>
             </div>
           </div>
           <div class="plugin-card-body">
-            DM-only — preview exactly what a specific player sees in a fullscreen overlay: fog of war, hidden tokens, light radius, magical darkness, plugin overlays. Lists every player token on the current map; click "Preview" to mount the player view inside the DM tab. Switch back via the bar button or Escape. Observe-only mode binds to the existing token (via <code>?previewTokenId=</code>) so it never spawns a duplicate on the map.
+            GM-only — preview exactly what a specific player sees in a fullscreen overlay: fog of war, hidden tokens, light radius, magical darkness, plugin overlays. Lists every player token on the current map; click "Preview" to mount the player view inside the GM tab. Switch back via the bar button or Escape. Observe-only mode binds to the existing token (via <code>?previewTokenId=</code>) so it never spawns a duplicate on the map.
           </div>
           <div class="plugin-card-foot">
             <a href="plugins/player-preview-v1.1.2.zip" class="plugin-download-btn" download>
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Download .zip
             </a>
-            <span class="plugin-meta-text">Upload via DM view → Session tab → Plugins.</span>
+            <span class="plugin-meta-text">Upload via GM view → Session tab → Plugins.</span>
           </div>
         </div>
 
@@ -1376,7 +1376,7 @@ cd TabletopForge</div>
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6.5M3 5.5l2.5 2.5L8 5.5M2 9.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Download .zip
             </a>
-            <span class="plugin-meta-text">Upload via DM view → Session tab → Plugins.</span>
+            <span class="plugin-meta-text">Upload via GM view → Session tab → Plugins.</span>
           </div>
         </div>
         ═════ -->
@@ -1404,9 +1404,9 @@ cd TabletopForge</div>
       <div class="dl-icon">⚒️</div>
       <h2 class="dl-title">Download TableTop Forge</h2>
       <p class="dl-desc">Free, self-hosted, and open for your table. No accounts, no subscriptions, no data leaving your network.</p>
-      <a href="releases/dnd-vtt-v1.9.0.zip" class="dl-btn" download>
+      <a href="releases/dnd-vtt-v1.9.1.zip" class="dl-btn" download>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v9M4 8l4 5 4-5M2 13h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Download v1.9.0 (.zip)
+        Download v1.9.1 (.zip)
       </a>
       <div style="margin-top:14px;">
         <a href="https://github.com/Sausagerolls/tabletop-forge" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;color:var(--text-m);text-decoration:none;font-size:14px;border-bottom:1px dashed var(--text-m);padding-bottom:1px;">

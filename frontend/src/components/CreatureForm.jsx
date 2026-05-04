@@ -743,26 +743,40 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   // Class-level "build choices" — Cleric Divine Order, Fighter Weapon
   // Mastery, Rogue Expertise, etc. Merges static SRD-2024 with any
   // plugin-supplied choices for this class.
-  const classChoices = useClassChoices(form.char_class);
+  const classChoices = useClassChoices(form.char_class, { subclass: form.char_subclass });
 
-  // Auto-grant choices (Ranger's Hunter's Mark) apply the moment the
-  // class is set — no picker. Re-runs whenever the class changes;
-  // applyClassChoices is idempotent so repeated runs are safe.
+  // Auto-grant choices (Ranger's Hunter's Mark, custom-class
+  // class-kit, custom-class per-level features) apply the moment
+  // the class is set OR the character levels up. Filters by
+  // at_level so a level-5 feature doesn't appear on a level-3
+  // sheet. applyClassChoices is idempotent so repeated runs are
+  // safe.
   useEffect(() => {
     if (!form.char_class) return;
-    const autoChoices = (classChoices || []).filter((c) => c.kind === 'auto');
+    const lvl = Math.max(1, Number(form.char_level) || 1);
+    const autoChoices = (classChoices || []).filter((c) =>
+      c.kind === 'auto' && (c.at_level || 1) <= lvl
+    );
     if (autoChoices.length === 0) return;
     const prevState = form.class_state || {};
+    // Re-apply when class, subclass, or level changes so newly
+    // unlocked features land + reverted ones strip cleanly. The
+    // strip-prev pass at the top of applyClassChoices removes
+    // every cls:primary tagged contribution before re-applying,
+    // so duplicate traits aren't a concern.
     const alreadyApplied = prevState.class_id === form.char_class
+      && (prevState.subclass_id || '') === (form.char_subclass || '')
+      && (prevState.applied_at_level || 0) === lvl
       && ((prevState.added?.spells || []).length > 0
           || (prevState.added?.saves  || []).length > 0
-          || (prevState.added?.armor  || []).length > 0);
+          || (prevState.added?.armor  || []).length > 0
+          || (prevState.added?.traits_count || 0) > 0);
     if (alreadyApplied) return;
     // Pass the FULL choice list (with picks) so any pickable choices
     // already saved survive the re-apply.
     applyClassChoices(classChoices, prevState.choices || {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.char_class, classChoices.length]);
+  }, [form.char_class, form.char_subclass, form.char_level, classChoices.length]);
 
   const tabs = isPlayerCharacter
     ? ['basic', 'combat', 'abilities', 'skills', 'traits', 'spells', 'inventory', 'weapons']
@@ -1833,6 +1847,8 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       next.skill_expertise = expert;
       next.class_state = {
         class_id: f.char_class || '',
+        subclass_id: f.char_subclass || '',
+        applied_at_level: Math.max(1, Number(f.char_level) || 1),
         choices: picks,
         added,
       };
@@ -2140,7 +2156,13 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       next.skill_expertise = expert;
       next.multiclasses = (f.multiclasses || []).map((m) =>
         m.id === mcId
-          ? { ...m, class_state: { class_id: slot.class || '', choices: picks, added } }
+          ? { ...m, class_state: {
+                class_id: slot.class || '',
+                subclass_id: slot.subclass || '',
+                applied_at_level: Math.max(1, Number(slot.level) || 1),
+                choices: picks,
+                added,
+              } }
           : m
       );
       return next;
@@ -3231,6 +3253,12 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                       const remaining = total === Infinity ? Infinity : Math.max(0, total - used);
                       const totalLabel = total === Infinity ? '∞' : total;
                       const isBI = def.id === 'bardic-inspiration';
+                      // Custom-class resources may declare action: 'grant'
+                      // with a die size — surface the same Grant button.
+                      // Routes through the recipient's inspiration_die
+                      // slot, so only one granted die per recipient at
+                      // a time (same constraint as Bardic Inspiration).
+                      const canGrant = isBI || (def.custom && def.action === 'grant' && def.die);
                       return (
                         <div key={def.id} className="flex items-center gap-2 text-sm bg-gray-900/40 border border-gray-700 rounded px-2 py-1.5">
                           <div className="flex-1 min-w-0">
@@ -3239,7 +3267,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                               <div className="text-[11px] text-gray-500 leading-snug">{def.note}</div>
                             )}
                           </div>
-                          {isBI && (
+                          {canGrant && (
                             <button
                               type="button"
                               disabled={used >= total}
@@ -4687,10 +4715,15 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                           ...(form.resource_state || {}),
                           [id]: { used: Math.min(bardicGrant.total, cur + 1) },
                         });
-                        // 3. Tell the table what just happened.
+                        // 3. Tell the table what just happened. Use
+                        //    the def's label so custom-class grants
+                        //    ("Storm Surge", "Battle Mark", …) read
+                        //    correctly in the dice log instead of
+                        //    being mislabelled as Bardic Inspiration.
+                        const labelName = bardicGrant.def.label || 'Bardic Inspiration';
                         socket.emit('roll_dice', {
                           dice: 'd1', count: 1, modifier: 0,
-                          label: `${form.name || 'Bard'} grants ${die} Bardic Inspiration to ${tc.name || 'someone'}`,
+                          label: `${form.name || 'Caster'} grants ${die} ${labelName} to ${tc.name || 'someone'}`,
                         });
                         setBardicGrant(null);
                       } catch (err) {

@@ -25,21 +25,31 @@ export default function MulticlassRow({
 }) {
   const taken = disabledClasses instanceof Set ? disabledClasses : new Set();
   const subs = useAllSubclasses(mc.class);
-  const choices = useClassChoices(mc.class, { multiclass: true });
+  const choices = useClassChoices(mc.class, { multiclass: true, subclass: mc.subclass });
 
-  // Auto-grant choices for this row apply the moment the class is set.
+  // Auto-grant choices for this row apply on class set, subclass
+  // change, or level change so newly unlocked features (custom or
+  // SRD) land and removed ones revert. Filtered by at_level
+  // against the slot's level so a level-5 feature doesn't appear
+  // on a level-3 slot.
   useEffect(() => {
     if (!mc.class) return;
-    const auto = (choices || []).filter((c) => c.kind === 'auto');
+    const lvl = Math.max(1, Number(mc.level) || 1);
+    const auto = (choices || []).filter((c) =>
+      c.kind === 'auto' && (c.at_level || 1) <= lvl
+    );
     if (auto.length === 0) return;
     const already = mc.class_state?.class_id === mc.class
+      && (mc.class_state.subclass_id || '') === (mc.subclass || '')
+      && (mc.class_state.applied_at_level || 0) === lvl
       && ((mc.class_state.added?.spells || []).length > 0
           || (mc.class_state.added?.armor  || []).length > 0
-          || (mc.class_state.added?.weapons || []).length > 0);
+          || (mc.class_state.added?.weapons || []).length > 0
+          || (mc.class_state.added?.traits_count || 0) > 0);
     if (already) return;
     onApplyChoices(choices, mc.class_state?.choices || {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mc.class, choices.length]);
+  }, [mc.class, mc.subclass, mc.level, choices.length]);
 
   return (
     <div className="bg-gray-900/40 border border-gray-700 rounded-lg p-3 space-y-2">

@@ -173,6 +173,33 @@ export function getClassChoicesMerged(charClass, opts = {}) {
       adds: kitAdds,
     });
   }
+  // Per-level features authored on a custom class (Origins panel →
+  // Custom Classes editor). Each becomes its own auto-choice tagged
+  // with at_level so the existing dueChoices filter gates it on
+  // character level. Subclass-scoped features only emit when the
+  // character has that subclass selected — comparison is
+  // case-insensitive to dodge editor casing drift.
+  for (const map of registries.customClassFeatures.values()) {
+    if (!map || typeof map !== 'object') continue;
+    const list = map[charClass];
+    if (!Array.isArray(list)) continue;
+    const subFilter = (opts.subclass || '').toLowerCase();
+    for (const f of list) {
+      const fSub = (f.subclass || '').toLowerCase();
+      if (fSub && fSub !== subFilter) continue;
+      const lvl = Math.max(1, Number(f.at_level) || 1);
+      push({
+        id: `custom-feature:${(f.name || 'feature').toLowerCase().replace(/\s+/g, '-')}:${lvl}`,
+        label: f.name || `Feature (level ${lvl})`,
+        kind: 'auto',
+        synthetic: true,
+        at_level: lvl,
+        adds: {
+          traits: [{ name: f.name || 'Feature', desc: f.desc || '', category: 'specialAbility' }],
+        },
+      });
+    }
+  }
   for (const c of (CLASS_CHOICES_2024[charClass] || [])) push(c);
   for (const map of registries.customClassChoices.values()) {
     if (!map || typeof map !== 'object') continue;

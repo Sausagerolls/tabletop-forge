@@ -1,16 +1,19 @@
-// CustomOriginsPanel — GM-only list of custom races + backgrounds.
-// Lives as a panel tab in DMView. Provides create / edit / delete /
-// JSON-export. The view filters down to just the GM-authored rows so
-// the SRD content the app already knows isn't repeated here.
+// CustomOriginsPanel — GM-only list of custom races, backgrounds and
+// classes. Lives as a panel tab in DMView. Provides create / edit /
+// delete / JSON-export. The view filters down to just the GM-authored
+// rows so the SRD content the app already knows isn't repeated here.
 
 import React, { useEffect, useState, useMemo } from 'react';
 import CustomRaceEditor from './CustomRaceEditor.jsx';
 import CustomBackgroundEditor from './CustomBackgroundEditor.jsx';
+import CustomClassEditor from './CustomClassEditor.jsx';
+import { notifyCustomClassesChanged } from '../plugins/customClassesProvider.js';
 
 export default function CustomOriginsPanel() {
-  const [tab, setTab] = useState('races');   // 'races' | 'backgrounds'
+  const [tab, setTab] = useState('races');   // 'races' | 'backgrounds' | 'classes'
   const [races, setRaces]     = useState([]);
   const [backgrounds, setBgs] = useState([]);
+  const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editor, setEditor]   = useState(null); // {kind, initial?, parentRace?}
   const [exportOpen, setExportOpen] = useState(false);
@@ -19,12 +22,14 @@ export default function CustomOriginsPanel() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [r, b] = await Promise.all([
+      const [r, b, c] = await Promise.all([
         fetch('/api/custom/races').then((r) => r.json()),
         fetch('/api/custom/backgrounds').then((r) => r.json()),
+        fetch('/api/custom/classes').then((r) => r.json()),
       ]);
       setRaces(Array.isArray(r) ? r : []);
       setBgs(Array.isArray(b) ? b : []);
+      setClasses(Array.isArray(c) ? c : []);
     } finally { setLoading(false); }
   }
   useEffect(() => { loadAll(); }, []);
@@ -47,6 +52,7 @@ export default function CustomOriginsPanel() {
     if (!window.confirm('Delete this entry?')) return;
     await fetch(`/api/custom/${kind}/${id}`, { method: 'DELETE' });
     loadAll();
+    if (kind === 'classes') notifyCustomClassesChanged();
   }
 
   function doExport() {
@@ -62,19 +68,21 @@ export default function CustomOriginsPanel() {
     setExportSelected(new Set());
   }
 
-  const list = tab === 'races' ? races : backgrounds;
+  const list = tab === 'races' ? races : tab === 'backgrounds' ? backgrounds : classes;
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
-          {['races', 'backgrounds'].map((t) => (
+          {['races', 'backgrounds', 'classes'].map((t) => (
             <button key={t} type="button" onClick={() => setTab(t)}
               className={`text-xs px-3 py-1.5 rounded border ${
                 tab === t
                   ? 'bg-purple-800 border-purple-500 text-white'
                   : 'bg-gray-900 border-gray-700 text-gray-300 hover:bg-gray-800'
-              }`}>{t === 'races' ? 'Custom Races' : 'Custom Backgrounds'}</button>
+              }`}>
+              {t === 'races' ? 'Custom Races' : t === 'backgrounds' ? 'Custom Backgrounds' : 'Custom Classes'}
+            </button>
           ))}
         </div>
         <div className="flex gap-2">
@@ -87,7 +95,7 @@ export default function CustomOriginsPanel() {
           </button>
           <button onClick={() => setEditor({ kind: tab })}
             className="text-xs bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700 text-purple-200 px-2 py-1 rounded">
-            + New {tab === 'races' ? 'Race' : 'Background'}
+            + New {tab === 'races' ? 'Race' : tab === 'backgrounds' ? 'Background' : 'Class'}
           </button>
         </div>
       </div>
@@ -97,7 +105,36 @@ export default function CustomOriginsPanel() {
         the app ships with are not listed here.
       </div>
 
-      {tab === 'races' ? (
+      {tab === 'classes' ? (
+        <div className="space-y-2">
+          {loading && <p className="text-xs text-gray-500 italic">Loading…</p>}
+          {!loading && classes.length === 0 && (
+            <p className="text-xs text-gray-500 italic">No custom classes yet.</p>
+          )}
+          {classes.map((c) => (
+            <div key={c.id} className="bg-gray-800/40 border border-gray-700 rounded p-2 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm text-purple-200 font-semibold">{c.name}</div>
+                <div className="text-[11px] text-gray-500">
+                  {c.data?.hitDie || 'd8'} · saves {(c.data?.saves || []).join(', ') || '—'}
+                  {Array.isArray(c.data?.subclasses) && c.data.subclasses.length > 0 &&
+                    ` · ${c.data.subclasses.length} subclass${c.data.subclasses.length === 1 ? '' : 'es'}`}
+                  {Array.isArray(c.data?.features) && c.data.features.length > 0 &&
+                    ` · ${c.data.features.length} feature${c.data.features.length === 1 ? '' : 's'}`}
+                  {Array.isArray(c.data?.resources) && c.data.resources.length > 0 &&
+                    ` · ${c.data.resources.length} resource${c.data.resources.length === 1 ? '' : 's'}`}
+                </div>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <button onClick={() => setEditor({ kind: 'classes', initial: { ...c.data, id: c.id, name: c.name } })}
+                  className="text-[10px] bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-200 px-2 py-1 rounded">edit</button>
+                <button onClick={() => deleteRow('classes', c.id)}
+                  className="text-[10px] bg-red-900/40 hover:bg-red-800/60 border border-red-700 text-red-200 px-2 py-1 rounded">delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : tab === 'races' ? (
         <div className="space-y-2">
           {loading && <p className="text-xs text-gray-500 italic">Loading…</p>}
           {!loading && races.length === 0 && (
@@ -177,6 +214,13 @@ export default function CustomOriginsPanel() {
           initial={editor.initial}
           onClose={() => setEditor(null)}
           onSaved={loadAll}
+        />
+      )}
+      {editor?.kind === 'classes' && (
+        <CustomClassEditor
+          initial={editor.initial}
+          onClose={() => setEditor(null)}
+          onSaved={() => { loadAll(); notifyCustomClassesChanged(); }}
         />
       )}
 

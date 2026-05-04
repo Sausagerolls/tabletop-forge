@@ -115,6 +115,29 @@ export const registries = {
   // class. Same shape as `frontend/src/data/classes.js`:
   //   { id, label, at_level, desc, kind, options? | pick_count? }
   customClassChoices: new Map(),
+  // Map<sourceId, { [className]: ClassBuild }>
+  // Custom CLASS_BUILD entries written by the GM-authored
+  // /api/custom/classes table — populated by the useCustomClasses
+  // hook in CustomClassesProvider. Same shape as
+  // frontend/src/data/class_build.js so getClassBuild() can
+  // transparently merge: SRD entry first, then this map as a
+  // fallback. Plugins can also write here if they bring their own
+  // class kits. Keyed by lowercase class name to dodge casing drift.
+  customClassBuilds: new Map(),
+  // Map<sourceId, { [className]: CustomFeature[] }>
+  // Per-level features authored on a custom class. Each entry
+  // shape: { at_level, name, desc, subclass? }. Apply machinery
+  // pushes features whose at_level <= total class level into
+  // creature.class_features tagged "cls:custom:<class>:lvl<N>" so
+  // they revert with the rest of the class kit.
+  customClassFeatures: new Map(),
+  // Map<sourceId, { [className]: CustomResource[] }>
+  // Per-class custom resource counters authored on a custom class.
+  // Each entry shape: { id, label, total_formula, rest, action,
+  // die, note }. The frontend resources catalog consults this map
+  // after running its built-in switch so custom-class characters
+  // get a Resources card alongside their built-in peers.
+  customClassResources: new Map(),
   // Map<pluginId, Set<sectionId>>
   // Plugins can hide individual collapsible sub-sections inside the
   // Session tab (e.g. 'session_info', 'connected_players',

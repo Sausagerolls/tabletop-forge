@@ -255,9 +255,21 @@ const ABILITY_FIELD = {
   INT: 'intelligence', WIS: 'wisdom', CHA: 'charisma',
 };
 
+// Module-level reference written by the CustomClassesProvider on
+// load. Static import would create a circular (pluginRegistry →
+// classes.js → here → pluginRegistry), so we let the provider
+// register a thunk that resolves to the registry's current value.
+let _customLookup = null;
+export function _registerCustomClassBuildLookup(fn) { _customLookup = fn; }
+
 export function getClassBuild(className) {
   if (!className) return null;
-  return CLASS_BUILD[className] || null;
+  if (CLASS_BUILD[className]) return CLASS_BUILD[className];
+  if (_customLookup) {
+    const hit = _customLookup(className);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 // Human-readable primary-ability summary: "Strength" / "Strength and

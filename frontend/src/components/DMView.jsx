@@ -13,6 +13,7 @@ import { formatDamageWithMod, formatDamageType } from '../utils/damage.js';
 import ActionsReference from './ActionsReference.jsx';
 import { wallsToSegments, doorsToSegments, lineBlocked } from '../utils/los.js';
 import { registries as pluginRegistries, useRegistryVersion, loadPlugins, unloadPlugin, reloadPlugin } from '../plugins/pluginRegistry.js';
+import { CustomClassesProvider } from '../plugins/customClassesProvider.js';
 
 // ── SVG icon components ───────────────────────────────────────────────────────
 
@@ -3310,6 +3311,12 @@ export default function DMView() {
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-gray-900">
+      {/* Loads /api/custom/classes once on mount and pumps the
+          results into pluginRegistries (customClasses,
+          customSubclasses, customClassBuilds, customClassFeatures,
+          customClassResources) so the dropdowns + class kit
+          machinery see GM-authored classes alongside the SRD ones. */}
+      <CustomClassesProvider />
       {/* Reconnect banner — visible while the socket is dropped, hidden
           the moment it reconnects. Stays out of the way of the live
           UI so the GM can keep working with the last-known state

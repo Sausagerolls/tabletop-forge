@@ -153,4 +153,80 @@ router.get('/backgrounds/export', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── CLASSES ───────────────────────────────────────────────────
+// Mirror of races/backgrounds. The `data` column carries the whole
+// class kit (primary ability, hit die, saves, armor/weapons,
+// starting equipment, multiclass prereq+grants, subclasses,
+// per-level features, custom resources). The frontend reads it via
+// /api/custom/classes and feeds the existing customClasses /
+// customSubclasses / customClassChoices registries so dropdowns +
+// the apply machinery automatically include them.
+
+router.get('/classes', async (req, res) => {
+  try {
+    const rows = (await db.query(
+      `SELECT id, name, data, created_at, updated_at FROM custom_classes ORDER BY name`
+    )).rows;
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/classes', async (req, res) => {
+  try {
+    const { name, data } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: 'name required' });
+    }
+    const id = uuidv4();
+    await db.query(
+      `INSERT INTO custom_classes (id, name, data) VALUES ($1, $2, $3)`,
+      [id, name, JSON.stringify(data || {})]
+    );
+    res.json({ id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/classes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, data } = req.body;
+    await db.query(
+      `UPDATE custom_classes
+         SET name = COALESCE($2, name),
+             data = COALESCE($3, data),
+             updated_at = now()
+       WHERE id = $1`,
+      [id, name, data ? JSON.stringify(data) : null]
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/classes/:id', async (req, res) => {
+  try {
+    await db.query(`DELETE FROM custom_classes WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/classes/export', async (req, res) => {
+  try {
+    const ids = String(req.query.ids || '').split(',').filter(Boolean);
+    let rows;
+    if (ids.length > 0) {
+      rows = (await db.query(
+        `SELECT id, name, data FROM custom_classes WHERE id = ANY($1::uuid[])`,
+        [ids]
+      )).rows;
+    } else {
+      rows = (await db.query(
+        `SELECT id, name, data FROM custom_classes`
+      )).rows;
+    }
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename="custom-classes.json"');
+    res.send(JSON.stringify({ kind: 'classes', rows }, null, 2));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

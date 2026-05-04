@@ -502,6 +502,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import CharacterSetup from './CharacterSetup.jsx';
 import socket from '../socket.js';
 import { loadPlugins, registries as pluginRegistries, useRegistryVersion } from '../plugins/pluginRegistry.js';
+import { CustomClassesProvider } from '../plugins/customClassesProvider.js';
 import MapStage, { TOKEN_SIZES } from './MapStage.jsx';
 import DiceRoller, { DiceRollOverlay } from './DiceRoller.jsx';
 import ToolPanel from './ToolPanel.jsx';
@@ -1866,6 +1867,10 @@ export default function PlayerView() {
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-gray-900 flex flex-col">
+      {/* Pumps GM-authored /api/custom/classes data into the
+          plugin registries so player-side dropdowns + class-build
+          lookups see custom classes alongside the SRD set. */}
+      <CustomClassesProvider />
       {/* Reconnect banner — visible while the socket is dropped, hidden
           the moment it reconnects. Player keeps seeing the last-known
           map state instead of being thrown back to the loading screen. */}

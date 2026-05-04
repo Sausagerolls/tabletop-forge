@@ -2826,6 +2826,32 @@ server.listen(PORT, async () => {
         updated_at TIMESTAMP DEFAULT now()
       )
     `);
+    // Full custom-class storage. The `data` JSONB carries everything
+    // a class needs to slot into the existing CLASS_BUILD pipeline:
+    //   {
+    //     primary: { abilities: ['STR'], mode: 'all' },
+    //     hitDie: 'd10',
+    //     saves: ['STR','CON'],
+    //     armor: ['Light','Medium'],
+    //     weapons: ['Simple','Martial'],
+    //     startingEquipment: { optionA: { items, gp }, optionB: { gp } },
+    //     multiclass: { prereq: {...}, grants: {...} },
+    //     subclasses: ['Path of X', 'Path of Y'],
+    //     features:    [{ at_level, name, desc, subclass }],
+    //     resources:   [{ id, label, total: '<formula>', rest: 'short'|'long', action: 'spend'|'grant', die }],
+    //   }
+    // The legacy custom-classes plugin (KV-backed) still works in
+    // parallel — both feed the customClasses / customSubclasses /
+    // customClassChoices registries through different code paths.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS custom_classes (
+        id UUID PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        data JSONB NOT NULL DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT now(),
+        updated_at TIMESTAMP DEFAULT now()
+      )
+    `);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS token_light_bright FLOAT DEFAULT 0`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS token_light_dim FLOAT DEFAULT 0`);
     await db.query(`ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS token_light_color VARCHAR(20) DEFAULT '#fbbf24'`);

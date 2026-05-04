@@ -1,3 +1,5 @@
+import { registries } from '../plugins/pluginRegistry.js';
+
 // Class resource counters — Bardic Inspiration, Ki, Sorcery Points,
 // Channel Divinity, Action Surge, Lay on Hands, Wild Shape, etc.
 //
@@ -173,5 +175,59 @@ export function resourcesForCreature(creature) {
       break;
   }
 
+  // GM-authored custom-class resources from registries.customClassResources
+  // (loaded by CustomClassesProvider). Total formula is a tiny
+  // expression: a number, an ability code (STR/DEX/CON/INT/WIS/CHA
+  // — uses the modifier), `level`, `level/2`, or `level + N`.
+  for (const map of (registries?.customClassResources?.values?.() || [])) {
+    if (!map || typeof map !== 'object') continue;
+    const list = map[cls];
+    if (!Array.isArray(list)) continue;
+    for (const r of list) {
+      const total = evaluateFormula(r.total_formula, creature, level);
+      defs.push({
+        id:    r.id || (r.label || 'res').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        label: r.label || 'Resource',
+        total,
+        rest:  r.rest === 'short' ? REST_KIND.SHORT : REST_KIND.LONG,
+        note:  r.note || undefined,
+        action: r.action,         // 'spend' | 'grant' — read by Resources card
+        die:    r.die || undefined,
+        custom: true,             // marker for the UI to render a Grant button
+      });
+    }
+  }
+
   return defs.map((def) => ({ def, total: def.total }));
+}
+
+// Tiny evaluator for custom-class total formulas. Keeps the surface
+// area small on purpose — formulas come from GM input and we'd
+// rather refuse a malformed one than surface arbitrary JS.
+function evaluateFormula(formula, creature, level) {
+  const raw = String(formula || '').trim();
+  if (!raw) return 1;
+  const n = Number(raw);
+  if (Number.isFinite(n)) return Math.max(0, Math.floor(n));
+  const abilityMod = (k) => Math.floor(((creature?.[k] ?? 10) - 10) / 2);
+  // Substitute tokens.
+  const subbed = raw
+    .replace(/\bSTR\b/g, abilityMod('strength'))
+    .replace(/\bDEX\b/g, abilityMod('dexterity'))
+    .replace(/\bCON\b/g, abilityMod('constitution'))
+    .replace(/\bINT\b/g, abilityMod('intelligence'))
+    .replace(/\bWIS\b/g, abilityMod('wisdom'))
+    .replace(/\bCHA\b/g, abilityMod('charisma'))
+    .replace(/\blevel\b/gi, String(level));
+  // Allow only digits, whitespace, parens, + - * / and the
+  // resolved numbers above. Anything else → fallback.
+  if (!/^[\d+\-*/().\s]+$/.test(subbed)) return 1;
+  try {
+    // eslint-disable-next-line no-new-func
+    const v = Function(`"use strict"; return (${subbed});`)();
+    if (!Number.isFinite(v)) return 1;
+    return Math.max(0, Math.floor(v));
+  } catch {
+    return 1;
+  }
 }

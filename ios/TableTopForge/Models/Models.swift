@@ -318,6 +318,67 @@ struct HitDicePoolEntry: Equatable, Identifiable {
     var id: String { type }
 }
 
+// CLASS_BUILD subset on mobile — the SRD core traits we display on
+// the StatsView's "Class Details" disclosure. Mirror of the web's
+// frontend/src/data/class_build.js, kept in sync by hand. We only
+// surface read-only data, no apply machinery — class kit
+// application stays a web-side concern via the WebView edit flow.
+struct ClassBuild {
+    let primary: String        // "Strength" / "Strength or Dexterity" / "Dexterity and Wisdom"
+    let hitDie:  String        // "d10"
+    let saves:   [String]      // ["STR","CON"]
+    let armor:   [String]      // ["Light","Medium","Heavy","Shields"]
+    let weapons: [String]      // ["Simple","Martial"]
+}
+
+private let CLASS_BUILDS: [String: ClassBuild] = [
+    "Barbarian": .init(primary: "Strength",                hitDie: "d12", saves: ["STR","CON"], armor: ["Light","Medium","Shields"],            weapons: ["Simple","Martial"]),
+    "Bard":      .init(primary: "Charisma",                hitDie: "d8",  saves: ["DEX","CHA"], armor: ["Light"],                                weapons: ["Simple"]),
+    "Cleric":    .init(primary: "Wisdom",                  hitDie: "d8",  saves: ["WIS","CHA"], armor: ["Light","Medium","Shields"],            weapons: ["Simple"]),
+    "Druid":     .init(primary: "Wisdom",                  hitDie: "d8",  saves: ["INT","WIS"], armor: ["Light","Shields"],                     weapons: ["Simple"]),
+    "Fighter":   .init(primary: "Strength or Dexterity",   hitDie: "d10", saves: ["STR","CON"], armor: ["Light","Medium","Heavy","Shields"],    weapons: ["Simple","Martial"]),
+    "Monk":      .init(primary: "Dexterity and Wisdom",    hitDie: "d8",  saves: ["STR","DEX"], armor: [],                                       weapons: ["Simple","Martial (Light)"]),
+    "Paladin":   .init(primary: "Strength and Charisma",   hitDie: "d10", saves: ["WIS","CHA"], armor: ["Light","Medium","Heavy","Shields"],    weapons: ["Simple","Martial"]),
+    "Ranger":    .init(primary: "Dexterity and Wisdom",    hitDie: "d10", saves: ["STR","DEX"], armor: ["Light","Medium","Shields"],            weapons: ["Simple","Martial"]),
+    "Rogue":     .init(primary: "Dexterity",               hitDie: "d8",  saves: ["DEX","INT"], armor: ["Light"],                                weapons: ["Simple","Martial (Finesse or Light)"]),
+    "Sorcerer":  .init(primary: "Charisma",                hitDie: "d6",  saves: ["CON","CHA"], armor: [],                                       weapons: ["Simple"]),
+    "Warlock":   .init(primary: "Charisma",                hitDie: "d8",  saves: ["WIS","CHA"], armor: ["Light"],                                weapons: ["Simple"]),
+    "Wizard":    .init(primary: "Intelligence",            hitDie: "d6",  saves: ["INT","WIS"], armor: [],                                       weapons: ["Simple"]),
+    "Artificer": .init(primary: "Intelligence",            hitDie: "d8",  saves: ["CON","INT"], armor: ["Light","Medium","Shields"],            weapons: ["Simple"]),
+]
+
+func classBuild(for className: String?) -> ClassBuild? {
+    guard let className else { return nil }
+    return CLASS_BUILDS[className]
+}
+
+// "Lvl 5 — Fighter 3 / Wizard 2" style — multiclass-aware. Used on
+// the Stats screen's identity card. Returns the original "Level X
+// Class (Subclass)" form for single-class characters so the line
+// stays readable when there's nothing to merge.
+func classLevelLine(_ c: Creature) -> String? {
+    let primaryLvl = max(0, c.char_level ?? 0)
+    let primaryCls = c.char_class ?? ""
+    let mcs = (c.multiclasses ?? []).filter {
+        ($0.charClass?.isEmpty == false) && ($0.level ?? 0) > 0
+    }
+    if primaryLvl <= 0 && mcs.isEmpty { return nil }
+    let total = primaryLvl + mcs.reduce(0) { $0 + (max(0, $1.level ?? 0)) }
+    if mcs.isEmpty {
+        // Single-class — keep the readable "Level 5 Fighter (Battle Master)" form.
+        var parts: [String] = ["Level \(primaryLvl)"]
+        if !primaryCls.isEmpty { parts.append(primaryCls) }
+        if let sub = c.char_subclass, !sub.isEmpty { parts.append("(\(sub))") }
+        return parts.joined(separator: " ")
+    }
+    var rows: [String] = []
+    if !primaryCls.isEmpty { rows.append("\(primaryCls) \(primaryLvl)") }
+    for mc in mcs {
+        if let cls = mc.charClass { rows.append("\(cls) \(mc.level ?? 0)") }
+    }
+    return "Level \(total) — \(rows.joined(separator: " / "))"
+}
+
 func computeHitDicePool(_ c: Creature) -> [HitDicePoolEntry] {
     // Player characters carry the auto-pool; non-PCs use the scalar
     // hit_dice_qty/type/used fields straight from the stat block.

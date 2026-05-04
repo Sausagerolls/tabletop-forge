@@ -42,6 +42,7 @@ struct StatsView: View {
                 if (playerToken?.current_hp ?? -1) == 0 { deathSavesSection }
                 combatSection
                 equippedWeaponsSection
+                classDetailsSection
                 statBlockSections
                 conditionsSection
                 whispersSection
@@ -136,11 +137,13 @@ struct StatsView: View {
     }
 
     private var identitySubtitle: String? {
-        var parts: [String] = []
-        if let lvl = creature?.char_level, lvl > 0 { parts.append("Level \(lvl)") }
-        if let cls = creature?.char_class, !cls.isEmpty { parts.append(cls) }
-        if let sub = creature?.char_subclass, !sub.isEmpty { parts.append("(\(sub))") }
-        return parts.joined(separator: " ")
+        // Multiclass-aware: a multiclassed character renders as
+        // "Level 5 — Fighter 3 / Wizard 2"; a single-class
+        // character keeps the original "Level 5 Fighter (Battle
+        // Master)" form so it stays readable when there's nothing
+        // to merge.
+        guard let c = creature else { return nil }
+        return classLevelLine(c)
     }
 
     // Convert the stored background id (e.g. "acolyte-2024",
@@ -508,6 +511,52 @@ struct StatsView: View {
         return mod + pb + (weapon.attack_bonus_misc ?? 0)
     }
 
+    // ── Class Details ───────────────────────────────────────────────
+    // Read-only SRD reference for the player's classes. Collapsed
+    // by default — the at-the-table info (HP, profs, weapons) is
+    // already on this screen, so this is a "just in case" lookup
+    // rather than a primary data row. Multiclass characters get one
+    // collapsed group per class so the header row stays the same
+    // height regardless of how many classes the character has.
+    @ViewBuilder
+    private var classDetailsSection: some View {
+        if let c = creature {
+            // Collect every class the character has — primary +
+            // multiclasses — preserving order so the primary class
+            // appears first.
+            var classNames: [(label: String, build: ClassBuild?)] = []
+            if let p = c.char_class, !p.isEmpty {
+                classNames.append((p, classBuild(for: p)))
+            }
+            for mc in (c.multiclasses ?? []) {
+                if let cls = mc.charClass, !cls.isEmpty {
+                    classNames.append((cls, classBuild(for: cls)))
+                }
+            }
+            let resolved = classNames.compactMap { entry -> (String, ClassBuild)? in
+                guard let b = entry.build else { return nil }
+                return (entry.label, b)
+            }
+            if !resolved.isEmpty {
+                Section("Class Details") {
+                    ForEach(Array(resolved.enumerated()), id: \.offset) { _, pair in
+                        DisclosureGroup(pair.0) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ClassDetailRow(label: "Primary",  value: pair.1.primary)
+                                ClassDetailRow(label: "Hit Die",  value: pair.1.hitDie)
+                                ClassDetailRow(label: "Saves",    value: pair.1.saves.joined(separator: ", "))
+                                ClassDetailRow(label: "Armor",    value: pair.1.armor.isEmpty ? "—" : pair.1.armor.joined(separator: ", "))
+                                ClassDetailRow(label: "Weapons",  value: pair.1.weapons.joined(separator: ", "))
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // ── Stat-block sections ──────────────────────────────────────────
     @ViewBuilder
     private var statBlockSections: some View {
@@ -751,6 +800,22 @@ private struct DeathSaveRow: View {
 }
 
 // Collapsible stat-block section (Class Features / Actions / etc).
+// One label/value row inside the Class Details disclosure. Kept
+// compact — value monospace so saves like "STR, CON" line up nicely
+// across multiple classes when a multiclassed character has the
+// section expanded.
+private struct ClassDetailRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label).foregroundStyle(.tertiary).frame(width: 70, alignment: .leading)
+            Text(value).foregroundStyle(.secondary)
+        }
+    }
+}
+
 // Closed by default so the page isn't a wall of text on first load.
 private struct CollapsibleStatBlockSection: View {
     let title: String

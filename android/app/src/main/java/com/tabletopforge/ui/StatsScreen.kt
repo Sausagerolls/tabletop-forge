@@ -74,12 +74,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.tabletopforge.SocketHolder
+import com.tabletopforge.data.ClassBuild
 import com.tabletopforge.data.Creature
 import com.tabletopforge.data.DiceRollRequest
 import com.tabletopforge.data.HitDicePoolEntry
 import com.tabletopforge.data.InventoryItem
 import com.tabletopforge.data.StatAction
 import com.tabletopforge.data.Token
+import com.tabletopforge.data.classBuild
+import com.tabletopforge.data.classLevelLine
 import com.tabletopforge.data.computeHitDicePool
 import com.tabletopforge.data.resourcesFor
 import com.tabletopforge.services.ApiClient
@@ -302,7 +305,33 @@ fun StatsScreen(store: SessionStore, socketHolder: SocketHolder, resourceStore: 
             } }
         }
 
-        // 7. Stat-block sections (each collapsible)
+        // 7a. Class Details — read-only SRD reference for primary +
+        // each multiclass. One collapsible per class so the section
+        // header stays the same height regardless of multiclass
+        // count. Closed by default — at-the-table data lives in the
+        // sections above and below; this is a "just in case" lookup.
+        val classRows = buildList {
+            creature.char_class?.takeIf { it.isNotEmpty() }?.let { name ->
+                classBuild(name)?.let { add(name to it) }
+            }
+            for (mc in (creature.multiclasses.orEmpty())) {
+                val name = mc.charClass?.takeIf { it.isNotEmpty() } ?: continue
+                classBuild(name)?.let { add(name to it) }
+            }
+        }
+        if (classRows.isNotEmpty()) {
+            item { Section("Class Details") {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        for ((name, build) in classRows) {
+                            ClassDetailDisclosure(name, build)
+                        }
+                    }
+                }
+            } }
+        }
+
+        // 7b. Stat-block sections (each collapsible)
         val groups = listOf(
             "Class Features"   to creature.class_features,
             "Feats"            to creature.feats,
@@ -471,13 +500,7 @@ private fun IdentityCard(
     }
 }
 
-private fun identitySubtitle(c: Creature): String? {
-    val parts = mutableListOf<String>()
-    c.char_level?.takeIf { it > 0 }?.let { parts += "Level $it" }
-    c.char_class?.takeIf { it.isNotEmpty() }?.let { parts += it }
-    c.char_subclass?.takeIf { it.isNotEmpty() }?.let { parts += "($it)" }
-    return parts.takeIf { it.isNotEmpty() }?.joinToString(" ")
-}
+private fun identitySubtitle(c: Creature): String? = classLevelLine(c)
 
 private fun raceLine(c: Creature): String? {
     val parts = mutableListOf<String>()
@@ -707,6 +730,49 @@ private fun attackBonus(w: InventoryItem, c: Creature): Int {
     val mod = (raw - 10) / 2
     val pb = c.proficiency_bonus ?: (((c.char_level ?: 1) - 1) / 4 + 2)
     return mod + pb + (w.attack_bonus_misc ?: 0)
+}
+
+// One collapsible row inside the Class Details card. Closed by
+// default; expanding shows the SRD core traits for that class
+// (primary ability, hit die, saves, armor, weapons). Compact
+// label/value rows so a multi-class character can scan two or
+// three classes without the card growing unmanageably.
+@Composable
+private fun ClassDetailDisclosure(name: String, build: ClassBuild) {
+    var open by remember { mutableStateOf(false) }
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { open = !open }
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(name, modifier = Modifier.weight(1f),
+                fontWeight = FontWeight.SemiBold)
+            Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (open) {
+            Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                ClassDetailRow("Primary",  build.primary)
+                ClassDetailRow("Hit Die",  build.hitDie)
+                ClassDetailRow("Saves",    build.saves.joinToString(", "))
+                ClassDetailRow("Armor",    if (build.armor.isEmpty()) "—" else build.armor.joinToString(", "))
+                ClassDetailRow("Weapons",  build.weapons.joinToString(", "))
+            }
+        }
+        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+    }
+}
+
+@Composable
+private fun ClassDetailRow(label: String, value: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        Text(label, modifier = Modifier.width(72.dp),
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+    }
 }
 
 @Composable

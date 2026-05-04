@@ -143,6 +143,10 @@ struct Creature: Codable, Identifiable, Equatable {
     // Per-die-type spent count for the multi-pool hit dice.
     // Format: `{ "d10": 2, "d6": 0 }` — keys are die labels.
     var hit_dice_used_by_type: [String: Int]?
+    // Single Bardic Inspiration die granted by a Bard. Any character
+    // can hold one at a time; "" / nil when none. Format is the die
+    // label ("d6" / "d8" / "d10" / "d12") so we can roll it directly.
+    var inspiration_die: String?
 
     // Custom decoder: each optional field uses try? so a single
     // malformed JSONB column (e.g. server returns spell_slots as a
@@ -245,6 +249,7 @@ struct Creature: Codable, Identifiable, Equatable {
         self.spell_slots = decodeJSONBObject(SpellSlots.self,   c, .spell_slots)
         self.multiclasses = decodeJSONBArray(Multiclass.self,   c, .multiclasses)
         self.hit_dice_used_by_type = (try? c.decodeIfPresent([String: Int].self, forKey: .hit_dice_used_by_type)) ?? nil
+        self.inspiration_die = try? c.decodeIfPresent(String.self, forKey: .inspiration_die)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -268,7 +273,7 @@ struct Creature: Codable, Identifiable, Equatable {
         case skill_stealth, skill_survival, skill_expertise
         case actions, bonus_actions, reactions, movement_actions
         case legendary_actions, special_abilities, class_features, feats
-        case multiclasses, hit_dice_used_by_type
+        case multiclasses, hit_dice_used_by_type, inspiration_die
     }
 }
 

@@ -190,6 +190,40 @@ fun StatsScreen(store: SessionStore, socketHolder: SocketHolder, resourceStore: 
             } }
         }
 
+        // 3b. Bardic Inspiration — granted to a non-Bard PC by a
+        // Bard via the web Grant flow. Hidden unless the field is
+        // populated. Use button rolls the die, broadcasts the roll,
+        // and clears the field via PATCH.
+        val biDie = creature.inspiration_die?.takeIf { it.isNotEmpty() }
+        if (biDie != null) {
+            item { Section("Bardic Inspiration") {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("🎵", fontSize = 18.sp, modifier = Modifier.padding(end = 8.dp))
+                        Text(biDie, fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.weight(1f))
+                        androidx.compose.material3.Button(
+                            onClick = {
+                                val faces = biDie.removePrefix("d").toIntOrNull() ?: 0
+                                if (faces <= 0) return@Button
+                                val roll = Random.nextInt(1, faces + 1)
+                                // Optimistic clear so the row drops the moment the player taps Use.
+                                sc?.creature?.value = creature.copy(inspiration_die = "")
+                                scope.launch { persist(mapOf("inspiration_die" to "")) }
+                                sc?.emitDiceRoll(DiceRollRequest(
+                                    dice = faces, count = 1, modifier = 0,
+                                    label = "Bardic Inspiration ($biDie) — ${creature.name ?: "character"} consumes it. Rolled $roll.",
+                                ))
+                            },
+                        ) { Text("Use") }
+                    }
+                }
+            } }
+        }
+
         // 4. Death Saves — auto-roll fills the right pip; nat-1 / nat-20 honoured.
         if ((token?.current_hp ?: -1) == 0) {
             item { Section("Death Saves") {

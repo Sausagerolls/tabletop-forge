@@ -39,6 +39,7 @@ struct StatsView: View {
                 identityCard
                 if let token = playerToken { vitalsSection(token: token) }
                 hitDiceSection
+                bardicInspirationSection
                 if (playerToken?.current_hp ?? -1) == 0 { deathSavesSection }
                 combatSection
                 equippedWeaponsSection
@@ -353,6 +354,51 @@ struct StatsView: View {
         ))
     }
 
+    // ── Bardic Inspiration ────────────────────────────────────────────
+    // Granted to a non-Bard PC by a Bard via the web Grant flow.
+    // Stored as the bare die label ("d6" / "d8" / "d10" / "d12") on
+    // creature.inspiration_die. The recipient sees a one-row section
+    // with a Use button that rolls the die, broadcasts the roll, and
+    // clears the field. Hidden when the field is empty/nil.
+    @ViewBuilder
+    private var bardicInspirationSection: some View {
+        if let creature, let die = creature.inspiration_die, !die.isEmpty {
+            Section("Bardic Inspiration") {
+                HStack {
+                    Image(systemName: "music.note")
+                        .foregroundStyle(.purple)
+                    Text(die)
+                        .font(.system(.body, design: .monospaced))
+                    Spacer()
+                    Button {
+                        useBardicInspiration(die: die)
+                    } label: {
+                        Text("Use")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.purple)
+                }
+            }
+        }
+    }
+
+    private func useBardicInspiration(die: String) {
+        guard var creature else { return }
+        let faces = Int(die.dropFirst()) ?? 0
+        guard faces > 0 else { return }
+        let roll = Int.random(in: 1...faces)
+        // Optimistic clear so the Use button drops away the moment
+        // the player taps it. The PUT below cements the change on
+        // the server; if that fails the next REST refetch reseeds.
+        creature.inspiration_die = ""
+        socket.creature = creature
+        socket.emitDiceRoll(DiceRollRequest(
+            dice: faces, count: 1, modifier: 0,
+            label: "Bardic Inspiration (\(die)) — \(creature.name ?? "character") consumes it. Rolled \(roll).",
+        ))
+        Task { await persist(["inspiration_die": ""]) }
+    }
+
     // ── Death Saves ───────────────────────────────────────────────────
     @ViewBuilder
     private var deathSavesSection: some View {
@@ -518,39 +564,39 @@ struct StatsView: View {
     // rather than a primary data row. Multiclass characters get one
     // collapsed group per class so the header row stays the same
     // height regardless of how many classes the character has.
+    // Resolved list lives outside the ViewBuilder — Swift's result
+    // builder doesn't accept var/for in the body block. We compute
+    // the (className, build) pairs here so the view layer is just
+    // declarative ForEach + DisclosureGroup.
+    private var classDetailRows: [(label: String, build: ClassBuild)] {
+        guard let c = creature else { return [] }
+        var names: [String] = []
+        if let p = c.char_class, !p.isEmpty { names.append(p) }
+        for mc in (c.multiclasses ?? []) {
+            if let cls = mc.charClass, !cls.isEmpty { names.append(cls) }
+        }
+        return names.compactMap { name in
+            guard let b = classBuild(for: name) else { return nil }
+            return (name, b)
+        }
+    }
+
     @ViewBuilder
     private var classDetailsSection: some View {
-        if let c = creature {
-            // Collect every class the character has — primary +
-            // multiclasses — preserving order so the primary class
-            // appears first.
-            var classNames: [(label: String, build: ClassBuild?)] = []
-            if let p = c.char_class, !p.isEmpty {
-                classNames.append((p, classBuild(for: p)))
-            }
-            for mc in (c.multiclasses ?? []) {
-                if let cls = mc.charClass, !cls.isEmpty {
-                    classNames.append((cls, classBuild(for: cls)))
-                }
-            }
-            let resolved = classNames.compactMap { entry -> (String, ClassBuild)? in
-                guard let b = entry.build else { return nil }
-                return (entry.label, b)
-            }
-            if !resolved.isEmpty {
-                Section("Class Details") {
-                    ForEach(Array(resolved.enumerated()), id: \.offset) { _, pair in
-                        DisclosureGroup(pair.0) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ClassDetailRow(label: "Primary",  value: pair.1.primary)
-                                ClassDetailRow(label: "Hit Die",  value: pair.1.hitDie)
-                                ClassDetailRow(label: "Saves",    value: pair.1.saves.joined(separator: ", "))
-                                ClassDetailRow(label: "Armor",    value: pair.1.armor.isEmpty ? "—" : pair.1.armor.joined(separator: ", "))
-                                ClassDetailRow(label: "Weapons",  value: pair.1.weapons.joined(separator: ", "))
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+        let rows = classDetailRows
+        if !rows.isEmpty {
+            Section("Class Details") {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, pair in
+                    DisclosureGroup(pair.label) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ClassDetailRow(label: "Primary",  value: pair.build.primary)
+                            ClassDetailRow(label: "Hit Die",  value: pair.build.hitDie)
+                            ClassDetailRow(label: "Saves",    value: pair.build.saves.joined(separator: ", "))
+                            ClassDetailRow(label: "Armor",    value: pair.build.armor.isEmpty ? "—" : pair.build.armor.joined(separator: ", "))
+                            ClassDetailRow(label: "Weapons",  value: pair.build.weapons.joined(separator: ", "))
                         }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
                 }
             }

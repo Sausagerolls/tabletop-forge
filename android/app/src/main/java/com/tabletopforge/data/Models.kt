@@ -268,6 +268,10 @@ data class Creature(
     // Per-die-type spent count for the multi-pool hit dice. Format
     // matches the web client: { "d10": 2, "d6": 0 }.
     val hit_dice_used_by_type: Map<String, Int>? = null,
+    // Single Bardic Inspiration die granted by a Bard. Any character
+    // can hold one at a time; "" / null when none. The die label
+    // ("d6" / "d8" / "d10" / "d12") is enough to roll directly.
+    val inspiration_die: String? = null,
 )
 
 @Serializable

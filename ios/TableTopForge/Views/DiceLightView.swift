@@ -45,7 +45,12 @@ struct DiceLightView: View {
             .sheet(isPresented: $showCharacterEditor) {
                 if let url = characterEditorURL {
                     NavigationStack {
-                        WebView(url: url)
+                        // The character-editor route writes a
+                        // tabletopforge-saved / tabletopforge-cancel
+                        // hash on Update / Cancel; we close the sheet
+                        // the moment that's seen so the in-form
+                        // buttons feel native.
+                        WebView(url: url, onDone: { showCharacterEditor = false })
                             .navigationTitle("Edit Stat Block")
                             .navigationBarTitleDisplayMode(.inline)
                             .toolbar {
@@ -230,18 +235,51 @@ private struct LastRollRow: View {
 }
 
 // Re-declared here so the character-editor sheet works without
-// adding a separate WebView.swift to the Xcode project. Mirror of
-// the private struct in SettingsSheet.swift — both privates are
-// scoped to their file so the duplication is intentional.
+// adding a separate WebView.swift to the Xcode project. The
+// SettingsSheet copy is plain (no onDone) — this one watches the
+// URL fragment via a Coordinator + WKNavigationDelegate so the
+// in-form Cancel + Update buttons can dismiss the host sheet.
 fileprivate struct WebView: UIViewRepresentable {
     let url: URL
+    let onDone: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onDone: onDone) }
+
     func makeUIView(context: Context) -> WKWebView {
         let view = WKWebView(frame: .zero)
         view.allowsBackForwardNavigationGestures = true
+        view.navigationDelegate = context.coordinator
         view.load(URLRequest(url: url))
         return view
     }
+
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        if uiView.url != url { uiView.load(URLRequest(url: url)) }
+        // Only reload when the host hands us a different URL —
+        // hash-only mutations (the dismiss sentinel) shouldn't
+        // bounce us back to the start of the editor.
+        if (uiView.url?.absoluteString.split(separator: "#").first ?? "")
+           != (url.absoluteString.split(separator: "#").first ?? "") {
+            uiView.load(URLRequest(url: url))
+        }
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        let onDone: () -> Void
+        init(onDone: @escaping () -> Void) { self.onDone = onDone }
+
+        func webView(_ webView: WKWebView,
+                     decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            // The CharacterEditor route flips window.location.hash
+            // on Cancel / Update — match `tabletopforge-saved` or
+            // `tabletopforge-cancel` and dismiss the sheet.
+            let frag = navigationAction.request.url?.fragment ?? ""
+            if frag.hasPrefix("tabletopforge-") {
+                decisionHandler(.cancel)
+                DispatchQueue.main.async { self.onDone() }
+                return
+            }
+            decisionHandler(.allow)
+        }
     }
 }

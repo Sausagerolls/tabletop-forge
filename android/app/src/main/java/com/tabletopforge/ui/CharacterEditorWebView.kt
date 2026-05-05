@@ -7,10 +7,13 @@
 package com.tabletopforge.ui
 
 import android.annotation.SuppressLint
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -79,8 +82,22 @@ fun CharacterEditorWebView(
                             useWideViewPort = true
                             loadWithOverviewMode = true
                         }
+                        // shouldOverrideUrlLoading doesn't fire for
+                        // same-document hash changes on Android, so
+                        // we expose a tiny JS bridge instead. The
+                        // CharacterEditor route calls
+                        // window.AndroidBridge.onCharacterEditorDone
+                        // on Cancel / Update — we hop back to the
+                        // main thread before invoking onClose so
+                        // Compose state mutates safely.
                         webViewClient = WebViewClient()
                         webChromeClient = WebChromeClient()
+                        addJavascriptInterface(object {
+                            @JavascriptInterface
+                            fun onCharacterEditorDone(@Suppress("UNUSED_PARAMETER") action: String) {
+                                Handler(Looper.getMainLooper()).post { onClose() }
+                            }
+                        }, "AndroidBridge")
                         loadUrl(url)
                     }
                 },

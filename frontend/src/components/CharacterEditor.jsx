@@ -32,20 +32,32 @@ export default function CharacterEditor() {
     return () => { cancelled = true; };
   }, [id]);
 
-  function handleSaved() {
-    setSavedAt(Date.now());
-    // Best-effort — native WebView handlers can listen for either.
-    try { window.postMessage({ type: 'tabletopforge:saved' }, '*'); } catch {}
+  // The native WebView shells (iOS WKWebView / Android WebView)
+  // watch the URL hash for a `tabletopforge-*` sentinel and dismiss
+  // the sheet when they see one. The hash trick works without
+  // pre-registering a JS messageHandler / AndroidBridge from the
+  // native side, so a stock WebView still picks it up.
+  function notifyNative(action) {
+    try { window.location.hash = `tabletopforge-${action}-${Date.now()}`; } catch {}
+    try { window.postMessage({ type: `tabletopforge:${action}` }, '*'); } catch {}
     try {
       if (window.webkit?.messageHandlers?.tabletopforge?.postMessage) {
-        window.webkit.messageHandlers.tabletopforge.postMessage({ type: 'saved' });
+        window.webkit.messageHandlers.tabletopforge.postMessage({ type: action });
       }
     } catch {}
     try {
-      if (window.AndroidBridge?.onCharacterSaved) {
-        window.AndroidBridge.onCharacterSaved();
+      if (window.AndroidBridge?.onCharacterEditorDone) {
+        window.AndroidBridge.onCharacterEditorDone(action);
       }
     } catch {}
+  }
+
+  function handleSaved() {
+    setSavedAt(Date.now());
+    notifyNative('saved');
+  }
+  function handleCancel() {
+    notifyNative('cancel');
   }
 
   return (
@@ -77,7 +89,7 @@ export default function CharacterEditor() {
             creature={creature}
             isPlayerCharacter={!!creature.is_player_character}
             onSave={handleSaved}
-            onCancel={() => { /* no-op — user dismisses the WebView */ }}
+            onCancel={handleCancel}
           />
         )}
       </div>

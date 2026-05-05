@@ -76,16 +76,23 @@ struct LoginView: View {
     // ── Hero (icon + title + tagline) ─────────────────────────────────
     private var hero: some View {
         VStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(
-                        colors: [Color.yellow.opacity(0.14), Color.yellow.opacity(0.04)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .overlay(Circle().stroke(Color.yellow.opacity(0.45), lineWidth: 1.2))
-                    .frame(width: 96, height: 96)
-                CrossedHammersMark()
-                    .frame(width: 56, height: 56)
-            }
+            // Same crossed-hammers art the home-screen icon ships,
+            // pulled from Assets.xcassets/AppMark so a future icon
+            // change cascades to the login screen automatically.
+            // The thin gold ring + radial glow on the backdrop give
+            // the mark the same "lifted" feel the previous SwiftUI-
+            // drawn version had, without the parallel codepath.
+            Image("AppMark")
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 96, height: 96)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.yellow.opacity(0.45), lineWidth: 1.2)
+                )
+                .shadow(color: Color.yellow.opacity(0.18), radius: 18, y: 4)
             Text("TableTop Forge")
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(.white)

@@ -256,18 +256,25 @@ private fun HeroBlock() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // Gold-rimmed circle holding the crossed-hammers mark
+        // Same crossed-hammers art the launcher icon ships, pulled
+        // from the mipmap so a future icon swap cascades to the
+        // login screen automatically. Rounded-rect clip + thin gold
+        // border give the mark the "lifted" feel the previous
+        // Canvas-drawn version had, without the parallel codepath.
+        val markShape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
         Box(
-            modifier = Modifier.size(96.dp).clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(Gold.copy(alpha = 0.16f), Gold.copy(alpha = 0.04f))
-                    )
-                )
-                .border(1.dp, Gold.copy(alpha = 0.45f), CircleShape),
+            modifier = Modifier.size(96.dp).clip(markShape)
+                .border(1.dp, Gold.copy(alpha = 0.45f), markShape),
             contentAlignment = Alignment.Center,
         ) {
-            CrossedHammersMark(size = 56.dp)
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(
+                    id = com.tabletopforge.R.mipmap.ic_launcher
+                ),
+                contentDescription = "TableTop Forge",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            )
         }
         Text("TableTop Forge", color = Color.White,
             fontSize = 30.sp, fontWeight = FontWeight.Bold,

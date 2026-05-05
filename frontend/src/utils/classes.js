@@ -188,6 +188,15 @@ export function getClassChoicesMerged(charClass, opts = {}) {
       const fSub = (f.subclass || '').toLowerCase();
       if (fSub && fSub !== subFilter) continue;
       const lvl = Math.max(1, Number(f.at_level) || 1);
+      // Per-level spell grants — surface as `adds.spells` on the
+      // synthetic auto-choice. CreatureForm's applyAdds already
+      // handles spell entries by name; the post-apply enrichment
+      // effect then back-fills school / damage / description from
+      // the spell library so the player gets a full stat block.
+      const spellList = Array.isArray(f.spells)
+        ? f.spells.map((s) => (typeof s === 'string' ? { name: s } : s))
+                  .filter((s) => s && s.name)
+        : [];
       push({
         id: `custom-feature:${(f.name || 'feature').toLowerCase().replace(/\s+/g, '-')}:${lvl}`,
         label: f.name || `Feature (level ${lvl})`,
@@ -196,6 +205,7 @@ export function getClassChoicesMerged(charClass, opts = {}) {
         at_level: lvl,
         adds: {
           traits: [{ name: f.name || 'Feature', desc: f.desc || '', category: 'specialAbility' }],
+          ...(spellList.length ? { spells: spellList } : {}),
         },
       });
     }

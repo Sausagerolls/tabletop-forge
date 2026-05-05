@@ -436,11 +436,86 @@ function FeatureList({ features, subclasses, onChange }) {
             <textarea className={INPUT} rows={2} value={f.desc || ''}
               onChange={(e) => setIdx(i, { desc: e.target.value })} />
           </Field>
+          <Field label="Grant spells at this level (typeahead — pulls from the GM spell library)">
+            <SpellMultiPick
+              picks={Array.isArray(f.spells) ? f.spells : []}
+              onChange={(arr) => setIdx(i, { spells: arr })} />
+          </Field>
         </div>
       ))}
       <button type="button"
-        onClick={() => onChange([...list, { at_level: 1, name: '', desc: '', subclass: '' }])}
+        onClick={() => onChange([...list, { at_level: 1, name: '', desc: '', subclass: '', spells: [] }])}
         className="text-xs text-purple-300 hover:text-purple-100">+ add feature</button>
+    </div>
+  );
+}
+
+// Typeahead multi-picker backed by /api/spell-library. Caches the
+// list once per editor mount so re-rendering features doesn't
+// re-fetch. Picks are kept as plain spell names — the apply
+// pipeline (frontend/src/components/CreatureForm.jsx) enriches by
+// name from the spell library when a character takes the class so
+// the granted spell lands with full stat block details.
+function SpellMultiPick({ picks, onChange }) {
+  const [draft, setDraft] = React.useState('');
+  const [library, setLibrary] = React.useState(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch('/api/spell-library')
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((rows) => { if (!cancelled) setLibrary(Array.isArray(rows) ? rows : []); })
+      .catch(() => { if (!cancelled) setLibrary([]); });
+    return () => { cancelled = true; };
+  }, []);
+  const lcDraft = draft.trim().toLowerCase();
+  const lcPicks = new Set(picks.map((s) => String(s).toLowerCase()));
+  const matches = (library || [])
+    .filter((s) => s.name && s.name.toLowerCase().includes(lcDraft) && !lcPicks.has(s.name.toLowerCase()))
+    .slice(0, 8);
+  function add(name) {
+    const v = String(name || '').trim();
+    if (!v) return;
+    if (lcPicks.has(v.toLowerCase())) { setDraft(''); return; }
+    onChange([...picks, v]);
+    setDraft('');
+  }
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1 mb-1">
+        {picks.map((s, i) => (
+          <span key={i} className="text-xs bg-purple-900/30 border border-purple-700/50 rounded px-2 py-0.5 flex items-center gap-1">
+            {s}
+            <button type="button" onClick={() => onChange(picks.filter((_, j) => j !== i))}
+              className="text-red-300 hover:text-red-100">×</button>
+          </span>
+        ))}
+      </div>
+      <div className="relative">
+        <input className={INPUT} placeholder="Spell name…" value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const exact = (library || []).find((s) =>
+                s.name && s.name.toLowerCase() === lcDraft
+              );
+              add(exact ? exact.name : draft);
+            }
+          }} />
+        {lcDraft && matches.length > 0 && (
+          <div className="absolute left-0 right-0 mt-1 z-10 bg-gray-900 border border-gray-700 rounded max-h-44 overflow-y-auto">
+            {matches.map((s) => (
+              <button key={s.id} type="button" onClick={() => add(s.name)}
+                className="w-full text-left text-xs text-gray-200 hover:bg-purple-900/40 px-2 py-1">
+                {s.name}
+                <span className="text-[10px] text-gray-500 ml-2">
+                  Lvl {s.level}{s.school ? ` · ${s.school}` : ''}{s.edition ? ` · ${s.edition}` : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

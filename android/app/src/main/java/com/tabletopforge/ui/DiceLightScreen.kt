@@ -154,9 +154,9 @@ fun DiceLightScreen(store: SessionStore, socketHolder: SocketHolder, resourceSto
                 Icon(Icons.Filled.Edit, contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary)
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Edit Character on Web",
+                    Text("Edit Stat Block",
                         fontWeight = FontWeight.SemiBold)
-                    Text("Opens the full character sheet editor — same as the desktop site.",
+                    Text("Opens the full character sheet editor — race, class, abilities, inventory, spells. Same as the desktop site.",
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Button(

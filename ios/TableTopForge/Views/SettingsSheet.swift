@@ -30,8 +30,8 @@ struct SettingsSheet: View {
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Edit Character on Web")
-                                Text("Opens the full character sheet editor — same as the desktop site.")
+                                Text("Edit Stat Block")
+                                Text("Opens the full character sheet editor — race, class, abilities, inventory, spells. Same as the desktop site.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -87,20 +87,18 @@ struct SettingsSheet: View {
         }
     }
 
-    // The PlayerView (web) accepts ?code= / ?name= / ?creatureId= so the
-    // user lands straight in their character sheet without re-typing
-    // any credentials. The mobile session already has all three.
+    // /edit-character?id=N mounts the same CreatureForm the GM uses
+    // on the desktop, full-screen with a thin "Saved." indicator.
+    // The mobile session already knows the creature id — pulled
+    // from the socket if connected, otherwise from the persisted
+    // lastCreatureId so the editor still opens after a cold launch
+    // before the socket completes its join.
     private var characterEditorURL: URL? {
         guard let base = store.baseURL else { return nil }
-        var comps = URLComponents(url: base.appendingPathComponent("play"),
+        guard let cid = socket.creature?.id ?? store.lastCreatureId else { return nil }
+        var comps = URLComponents(url: base.appendingPathComponent("edit-character"),
                                   resolvingAgainstBaseURL: false)
-        var items: [URLQueryItem] = [
-            URLQueryItem(name: "code", value: store.sessionCode),
-            URLQueryItem(name: "name", value: store.playerName),
-        ]
-        let cid = socket.creature?.id ?? store.lastCreatureId
-        if let cid { items.append(URLQueryItem(name: "creatureId", value: "\(cid)")) }
-        comps?.queryItems = items
+        comps?.queryItems = [URLQueryItem(name: "id", value: "\(cid)")]
         return comps?.url
     }
 }

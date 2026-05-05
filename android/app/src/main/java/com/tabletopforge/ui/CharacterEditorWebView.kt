@@ -1,5 +1,5 @@
 // CharacterEditorWebView — full-screen WebView pointed at the web
-// client's PlayerView (`/play?code=…&name=…&creatureId=…`). Lets the
+// client's CharacterEditor route (`/edit-character?id=…`). Lets the
 // user edit their character with 100% parity to the desktop site,
 // without us re-porting CreatureForm to Compose. Mirror of iOS's
 // SettingsSheet WebView modal.
@@ -38,15 +38,18 @@ fun CharacterEditorWebView(
     creatureId: Int?,
     onClose: () -> Unit,
 ) {
-    val url = remember(serverUrl, sessionCode, playerName, creatureId) {
+    // sessionCode + playerName are no longer needed by the route
+    // (the editor only needs ?id=…), but they're kept on the
+    // composable signature so the call sites that pass them stay
+    // unchanged. Suppressing the unused warnings via underscores.
+    @Suppress("UNUSED_PARAMETER", "UNUSED_VARIABLE")
+    val _unused = sessionCode to playerName
+    val url = remember(serverUrl, creatureId) {
         buildString {
             append(serverUrl.trimEnd('/'))
-            append("/play?code=")
-            append(URLEncoder.encode(sessionCode, "UTF-8"))
-            append("&name=")
-            append(URLEncoder.encode(playerName, "UTF-8"))
+            append("/edit-character")
             if (creatureId != null) {
-                append("&creatureId=")
+                append("?id=")
                 append(creatureId)
             }
         }
@@ -54,7 +57,7 @@ fun CharacterEditorWebView(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Edit Character") },
+                title = { Text("Edit Stat Block") },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close")

@@ -13,7 +13,7 @@ download + sideload the new APK.
 {
   "version_code": 3,
   "version_name": "1.9.6",
-  "url": "https://tabletopforge.com/android/TableTopForge-1.9.6.apk",
+  "url": "https://forge.giantmushroom.studio/android/TableTopForge-1.9.6.apk",
   "sha256": "<sha256 of the apk>",
   "release_notes": "...",
   "released_at": "2026-05-05",

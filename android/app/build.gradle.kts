@@ -32,7 +32,7 @@ android {
             buildConfigField("Boolean", "ENABLE_OTA", "true")
             buildConfigField(
                 "String", "UPDATE_MANIFEST_URL",
-                "\"https://tabletopforge.com/android/updates.json\"",
+                "\"https://forge.giantmushroom.studio/android/updates.json\"",
             )
             // Suffix the version name so we can tell the two channels
             // apart in crash reports and on the Settings → Server row.

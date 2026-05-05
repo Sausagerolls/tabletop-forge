@@ -51,6 +51,18 @@ const SOUNDS_DIR = path.join(__dirname, '../sounds');
 const AMBIENT_DIR = path.join(SOUNDS_DIR, 'ambient');
 const SOUND_EXTS = new Set(['.mp3', '.ogg', '.wav', '.m4a', '.webm', '.flac']);
 app.use('/sounds', express.static(SOUNDS_DIR));
+
+// /api/version — read from this server's package.json so the
+// version cascades automatically on every release_release.sh bump.
+// Mobile clients call this from their Settings tab to display
+// "Server: x.y.z" (and to power the easter-egg trigger).
+const SERVER_VERSION = (() => {
+  try { return require('../package.json').version || 'unknown'; }
+  catch { return 'unknown'; }
+})();
+app.get('/api/version', (_req, res) => {
+  res.json({ version: SERVER_VERSION });
+});
 app.get('/api/sounds', (_req, res) => {
   try {
     const results = [];

@@ -26,6 +26,13 @@ struct DiceLightView: View {
     private static let dieFaces = [4, 6, 8, 10, 12, 20, 100]
 
     @State private var showCharacterEditor: Bool = false
+    @State private var serverVersion: String = "—"
+    // Easter-egg state — three taps on the version row within ~2s
+    // launches the Brotato-style minigame. Tap counter resets on
+    // any inactivity gap so accidental double-taps don't drift in.
+    @State private var versionTapCount: Int = 0
+    @State private var lastVersionTapAt: Date = .distantPast
+    @State private var showMinigame: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -39,9 +46,14 @@ struct DiceLightView: View {
                 characterSection
                 appearanceSection
                 connectionSection
+                serverSection
                 logoutSection
             }
             .navigationTitle("Dice & Settings")
+            .task(id: store.serverUrl) { await refreshServerVersion() }
+            .fullScreenCover(isPresented: $showMinigame) {
+                MinigameView(socket: socket, store: store, onClose: { showMinigame = false })
+            }
             .sheet(isPresented: $showCharacterEditor) {
                 if let url = characterEditorURL {
                     NavigationStack {
@@ -162,6 +174,49 @@ struct DiceLightView: View {
             LabeledContent("Player",   value: store.playerName)
             LabeledContent("Status",   value: statusLabel)
         }
+    }
+
+    // ── Server (with the easter egg) ─────────────────────────────────
+    // Tapping the version line three times within two seconds opens
+    // a SpriteKit-backed Brotato-style minigame. The whole thing is
+    // a hidden goof — the section header just reads "Server" so the
+    // version row is the only visible cue.
+    @ViewBuilder
+    private var serverSection: some View {
+        Section("Server") {
+            LabeledContent("Version", value: serverVersion)
+                .contentShape(Rectangle())
+                .onTapGesture { handleVersionTap() }
+        }
+    }
+
+    private func handleVersionTap() {
+        let now = Date()
+        // Reset counter if too much time passed since the last tap.
+        if now.timeIntervalSince(lastVersionTapAt) > 2.0 {
+            versionTapCount = 0
+        }
+        versionTapCount += 1
+        lastVersionTapAt = now
+        if versionTapCount >= 3 {
+            versionTapCount = 0
+            showMinigame = true
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
+    }
+
+    private func refreshServerVersion() async {
+        guard let base = store.baseURL else { serverVersion = "—"; return }
+        do {
+            let (data, _) = try await URLSession.shared.data(
+                from: base.appendingPathComponent("api/version"))
+            if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let v = obj["version"] as? String {
+                serverVersion = v
+                return
+            }
+        } catch { /* offline — fall through */ }
+        serverVersion = "—"
     }
 
     private var statusLabel: String {

@@ -299,37 +299,42 @@ enum EnemySize: String {
         case .gargantuan: return 0.45
         }
     }
-    /// Hit points — bigger = tougher.
+    /// Hit points — bigger = tougher. Tuned so a default Arcane
+    /// Bolt (1 dmg) needs ~3 hits on a Medium and ~18 hits on a
+    /// Gargantuan; Sharpshooter and weapon-damage upgrades cut
+    /// those numbers fast but the early game stays crunchy.
     var hp: Int {
         switch self {
-        case .tiny: return 1
-        case .small: return 1
-        case .medium: return 2
-        case .large: return 4
-        case .huge: return 7
-        case .gargantuan: return 12
+        case .tiny: return 2
+        case .small: return 3
+        case .medium: return 5
+        case .large: return 9
+        case .huge: return 14
+        case .gargantuan: return 22
         }
     }
-    /// Damage dealt to the player on contact.
+    /// Damage dealt to the player on contact. Bigger enemies hit
+    /// harder so Larges-and-up can two-shot a fresh player.
     var contactDamage: Int {
         switch self {
-        case .tiny: return 6
-        case .small: return 9
-        case .medium: return 12
-        case .large: return 18
-        case .huge: return 26
-        case .gargantuan: return 36
+        case .tiny: return 8
+        case .small: return 12
+        case .medium: return 18
+        case .large: return 28
+        case .huge: return 40
+        case .gargantuan: return 55
         }
     }
-    /// Score awarded on kill — scales with toughness.
+    /// Score awarded on kill — scales with toughness. Lowered so
+    /// the typical wave nets ~150–250 points instead of 300+.
     var scoreReward: Int {
         switch self {
-        case .tiny: return 5
-        case .small: return 8
-        case .medium: return 12
-        case .large: return 22
-        case .huge: return 38
-        case .gargantuan: return 60
+        case .tiny: return 4
+        case .small: return 7
+        case .medium: return 11
+        case .large: return 20
+        case .huge: return 34
+        case .gargantuan: return 55
         }
     }
 }
@@ -391,10 +396,11 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var moveTouchDown: CGPoint?
     private var moveTarget: CGVector = .zero
     private var hudLabel: SKLabelNode!
-    private var hpBarFill: SKShapeNode!
-    private var hpBarBack: SKShapeNode!
-    private let hpBarWidth: CGFloat = 220
-    private let hpBarHeight: CGFloat = 12
+    private var hpBarFill: SKSpriteNode!
+    private var hpBarBack: SKSpriteNode!
+    private var hpBarLabel: SKLabelNode!
+    private let hpBarWidth: CGFloat = 260
+    private let hpBarHeight: CGFloat = 18
     private var gameOverNode: SKNode?
     private var shopNode: SKNode?
     private var paused_: Bool = false      // shop / game-over halt
@@ -410,6 +416,11 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
     private static let maxGuns: Int = 3
     private var guns: [Gun] = []
     private var gunSprites: [SKShapeNode] = []   // orbital indicators
+    /// Continuous rotation offset (radians) added to every gun's
+    /// orbital angle every frame, so the loadout rotates slowly
+    /// around the player at ~0.4 rad / sec.
+    private var gunRotationPhase: CGFloat = 0
+    private static let gunRotationRate: CGFloat = 0.4
     private var bulletDamage: Int = 1
     private var bulletSpeed: CGFloat = 460
     private var fireRateMul: CGFloat = 1.0
@@ -444,46 +455,55 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func spawnHud() {
-        // Top-left HP bar — green fill on a dark trough, fixed
-        // pixel size so it stays readable on every device. The
-        // top inset clears the iPhone notch / Dynamic Island —
-        // 70 px down from screen top puts the bar comfortably
-        // below either on every modern device.
-        let topY = size.height - 70
-        let backRect = CGRect(x: 0, y: 0, width: hpBarWidth, height: hpBarHeight)
-        let back = SKShapeNode(rect: backRect, cornerRadius: 3)
-        back.fillColor = SKColor.black.withAlphaComponent(0.55)
-        back.strokeColor = SKColor.white.withAlphaComponent(0.35)
-        back.lineWidth = 1
-        back.position = CGPoint(x: 16, y: topY)
+        // Top-CENTER HP bar — far easier to spot than the previous
+        // top-left placement. SKSpriteNode with a left anchor so
+        // xScale drains right-to-left from the bar's left edge,
+        // and so a half-empty bar still looks like a bar (not a
+        // weird centered rectangle).
+        let topY = size.height - 90
+        let centerX = size.width / 2
+
+        let backColor = SKColor(red: 0.04, green: 0.04, blue: 0.06, alpha: 0.92)
+        let back = SKSpriteNode(color: backColor, size: CGSize(
+            width: hpBarWidth + 6, height: hpBarHeight + 6))
+        back.position = CGPoint(x: centerX, y: topY)
         back.zPosition = 99
         addChild(back)
         hpBarBack = back
 
-        let fill = SKShapeNode(rect: backRect, cornerRadius: 3)
-        fill.fillColor = SKColor(red: 0.36, green: 0.85, blue: 0.42, alpha: 1)
-        fill.strokeColor = .clear
-        fill.position = back.position
+        let fillColor = SKColor(red: 0.36, green: 0.88, blue: 0.42, alpha: 1)
+        let fill = SKSpriteNode(color: fillColor, size: CGSize(
+            width: hpBarWidth, height: hpBarHeight))
+        fill.anchorPoint = CGPoint(x: 0, y: 0.5)
+        fill.position = CGPoint(x: centerX - hpBarWidth / 2, y: topY)
         fill.zPosition = 100
-        // Anchor the scale to the LEFT edge so xScale shrinks from
-        // the right. SKShapeNode rects are bottom-left anchored by
-        // default, which is what we want here.
-        fill.xScale = 1
         addChild(fill)
         hpBarFill = fill
 
-        // Caption row directly UNDER the HP bar. Stacks the
-        // critical info vertically: HP digits over the bar, the
-        // score/wave/guns caption below.
+        // HP digits ON TOP of the bar so the player sees the
+        // numeric value at a glance even when the bar is mostly
+        // empty.
+        let hpText = SKLabelNode(fontNamed: "Menlo-Bold")
+        hpText.fontSize = 13
+        hpText.fontColor = .white
+        hpText.horizontalAlignmentMode = .center
+        hpText.verticalAlignmentMode = .center
+        hpText.position = CGPoint(x: centerX, y: topY)
+        hpText.zPosition = 101
+        addChild(hpText)
+        hpBarLabel = hpText
+
+        // Score / wave / guns caption above the bar. Two-line so
+        // it doesn't crowd the bar; TOP-aligned to the screen so
+        // it never overlaps the bar itself.
         let l = SKLabelNode(fontNamed: "Menlo-Bold")
-        l.fontSize = 13
+        l.fontSize = 12
         l.fontColor = .white
-        l.horizontalAlignmentMode = .left
-        l.verticalAlignmentMode = .top
-        l.position = CGPoint(x: 16, y: topY - 4)
+        l.horizontalAlignmentMode = .center
+        l.verticalAlignmentMode = .bottom
+        l.position = CGPoint(x: centerX, y: topY + hpBarHeight / 2 + 8)
         l.zPosition = 100
-        l.numberOfLines = 0
-        l.preferredMaxLayoutWidth = size.width - 32
+        l.numberOfLines = 1
         addChild(l)
         hudLabel = l
         updateHud()
@@ -492,16 +512,20 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func updateHud() {
         let pct = max(0, min(1, CGFloat(hp) / CGFloat(maxHp)))
         hpBarFill?.xScale = pct
-        // Recolour green → orange → red as the bar drains.
+        // Recolour green → orange → red as the bar drains. SKSpriteNode
+        // uses .color to tint the colour-swatch sprite; the size we
+        // set on init stays the same so xScale shrinks the visible
+        // bar without touching the trough underneath.
         if pct > 0.6 {
-            hpBarFill?.fillColor = SKColor(red: 0.36, green: 0.85, blue: 0.42, alpha: 1)
+            hpBarFill?.color = SKColor(red: 0.36, green: 0.88, blue: 0.42, alpha: 1)
         } else if pct > 0.3 {
-            hpBarFill?.fillColor = SKColor(red: 0.95, green: 0.72, blue: 0.30, alpha: 1)
+            hpBarFill?.color = SKColor(red: 0.95, green: 0.72, blue: 0.30, alpha: 1)
         } else {
-            hpBarFill?.fillColor = SKColor(red: 0.92, green: 0.30, blue: 0.32, alpha: 1)
+            hpBarFill?.color = SKColor(red: 0.92, green: 0.30, blue: 0.32, alpha: 1)
         }
+        hpBarLabel?.text = "\(hp) / \(maxHp)"
         let gunNames = guns.isEmpty ? "—" : guns.map { $0.weapon.shortName }.joined(separator: " + ")
-        hudLabel?.text = "HP \(hp)/\(maxHp)   SCORE \(score)\nWAVE \(wave)   GUNS \(gunNames)"
+        hudLabel?.text = "WAVE \(wave)   ·   SCORE \(score)   ·   \(gunNames)"
     }
 
     // ── Touch — drag anywhere = move toward that direction ───────
@@ -536,6 +560,8 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         if paused_ { return }
         elapsed += dt
         if waveStart == 0 { waveStart = currentTime }
+        // Slow continuous gun ring rotation.
+        gunRotationPhase += Self.gunRotationRate * CGFloat(dt)
 
         // Player movement.
         if let p = player {
@@ -669,8 +695,11 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func gunWorldPosition(index: Int) -> CGPoint {
         guard let p = player?.position else { return .zero }
         let count = max(1, guns.count)
-        let radius: CGFloat = 38
-        let angle = (CGFloat(index) / CGFloat(count)) * 2 * .pi
+        let radius: CGFloat = 42
+        // Slow continuous rotation — gunRotationPhase ticks up
+        // every update() so the whole ring revolves around the
+        // player without each gun losing its slot index.
+        let angle = (CGFloat(index) / CGFloat(count)) * 2 * .pi + gunRotationPhase
         return CGPoint(x: p.x + cos(angle) * radius,
                        y: p.y + sin(angle) * radius)
     }
@@ -1314,62 +1343,62 @@ fileprivate struct Upgrade {
 }
 
 fileprivate extension Upgrade {
-    /// Brotato-priced — costs scale with the typical points-per-
-    /// wave (~150-300 once medium-class enemies are dying). One or
-    /// two upgrades per wave is the intended cadence; weapon
-    /// unlocks are the most expensive tier so they read as a
-    /// proper milestone.
+    /// Costs tuned against the new harder enemy stat block — typical
+    /// wave nets ~150–250 points after the second wave, so a stat
+    /// upgrade should cost about a wave's worth and a weapon unlock
+    /// closer to two waves. Cheap upgrades like Swift Boots stay
+    /// affordable so wave 1 isn't a dead end.
     static let pool: [Upgrade] = [
         // ── Stat upgrades ──────────────────────────────────────
         Upgrade(id: "swift_boots",    name: "Swift Boots",
                 desc: "+25 % movement speed.",
-                cost: 90, weaponUnlock: nil,
+                cost: 140, weaponUnlock: nil,
                 apply: { $0.applyMoveSpeedBoost(0.25) }),
         Upgrade(id: "chain_mail",     name: "Chain Mail",
                 desc: "+30 max HP, full heal.",
-                cost: 130, weaponUnlock: nil,
+                cost: 200, weaponUnlock: nil,
                 apply: { $0.applyMaxHpBoost(30, fullHeal: true) }),
         Upgrade(id: "sharpshooter",   name: "Sharpshooter",
                 desc: "+1 bullet damage on every gun.",
-                cost: 180, weaponUnlock: nil,
+                cost: 280, weaponUnlock: nil,
                 apply: { $0.applyBulletDamageBoost(1) }),
         Upgrade(id: "fleet_arrows",   name: "Fleet Arrows",
                 desc: "+30 % bullet speed.",
-                cost: 90, weaponUnlock: nil,
+                cost: 140, weaponUnlock: nil,
                 apply: { $0.applyBulletSpeedBoost(0.3) }),
         Upgrade(id: "quickdraw",      name: "Quickdraw",
                 desc: "+25 % fire rate on every gun.",
-                cost: 150, weaponUnlock: nil,
+                cost: 230, weaponUnlock: nil,
                 apply: { $0.applyFireRateBoost(0.25) }),
         Upgrade(id: "battle_hardened", name: "Battle Hardened",
                 desc: "Take 3 less damage from each hit.",
-                cost: 130, weaponUnlock: nil,
+                cost: 200, weaponUnlock: nil,
                 apply: { $0.applyDamageReduction(3) }),
         Upgrade(id: "vampiric",       name: "Vampiric Aura",
                 desc: "Heal 1 HP for every kill.",
-                cost: 220, weaponUnlock: nil,
+                cost: 340, weaponUnlock: nil,
                 apply: { $0.applyLifesteal(1) }),
         // ── Weapon unlocks ─────────────────────────────────────
         // Each one adds a new gun to the orbital ring (or, when
         // already at the cap, prompts the player to replace one).
         Upgrade(id: "weapon_twin",    name: "Twin Blades",
                 desc: "Adds a gun firing a 2-bullet 16° spread.",
-                cost: 180, weaponUnlock: .twinBlades, apply: { _ in }),
+                cost: 280, weaponUnlock: .twinBlades, apply: { _ in }),
         Upgrade(id: "weapon_frost",   name: "Frost Lance",
                 desc: "Adds a gun whose bullets pierce. 2 damage.",
-                cost: 240, weaponUnlock: .frostLance, apply: { _ in }),
+                cost: 380, weaponUnlock: .frostLance, apply: { _ in }),
         Upgrade(id: "weapon_trinity", name: "Holy Trinity",
                 desc: "Adds a gun firing a 3-bullet 26° spread.",
-                cost: 220, weaponUnlock: .holyTrinity, apply: { _ in }),
+                cost: 340, weaponUnlock: .holyTrinity, apply: { _ in }),
         Upgrade(id: "weapon_shadow",  name: "Shadowstrike",
                 desc: "Adds a fast gun. 1.5× speed, 1.6× fire rate.",
-                cost: 260, weaponUnlock: .shadowstrike, apply: { _ in }),
+                cost: 420, weaponUnlock: .shadowstrike, apply: { _ in }),
         Upgrade(id: "weapon_breath",  name: "Dragon's Breath",
                 desc: "Adds a 3-bullet cone gun, 1.4× fire rate.",
-                cost: 280, weaponUnlock: .dragonsBreath, apply: { _ in }),
+                cost: 460, weaponUnlock: .dragonsBreath, apply: { _ in }),
         Upgrade(id: "weapon_storm",   name: "Stormcaller",
                 desc: "Adds a heavy gun. 3 damage, 0.65× cadence.",
-                cost: 320, weaponUnlock: .stormcaller, apply: { _ in }),
+                cost: 520, weaponUnlock: .stormcaller, apply: { _ in }),
     ]
     static func byId(_ id: String) -> Upgrade? { pool.first { $0.id == id } }
 

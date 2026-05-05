@@ -479,8 +479,12 @@ private struct ItemRow: View {
     }
 
     private var typeIcon: String {
+        // SF Symbols doesn't ship a sword glyph. "scope" reads as a
+        // weapon target without giving the system a missing-symbol
+        // warning every render. shield + shippingbox are real names
+        // and stay as-is.
         switch item.item_type {
-        case "weapon": return "sword.line.dashed"
+        case "weapon": return "scope"
         case "armor":  return "shield"
         default:       return "shippingbox"
         }

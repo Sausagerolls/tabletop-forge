@@ -279,6 +279,19 @@ router.put('/:id', upload.single('image'), async (req, res) => {
       }
     }
 
+    // Broadcast a generic "creature_updated" so any connected
+    // clients (mobile apps, GM panels, the spectator view) re-pull
+    // the row. Mobile listens for this and bumps its
+    // requestCreatureRefresh counter, which kicks off a fresh REST
+    // fetch — without it, a sheet edit via the WebView editor never
+    // makes it onto the player's iPhone / Android until they
+    // pull-to-refresh manually. We emit globally because creatures
+    // aren't session-scoped (one row can be tokenised in many
+    // sessions); subscribers filter by their own creature id.
+    if (io) {
+      io.emit('creature_updated', { creatureId: Number(req.params.id) });
+    }
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);

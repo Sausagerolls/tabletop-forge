@@ -72,20 +72,23 @@ export default function CustomOriginsPanel() {
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          {['races', 'backgrounds', 'classes'].map((t) => (
-            <button key={t} type="button" onClick={() => setTab(t)}
-              className={`text-xs px-3 py-1.5 rounded border ${
-                tab === t
-                  ? 'bg-purple-800 border-purple-500 text-white'
-                  : 'bg-gray-900 border-gray-700 text-gray-300 hover:bg-gray-800'
-              }`}>
-              {t === 'races' ? 'Custom Races' : t === 'backgrounds' ? 'Custom Backgrounds' : 'Custom Classes'}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-2">
+      {/* Header — tabs row first, action buttons row second so a
+          narrow GM panel doesn't push the Export / + New buttons
+          off the right edge. flex-wrap on each row absorbs cramped
+          widths gracefully. */}
+      <div className="flex flex-wrap gap-2">
+        {['races', 'backgrounds', 'classes'].map((t) => (
+          <button key={t} type="button" onClick={() => setTab(t)}
+            className={`text-xs px-3 py-1.5 rounded border ${
+              tab === t
+                ? 'bg-purple-800 border-purple-500 text-white'
+                : 'bg-gray-900 border-gray-700 text-gray-300 hover:bg-gray-800'
+            }`}>
+            {t === 'races' ? 'Custom Races' : t === 'backgrounds' ? 'Custom Backgrounds' : 'Custom Classes'}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2">
           <button onClick={() => {
             setExportSelected(new Set(list.map((r) => r.id)));
             setExportOpen(true);
@@ -97,7 +100,6 @@ export default function CustomOriginsPanel() {
             className="text-xs bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700 text-purple-200 px-2 py-1 rounded">
             + New {tab === 'races' ? 'Race' : tab === 'backgrounds' ? 'Background' : 'Class'}
           </button>
-        </div>
       </div>
 
       <div className="text-xs text-gray-500 italic">

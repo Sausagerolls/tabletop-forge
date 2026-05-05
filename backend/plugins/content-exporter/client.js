@@ -51,6 +51,10 @@ const PLUGIN_ID = __PLUGIN_ID__;
 const KEY_CREATURE_IDS = 'inserted_creature_ids';
 const KEY_SPELL_IDS    = 'inserted_spell_ids';
 const KEY_TERRAIN_IDS  = 'inserted_terrain_ids';
+const KEY_RACE_IDS     = 'inserted_race_ids';
+const KEY_BG_IDS       = 'inserted_bg_ids';
+const KEY_CLASS_IDS    = 'inserted_class_ids';
+const KEY_LANG_SLUGS   = 'inserted_lang_slugs';
 const KEY_TREASURE_LOADED = 'treasure_loaded_v1';
 const KEY_CONTENT_LOADED  = 'content_loaded_v1';
 const KEY_STATUS       = 'install_status';
@@ -62,6 +66,10 @@ let savedDataApi = null;
 let creatureIds = [];
 let spellIds    = [];
 let terrainIds  = [];
+let raceIds     = [];     // UUID strings
+let bgIds       = [];     // UUID strings
+let classIds    = [];     // UUID strings
+let langSlugs   = [];     // language slugs the pack created
 let treasureCount = 0;
 let installState = 'idle';
 let installError = null;
@@ -145,6 +153,121 @@ async function importTerrain() {
   return ids.length;
 }
 
+// Custom races / backgrounds / classes — re-POST each row through
+// the same CRUD endpoints the editors use. The host tables generate
+// fresh UUIDs server-side, so we track the new ids for revert
+// without depending on the source ids surviving. Races have a
+// parent_id self-reference (sub-races); we order parents-first and
+// remap parent_id from the dump's old uuid to the freshly-minted one.
+async function importRaces() {
+  const dump = await readDataFile('data/races.json').catch(() => null);
+  if (!dump || !Array.isArray(dump.rows) || dump.rows.length === 0) return 0;
+  const oldToNew = new Map();
+  // Two-pass: top-level races first, then children.
+  const ordered = [
+    ...dump.rows.filter((r) => !r.parent_id),
+    ...dump.rows.filter((r) =>  r.parent_id),
+  ];
+  let added = 0;
+  for (const row of ordered) {
+    const body = {
+      name: row.name,
+      edition: row.edition || 'custom',
+      parent_id: row.parent_id ? (oldToNew.get(row.parent_id) || null) : null,
+      data: row.data || {},
+    };
+    try {
+      const res = await fetch('/api/custom/races', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) continue;
+      const out = await res.json();
+      if (out?.id) {
+        oldToNew.set(row.id, out.id);
+        raceIds.push(out.id);
+        added++;
+      }
+    } catch { /* skip a single row failure, continue */ }
+  }
+  return added;
+}
+
+async function importBackgrounds() {
+  const dump = await readDataFile('data/backgrounds.json').catch(() => null);
+  if (!dump || !Array.isArray(dump.rows) || dump.rows.length === 0) return 0;
+  let added = 0;
+  for (const row of dump.rows) {
+    try {
+      const res = await fetch('/api/custom/backgrounds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: row.name, data: row.data || {} }),
+      });
+      if (!res.ok) continue;
+      const out = await res.json();
+      if (out?.id) { bgIds.push(out.id); added++; }
+    } catch { /* per-row */ }
+  }
+  return added;
+}
+
+async function importClasses() {
+  const dump = await readDataFile('data/classes.json').catch(() => null);
+  if (!dump || !Array.isArray(dump.rows) || dump.rows.length === 0) return 0;
+  let added = 0;
+  for (const row of dump.rows) {
+    try {
+      const res = await fetch('/api/custom/classes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: row.name, data: row.data || {} }),
+      });
+      if (!res.ok) continue;
+      const out = await res.json();
+      if (out?.id) { classIds.push(out.id); added++; }
+    } catch { /* per-row */ }
+  }
+  // Nudge pickers + class-build registry to refresh.
+  try { window.dispatchEvent(new CustomEvent('custom-classes:changed')); } catch {}
+  return added;
+}
+
+async function importLanguages() {
+  const dump = await readDataFile('data/languages.json').catch(() => null);
+  if (!dump || !Array.isArray(dump.rows) || dump.rows.length === 0) return 0;
+  // Fetch existing slugs first so we don't claim ownership of a row
+  // that was already there before this pack installed. POST with
+  // ON CONFLICT returns the existing row, but we shouldn't delete
+  // it on uninstall — only entries we created.
+  let existing = new Set();
+  try {
+    const r = await fetch('/api/languages');
+    if (r.ok) {
+      const list = await r.json();
+      existing = new Set((list || []).map((l) => l.slug));
+    }
+  } catch {}
+  let added = 0;
+  for (const row of dump.rows) {
+    try {
+      const res = await fetch('/api/languages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: row.name, script: row.script || '' }),
+      });
+      if (!res.ok) continue;
+      const out = await res.json();
+      if (out?.slug && !existing.has(out.slug)) {
+        langSlugs.push(out.slug);
+        added++;
+      }
+    } catch { /* per-row */ }
+  }
+  return added;
+}
+
 async function deleteAllTracked() {
   const cTodo = [...creatureIds]; creatureIds = [];
   for (const id of cTodo) {
@@ -161,6 +284,30 @@ async function deleteAllTracked() {
     try { const r = await fetch(\`/api/terrain/library/\${id}\`, { method: 'DELETE' }); if (!r.ok) throw new Error(); }
     catch { terrainIds.push(id); }
   }
+  // Custom origins — UUID-keyed, idempotent deletes. Children of
+  // races cascade via the foreign key, so order doesn't matter.
+  const rTodo = [...raceIds]; raceIds = [];
+  for (const id of rTodo) {
+    try { const r = await fetch(\`/api/custom/races/\${id}\`, { method: 'DELETE' }); if (!r.ok) throw new Error(); }
+    catch { raceIds.push(id); }
+  }
+  const bTodo = [...bgIds]; bgIds = [];
+  for (const id of bTodo) {
+    try { const r = await fetch(\`/api/custom/backgrounds/\${id}\`, { method: 'DELETE' }); if (!r.ok) throw new Error(); }
+    catch { bgIds.push(id); }
+  }
+  const xTodo = [...classIds]; classIds = [];
+  for (const id of xTodo) {
+    try { const r = await fetch(\`/api/custom/classes/\${id}\`, { method: 'DELETE' }); if (!r.ok) throw new Error(); }
+    catch { classIds.push(id); }
+  }
+  const lTodo = [...langSlugs]; langSlugs = [];
+  for (const slug of lTodo) {
+    try { const r = await fetch(\`/api/languages/\${slug}\`, { method: 'DELETE' }); if (!r.ok) throw new Error(); }
+    catch { langSlugs.push(slug); }
+  }
+  // Re-fire the change event so pickers drop the removed rows.
+  if (xTodo.length) { try { window.dispatchEvent(new CustomEvent('custom-classes:changed')); } catch {} }
 }
 
 export default {
@@ -175,6 +322,14 @@ export default {
       if (Array.isArray(ss)) spellIds = ss.filter((s) => typeof s === 'string');
       const ts = await data.read(KEY_TERRAIN_IDS);
       if (Array.isArray(ts)) terrainIds = ts.map(Number).filter(Number.isFinite);
+      const rs = await data.read(KEY_RACE_IDS);
+      if (Array.isArray(rs)) raceIds  = rs.filter((s) => typeof s === 'string');
+      const bs = await data.read(KEY_BG_IDS);
+      if (Array.isArray(bs)) bgIds    = bs.filter((s) => typeof s === 'string');
+      const xs = await data.read(KEY_CLASS_IDS);
+      if (Array.isArray(xs)) classIds = xs.filter((s) => typeof s === 'string');
+      const ls = await data.read(KEY_LANG_SLUGS);
+      if (Array.isArray(ls)) langSlugs = ls.filter((s) => typeof s === 'string');
     } catch { /* network blip */ }
 
     // Content packs must NOT re-import on every plugin load. The plugin
@@ -195,7 +350,11 @@ export default {
         if (!alreadyLoaded) {
           await importCreatures();
           await importSpells();
-          try { await importTerrain(); } catch (terrainErr) { console.warn('terrain import failed', terrainErr); }
+          try { await importTerrain();      } catch (e) { console.warn('terrain import failed', e); }
+          try { await importLanguages();    } catch (e) { console.warn('languages import failed', e); }
+          try { await importRaces();        } catch (e) { console.warn('races import failed', e); }
+          try { await importBackgrounds();  } catch (e) { console.warn('backgrounds import failed', e); }
+          try { await importClasses();      } catch (e) { console.warn('classes import failed', e); }
           try { await data.write(KEY_CONTENT_LOADED, true); } catch {}
         }
         // Treasure last — it's GM-only and best-effort. A failure here
@@ -211,6 +370,10 @@ export default {
           await data.write(KEY_CREATURE_IDS, creatureIds);
           await data.write(KEY_SPELL_IDS, spellIds);
           await data.write(KEY_TERRAIN_IDS, terrainIds);
+          await data.write(KEY_RACE_IDS,    raceIds);
+          await data.write(KEY_BG_IDS,      bgIds);
+          await data.write(KEY_CLASS_IDS,   classIds);
+          await data.write(KEY_LANG_SLUGS,  langSlugs);
         }
         await data.write(KEY_STATUS, { state: installState, error: installError });
       } catch {}
@@ -238,6 +401,14 @@ export default {
             \`Inserted spells: \${spellIds.length}\`),
           React.createElement('div', { className: 'text-xs text-gray-300' },
             \`Inserted terrain pieces: \${terrainIds.length}\`),
+          raceIds.length > 0 && React.createElement('div', { className: 'text-xs text-gray-300' },
+            \`Inserted races: \${raceIds.length}\`),
+          bgIds.length > 0 && React.createElement('div', { className: 'text-xs text-gray-300' },
+            \`Inserted backgrounds: \${bgIds.length}\`),
+          classIds.length > 0 && React.createElement('div', { className: 'text-xs text-gray-300' },
+            \`Inserted classes: \${classIds.length}\`),
+          langSlugs.length > 0 && React.createElement('div', { className: 'text-xs text-gray-300' },
+            \`Inserted languages: \${langSlugs.length}\`),
           treasureCount > 0 && React.createElement('div', { className: 'text-xs text-gray-300' },
             \`Treasure items pushed: \${treasureCount}\`),
           installError && React.createElement('div',
@@ -261,11 +432,19 @@ export default {
         await savedDataApi.write(KEY_CREATURE_IDS, creatureIds);
         await savedDataApi.write(KEY_SPELL_IDS, spellIds);
         await savedDataApi.write(KEY_TERRAIN_IDS, terrainIds);
+        await savedDataApi.write(KEY_RACE_IDS, raceIds);
+        await savedDataApi.write(KEY_BG_IDS, bgIds);
+        await savedDataApi.write(KEY_CLASS_IDS, classIds);
+        await savedDataApi.write(KEY_LANG_SLUGS, langSlugs);
         // Clear the once-flag so a re-enable knows to re-import. We only
         // do this if everything cleaned up — partial failures keep the
         // tracking arrays populated so a retry on next disable can
         // finish them off.
-        if (creatureIds.length === 0 && spellIds.length === 0 && terrainIds.length === 0) {
+        const allClean = creatureIds.length === 0 && spellIds.length === 0
+          && terrainIds.length === 0 && raceIds.length === 0
+          && bgIds.length === 0 && classIds.length === 0
+          && langSlugs.length === 0;
+        if (allClean) {
           try { await savedDataApi.delete(KEY_CONTENT_LOADED); } catch {}
           try { await savedDataApi.delete(KEY_TREASURE_LOADED); } catch {}
           await savedDataApi.delete(KEY_STATUS);
@@ -389,10 +568,18 @@ let creatures = [];
 let spells = [];
 let terrain = [];            // global terrain library
 let treasure = [];           // mirror of host's treasure chest
+let races = [];              // GM-authored custom races
+let backgrounds = [];        // GM-authored custom backgrounds
+let classes = [];            // GM-authored custom classes
+let languages = [];          // /api/languages — full list, filtered to is_custom in UI
 let selCreatures = new Set();
 let selSpells = new Set();
 let selTerrain = new Set();  // selected terrain library ids
 let selTreasure = new Set(); // selected treasure items by id
+let selRaces = new Set();
+let selBackgrounds = new Set();
+let selClasses = new Set();
+let selLanguages = new Set();// language slugs
 let lastError = null;
 let busy = false;
 
@@ -427,6 +614,30 @@ async function refreshTerrain() {
   } catch (err) {
     console.warn('content-exporter: /api/terrain/library failed', err);
   }
+}
+async function refreshRaces() {
+  try {
+    const r = await fetch('/api/custom/races');
+    if (r.ok) races = await r.json();
+  } catch (err) { console.warn('content-exporter: /api/custom/races failed', err); }
+}
+async function refreshBackgrounds() {
+  try {
+    const r = await fetch('/api/custom/backgrounds');
+    if (r.ok) backgrounds = await r.json();
+  } catch (err) { console.warn('content-exporter: /api/custom/backgrounds failed', err); }
+}
+async function refreshClasses() {
+  try {
+    const r = await fetch('/api/custom/classes');
+    if (r.ok) classes = await r.json();
+  } catch (err) { console.warn('content-exporter: /api/custom/classes failed', err); }
+}
+async function refreshLanguages() {
+  try {
+    const r = await fetch('/api/languages');
+    if (r.ok) languages = await r.json();
+  } catch (err) { console.warn('content-exporter: /api/languages failed', err); }
 }
 
 // Pull initial treasure snapshot + subscribe to live updates so the
@@ -532,7 +743,44 @@ async function buildAndDownload(meta) {
       files.push({ path: `${id}/data/terrain.json`, content: enc.encode(text) });
     }
 
-    if (files.length < 2) throw new Error('Pick at least one creature, spell, terrain piece, or treasure item.');
+    // 7) Custom origins — races / backgrounds / classes. Each export
+    // endpoint returns { kind, rows: [{ id, name, ..., data }] }.
+    // The runtime template re-POSTs each row through the matching
+    // CRUD endpoint on install.
+    if (selRaces.size > 0) {
+      const ids = Array.from(selRaces).join(',');
+      const r = await fetch(`/api/custom/races/export?ids=${ids}`);
+      if (!r.ok) throw new Error(`/api/custom/races/export ${r.status}`);
+      files.push({ path: `${id}/data/races.json`, content: enc.encode(await r.text()) });
+    }
+    if (selBackgrounds.size > 0) {
+      const ids = Array.from(selBackgrounds).join(',');
+      const r = await fetch(`/api/custom/backgrounds/export?ids=${ids}`);
+      if (!r.ok) throw new Error(`/api/custom/backgrounds/export ${r.status}`);
+      files.push({ path: `${id}/data/backgrounds.json`, content: enc.encode(await r.text()) });
+    }
+    if (selClasses.size > 0) {
+      const ids = Array.from(selClasses).join(',');
+      const r = await fetch(`/api/custom/classes/export?ids=${ids}`);
+      if (!r.ok) throw new Error(`/api/custom/classes/export ${r.status}`);
+      files.push({ path: `${id}/data/classes.json`, content: enc.encode(await r.text()) });
+    }
+
+    // 8) Languages — there's no /export endpoint, but a filter on
+    // the live list does the same job. We strip the host's row id
+    // since slugs are derived deterministically from name.
+    if (selLanguages.size > 0) {
+      const rows = languages
+        .filter((l) => selLanguages.has(l.slug))
+        .map(({ id: _drop, ...rest }) => rest);
+      const json = JSON.stringify({ kind: 'languages', rows }, null, 2);
+      files.push({ path: `${id}/data/languages.json`, content: enc.encode(json) });
+    }
+
+    const totalSelected = selCreatures.size + selSpells.size + selTerrain.size
+      + selTreasure.size + selRaces.size + selBackgrounds.size
+      + selClasses.size + selLanguages.size;
+    if (totalSelected === 0) throw new Error('Pick at least one item to bundle.');
 
     const zipBytes = buildZip(files);
     const blob = new Blob([zipBytes], { type: 'application/zip' });
@@ -554,6 +802,10 @@ export default {
     refreshCreatures().then(pingTab);
     refreshSpells().then(pingTab);
     refreshTerrain().then(pingTab);
+    refreshRaces().then(pingTab);
+    refreshBackgrounds().then(pingTab);
+    refreshClasses().then(pingTab);
+    refreshLanguages().then(pingTab);
     attachTreasureBridge();
 
     if (role !== 'dm') return;
@@ -577,10 +829,16 @@ export default {
       const [section, setSection] = React.useState('creatures');
 
       const matchesSearch = (s) => !search || (s || '').toLowerCase().includes(search.toLowerCase());
-      const visibleCreatures = creatures.filter((c) => matchesSearch(c.name));
-      const visibleSpells    = spells.filter((s) => matchesSearch(s.name));
-      const visibleTerrain   = terrain.filter((t) => matchesSearch(t.name));
-      const visibleTreasure  = treasure.filter((t) => matchesSearch(t.name));
+      const visibleCreatures   = creatures.filter((c) => matchesSearch(c.name));
+      const visibleSpells      = spells.filter((s) => matchesSearch(s.name));
+      const visibleTerrain     = terrain.filter((t) => matchesSearch(t.name));
+      const visibleTreasure    = treasure.filter((t) => matchesSearch(t.name));
+      const visibleRaces       = races.filter((r) => matchesSearch(r.name));
+      const visibleBackgrounds = backgrounds.filter((b) => matchesSearch(b.name));
+      const visibleClasses     = classes.filter((c) => matchesSearch(c.name));
+      const visibleLanguages   = languages
+        .filter((l) => l.is_custom)
+        .filter((l) => matchesSearch(l.name));
 
       function toggleSet(set, key) {
         if (set.has(key)) set.delete(key); else set.add(key);
@@ -598,6 +856,32 @@ export default {
           ? 'bg-dnd-gold text-gray-900 font-semibold'
           : 'bg-gray-800 hover:bg-gray-700 text-gray-200'}`,
       }, `${label}${count ? ` (${count})` : ''}`);
+
+      // Compact bordered-list helper for the four GM-origins types
+      // (races, backgrounds, classes, custom languages). Same
+      // visual layout as the creature/spell sections but pulls only
+      // the bits these rows have in common: name + select-by-id.
+      function simpleSelectList(visible, fullList, set, idField, emptyMsg) {
+        return React.createElement('div',
+          { className: 'space-y-1 bg-gray-800 border border-gray-700 rounded-lg p-2 max-h-72 overflow-y-auto' },
+          React.createElement('div', { className: 'flex gap-1.5 px-1 pb-1' },
+            React.createElement('button', {
+              onClick: () => selectAllVisible(set, visible, idField),
+              className: 'text-[11px] bg-gray-700 hover:bg-gray-600 text-gray-200 px-2 py-0.5 rounded',
+            }, `Select visible (${visible.length})`),
+            React.createElement('button', {
+              onClick: () => clearSet(set),
+              className: 'text-[11px] bg-gray-700 hover:bg-gray-600 text-gray-200 px-2 py-0.5 rounded',
+            }, 'Clear')),
+          fullList.length === 0
+            ? React.createElement('div', { className: 'text-xs text-gray-500 italic px-2 py-2' },
+                emptyMsg || 'Nothing here yet.')
+            : visible.length === 0
+              ? React.createElement('div', { className: 'text-xs text-gray-500 italic px-2 py-2' }, 'No matches.')
+              : visible.map((row) => React.createElement(ItemRow, {
+                  key: row[idField], item: row, idField, set,
+                })));
+      }
 
       function ItemRow({ item, idField, set }) {
         const checked = set.has(item[idField]);
@@ -657,10 +941,14 @@ export default {
 
         // Section toggle + search.
         React.createElement('div', { className: 'flex gap-1.5 flex-wrap' },
-          sectionBtn('creatures', `Creatures`, selCreatures.size),
-          sectionBtn('spells',    `Spells`,    selSpells.size),
-          sectionBtn('terrain',   `Terrain`,   selTerrain.size),
-          sectionBtn('treasure',  `Treasure`,  selTreasure.size)),
+          sectionBtn('creatures',   `Creatures`,   selCreatures.size),
+          sectionBtn('spells',      `Spells`,      selSpells.size),
+          sectionBtn('terrain',     `Terrain`,     selTerrain.size),
+          sectionBtn('treasure',    `Treasure`,    selTreasure.size),
+          sectionBtn('races',       `Races`,       selRaces.size),
+          sectionBtn('backgrounds', `Backgrounds`, selBackgrounds.size),
+          sectionBtn('classes',     `Classes`,     selClasses.size),
+          sectionBtn('languages',   `Languages`,   selLanguages.size)),
         React.createElement('input', {
           type: 'search', value: search,
           onChange: (e) => setSearch(e.target.value),
@@ -778,14 +1066,28 @@ export default {
                 ))
         ),
 
+        // GM-authored origins panels — races / backgrounds / classes
+        // pull straight from /api/custom/{...}; languages filter to
+        // is_custom rows since the SRD seed set is part of every
+        // installation already.
+        section === 'races' && simpleSelectList(visibleRaces, races, selRaces, 'id'),
+        section === 'backgrounds' && simpleSelectList(visibleBackgrounds, backgrounds, selBackgrounds, 'id'),
+        section === 'classes' && simpleSelectList(visibleClasses, classes, selClasses, 'id'),
+        section === 'languages' && simpleSelectList(visibleLanguages, languages.filter((l) => l.is_custom), selLanguages, 'slug',
+          languages.filter((l) => l.is_custom).length === 0
+            ? 'No custom languages yet. Add some via the LanguagePicker on a character sheet (or the Custom Race / Class editor) and they\'ll show up here.'
+            : null),
+
         // Download.
         React.createElement('button', {
           onClick: () => buildAndDownload(meta),
-          disabled: busy || (selCreatures.size + selSpells.size + selTerrain.size + selTreasure.size === 0),
+          disabled: busy || (selCreatures.size + selSpells.size + selTerrain.size + selTreasure.size
+            + selRaces.size + selBackgrounds.size + selClasses.size + selLanguages.size === 0),
           className: 'w-full bg-dnd-gold hover:bg-yellow-500 text-gray-900 py-2 rounded font-semibold text-sm disabled:opacity-50',
         }, busy
           ? 'Building…'
-          : `Export ${selCreatures.size + selSpells.size + selTerrain.size + selTreasure.size} item(s) → ${sanitiseId(meta.id) || 'pack'}.zip`),
+          : `Export ${selCreatures.size + selSpells.size + selTerrain.size + selTreasure.size
+            + selRaces.size + selBackgrounds.size + selClasses.size + selLanguages.size} item(s) → ${sanitiseId(meta.id) || 'pack'}.zip`),
         lastError && React.createElement('div',
           { className: 'text-[11px] text-red-300 bg-red-950/40 border border-red-900/40 rounded px-2 py-1' },
           lastError)

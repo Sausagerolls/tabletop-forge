@@ -1,0 +1,9 @@
+{
+  "version_code": 3,
+  "version_name": "1.9.6",
+  "url": "https://tabletopforge.com/android/TableTopForge-1.9.6.apk",
+  "sha256": "REPLACE_WITH_REAL_SHA256_AFTER_BUILDING_AND_SIGNING_THE_APK",
+  "release_notes": "Brotato-style easter-egg minigame and OTA updates for site builds.",
+  "released_at": "2026-05-05",
+  "min_supported_version_code": 1
+}

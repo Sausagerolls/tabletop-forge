@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Site-build manifest overlay. Adds REQUEST_INSTALL_PACKAGES so
+     the OTA flow can hand a downloaded APK to the system installer,
+     plus a FileProvider that exposes the cached APK to the system
+     installer via a content:// URI.
+
+     This file is ONLY merged into the `site` build flavor — the
+     `play` flavor's APK never includes any of these declarations
+     so the Play Store upload stays compliant. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+
+    <application>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"/>
+        </provider>
+    </application>
+</manifest>

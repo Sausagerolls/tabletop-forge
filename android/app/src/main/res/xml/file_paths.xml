@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider scope. Only the external cache is shared so the
+     system installer can read the freshly-downloaded APK without
+     us granting it broader storage access. -->
+<paths>
+    <external-cache-path name="ota_cache" path="."/>
+</paths>

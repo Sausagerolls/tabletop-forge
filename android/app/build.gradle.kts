@@ -13,8 +13,37 @@ android {
         applicationId = "com.tabletopforge"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.9.2"
+        versionCode = 4
+        versionName = "1.9.7"
+    }
+
+    // Two distribution channels:
+    //   * `site` — APK hosted on tabletopforge.com. Ships an in-app
+    //     update checker that polls /android/updates.json and side-
+    //     loads new APKs through PackageInstaller.
+    //   * `play` — Google Play build. No self-update code; updates
+    //     are handled by the store itself. The `REQUEST_INSTALL_
+    //     PACKAGES` permission is added only to the site manifest
+    //     so Play doesn't reject the upload.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("site") {
+            dimension = "distribution"
+            buildConfigField("Boolean", "ENABLE_OTA", "true")
+            buildConfigField(
+                "String", "UPDATE_MANIFEST_URL",
+                "\"https://tabletopforge.com/android/updates.json\"",
+            )
+            // Suffix the version name so we can tell the two channels
+            // apart in crash reports and on the Settings → Server row.
+            versionNameSuffix = "-site"
+        }
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("Boolean", "ENABLE_OTA", "false")
+            buildConfigField("String", "UPDATE_MANIFEST_URL", "\"\"")
+            versionNameSuffix = ""
+        }
     }
 
     buildTypes {
@@ -33,6 +62,9 @@ android {
     }
     buildFeatures {
         compose = true
+        // BuildConfig is opt-in on AGP 8+. We need it for the
+        // ENABLE_OTA / UPDATE_MANIFEST_URL fields above.
+        buildConfig = true
     }
     packaging {
         resources {

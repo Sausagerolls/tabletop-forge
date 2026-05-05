@@ -23,6 +23,7 @@
 		B79EFCEA6F9902689592C69E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9935DF9F92E1BA2ACCC3CBFB /* PrivacyInfo.xcprivacy */; };
 		C83B765DF91F6AB30703B91E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = D36182E61B6D9031854358F4 /* Models.swift */; };
 		D9047D23A4F537114A1CBFCC /* SpellsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21CC48455C00D093D568C45D /* SpellsView.swift */; };
+		DC381E8021B668F6C8F2D23C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 51D5AA9D9779B4BEFA75546C /* Assets.xcassets */; };
 		F1CDB6CA72C67B191B6E170B /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4833F11899CB22327DEFEB95 /* NotificationManager.swift */; };
 		FBB1BC1A02D57D487B660811 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6228B67B08E15BD1065719B /* LoginView.swift */; };
 /* End PBXBuildFile section */
@@ -35,6 +36,7 @@
 		3431102439A271FD3313467B /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4210520F9F64C5B85826E7F0 /* InventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryView.swift; sourceTree = "<group>"; };
 		4833F11899CB22327DEFEB95 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
+		51D5AA9D9779B4BEFA75546C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		561BC95B9A7E4ADAFDE4B022 /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
 		773E10475EFAE6E9144CD9A1 /* TableTopForge.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TableTopForge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9935DF9F92E1BA2ACCC3CBFB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -76,6 +78,7 @@
 		1B31CAB859ADC8F4CA2B6BBE /* TableTopForge */ = {
 			isa = PBXGroup;
 			children = (
+				51D5AA9D9779B4BEFA75546C /* Assets.xcassets */,
 				FB8EE46B50CCDD355AF17D83 /* Config.xcconfig */,
 				3431102439A271FD3313467B /* ContentView.swift */,
 				EBB510FD297BEE1A99A9BE2D /* Info.plist */,
@@ -193,6 +196,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DC381E8021B668F6C8F2D23C /* Assets.xcassets in Resources */,
 				B79EFCEA6F9902689592C69E /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

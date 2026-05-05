@@ -96,7 +96,7 @@ nav.stuck {
   color: var(--accent-l); letter-spacing: 0.14em;
   display: flex; align-items: center; gap: 9px;
 }
-.nav-logo-icon { font-size: 22px; }
+.nav-logo-icon { width: 28px; height: 28px; display: inline-block; vertical-align: middle; }
 .nav-links { display: flex; gap: 38px; list-style: none; }
 .nav-links a {
   font-size: 13px; font-family: 'Cinzel', serif;
@@ -517,7 +517,7 @@ code {
 ════════════════════════════════════════════════ */
 .dl-section { padding: 80px 52px; }
 .dl-inner { max-width: 680px; margin: 0 auto; text-align: center; }
-.dl-icon { font-size: 56px; margin-bottom: 20px; }
+.dl-icon { width: 96px; height: 96px; margin: 0 auto 20px; display: block; }
 .dl-title { font-family: 'Cinzel', serif; font-size: clamp(24px,3vw,36px); font-weight: 700; margin-bottom: 14px; }
 .dl-desc { font-size: 17px; color: var(--text-m); line-height: 1.75; margin-bottom: 36px; }
 .dl-btn {
@@ -571,7 +571,8 @@ footer {
   display: flex; align-items: center; justify-content: center;
   flex-wrap: wrap; gap: 14px;
 }
-.foot-brand { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.14em; color: var(--accent-l); display: flex; align-items: center; gap: 8px; }
+.foot-brand { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.14em; color: var(--accent-l); display: flex; align-items: center; gap: 10px; }
+.foot-brand img { width: 22px; height: 22px; }
 .foot-copy { font-size: 14px; color: var(--text-d); }
 .foot-link { color: var(--text-m); transition: color 0.2s; }
 .foot-link:hover { color: var(--accent-l); }
@@ -619,7 +620,7 @@ footer {
 <!-- ═══════════ NAV ═══════════ -->
 <nav id="nav">
   <div class="nav-logo">
-    <span class="nav-logo-icon">⚒️</span>
+    <img src="/icons/icon-48.png" alt="" class="nav-logo-icon" width="28" height="28" />
     TABLETOP FORGE
   </div>
   <ul class="nav-links">
@@ -1416,7 +1417,7 @@ cd TabletopForge</div>
 <section id="download">
   <div class="dl-section">
     <div class="dl-inner reveal">
-      <div class="dl-icon">⚒️</div>
+      <img src="/icons/icon-192.png" alt="TableTop Forge" class="dl-icon" />
       <h2 class="dl-title">Download TableTop Forge</h2>
       <p class="dl-desc">Free, self-hosted, and open for your table. No accounts, no subscriptions, no data leaving your network.</p>
       <a href="releases/dnd-vtt-v1.9.2.zip" class="dl-btn" download>
@@ -1523,7 +1524,7 @@ cd TabletopForge</div>
 
 <!-- ═══════════ FOOTER ═══════════ -->
 <footer>
-  <div class="foot-brand">⚒️ TABLETOP FORGE</div>
+  <div class="foot-brand"><img src="/icons/icon-48.png" alt="" /> TABLETOP FORGE</div>
   <div class="foot-copy">© 2026 <a href="https://giantmushroom.studio" class="foot-link" target="_blank">Giant Mushroom Studio</a> · Free for personal use at your table · <a href="https://github.com/Sausagerolls/tabletop-forge" class="foot-link" target="_blank" rel="noopener">Source on GitHub</a></div>
   <div class="foot-row">
     <a href="/terms.html" class="foot-link">Terms of Use</a>

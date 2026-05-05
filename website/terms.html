@@ -31,7 +31,8 @@
     display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
   }
   .brand { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.16em; color: var(--accent-l); }
-  .brand a { color: inherit; border: none; }
+  .brand a { color: inherit; border: none; display: inline-flex; align-items: center; gap: 10px; }
+  .brand img { width: 24px; height: 24px; }
   .nav-back { font-size: 14px; color: var(--text-m); }
   main {
     max-width: 760px; margin: 0 auto; padding: 60px 28px 80px;
@@ -63,7 +64,7 @@
 </head>
 <body>
 <header class="page-head">
-  <div class="brand"><a href="/">⚒️ TABLETOP FORGE</a></div>
+  <div class="brand"><a href="/"><img src="/icons/icon-48.png" alt="" /> TABLETOP FORGE</a></div>
   <a class="nav-back" href="/">← back to home</a>
 </header>
 

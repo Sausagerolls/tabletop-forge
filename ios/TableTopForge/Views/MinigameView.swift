@@ -401,10 +401,15 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
     private let bulletPool = SpritePool()
     private let enemyPool  = SpritePool()
 
-    // Player loadout — drives weapon behaviour. Mutated by shop
-    // upgrades; defaults are a single straight shot.
-    private var weapon: WeaponLoadout = .arcaneBolt
-    private var ownedWeapons: Set<WeaponLoadout> = [.arcaneBolt]
+    // Player loadout — Brotato-style multi-gun. Up to MAX_GUNS
+    // weapons orbit the player at evenly-spaced angles; each fires
+    // independently on its own cadence. Default loadout is a
+    // single Arcane Bolt; the wave-end shop adds more guns up to
+    // the cap, after which buying a new weapon prompts the player
+    // to replace one of the existing slots.
+    private static let maxGuns: Int = 3
+    private var guns: [Gun] = []
+    private var gunSprites: [SKShapeNode] = []   // orbital indicators
     private var bulletDamage: Int = 1
     private var bulletSpeed: CGFloat = 460
     private var fireRateMul: CGFloat = 1.0
@@ -417,6 +422,8 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         physicsWorld.contactDelegate = self
         spawnPlayer()
         spawnHud()
+        // Default loadout: a single Arcane Bolt orbiting the player.
+        equip(weapon: .arcaneBolt, replacing: nil)
         wave = 1
     }
 
@@ -438,13 +445,17 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private func spawnHud() {
         // Top-left HP bar — green fill on a dark trough, fixed
-        // pixel size so it stays readable on every device.
+        // pixel size so it stays readable on every device. The
+        // top inset clears the iPhone notch / Dynamic Island —
+        // 70 px down from screen top puts the bar comfortably
+        // below either on every modern device.
+        let topY = size.height - 70
         let backRect = CGRect(x: 0, y: 0, width: hpBarWidth, height: hpBarHeight)
         let back = SKShapeNode(rect: backRect, cornerRadius: 3)
         back.fillColor = SKColor.black.withAlphaComponent(0.55)
         back.strokeColor = SKColor.white.withAlphaComponent(0.35)
         back.lineWidth = 1
-        back.position = CGPoint(x: 16, y: size.height - 32)
+        back.position = CGPoint(x: 16, y: topY)
         back.zPosition = 99
         addChild(back)
         hpBarBack = back
@@ -454,19 +465,25 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         fill.strokeColor = .clear
         fill.position = back.position
         fill.zPosition = 100
+        // Anchor the scale to the LEFT edge so xScale shrinks from
+        // the right. SKShapeNode rects are bottom-left anchored by
+        // default, which is what we want here.
         fill.xScale = 1
         addChild(fill)
         hpBarFill = fill
 
-        // Score / wave caption underneath. HP digits live on top
-        // of the bar so the player sees them even glanced.
+        // Caption row directly UNDER the HP bar. Stacks the
+        // critical info vertically: HP digits over the bar, the
+        // score/wave/guns caption below.
         let l = SKLabelNode(fontNamed: "Menlo-Bold")
-        l.fontSize = 14
+        l.fontSize = 13
         l.fontColor = .white
         l.horizontalAlignmentMode = .left
         l.verticalAlignmentMode = .top
-        l.position = CGPoint(x: 16, y: size.height - 38)
+        l.position = CGPoint(x: 16, y: topY - 4)
         l.zPosition = 100
+        l.numberOfLines = 0
+        l.preferredMaxLayoutWidth = size.width - 32
         addChild(l)
         hudLabel = l
         updateHud()
@@ -483,7 +500,8 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         } else {
             hpBarFill?.fillColor = SKColor(red: 0.92, green: 0.30, blue: 0.32, alpha: 1)
         }
-        hudLabel?.text = "HP \(hp)/\(maxHp)   ·   SCORE \(score)   ·   WAVE \(wave)   ·   \(weapon.displayName.uppercased())"
+        let gunNames = guns.isEmpty ? "—" : guns.map { $0.weapon.shortName }.joined(separator: " + ")
+        hudLabel?.text = "HP \(hp)/\(maxHp)   SCORE \(score)\nWAVE \(wave)   GUNS \(gunNames)"
     }
 
     // ── Touch — drag anywhere = move toward that direction ───────
@@ -530,12 +548,22 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
             )
         }
 
-        // Auto-shoot at the nearest enemy.
-        let interval = 0.32 / Double(fireRateMul)
-        if currentTime - lastShot > interval, let target = nearestEnemy() {
-            shoot(toward: target.position)
-            lastShot = currentTime
+        // Per-gun auto-shoot. Each gun fires on its own cadence
+        // and spawns bullets from its own orbital position.
+        if let target = nearestEnemy()?.position {
+            for i in guns.indices {
+                let g = guns[i]
+                let interval = 0.32 / Double(fireRateMul * g.weapon.nativeFireRateBoost)
+                if currentTime - g.lastFire > interval {
+                    let origin = gunWorldPosition(index: i)
+                    fire(weapon: g.weapon, from: origin, toward: target)
+                    guns[i].lastFire = currentTime
+                }
+            }
         }
+        // Reposition orbital gun sprites every frame so they
+        // follow the player smoothly.
+        layoutGunSprites()
 
         // Enemy spawns.
         if currentTime - lastSpawn > spawnInterval {
@@ -577,33 +605,31 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         return best
     }
 
-    /// Spawn the bullets implied by the current weapon. Each
-    /// weapon decides how many bullets, their spread, speed, and
-    /// pierce behavior. We re-use the pool across every shape so
+    /// Spawn the bullets implied by `weapon` from `origin` aimed
+    /// at `target`. Multi-gun build: each orbital gun fires its
+    /// own pattern. We re-use the pool across every shape so
     /// switching weapons mid-run doesn't churn allocations.
-    private func shoot(toward target: CGPoint) {
-        guard let pp = player?.position else { return }
-        let dx = target.x - pp.x
-        let dy = target.y - pp.y
+    private func fire(weapon w: WeaponLoadout, from origin: CGPoint, toward target: CGPoint) {
+        let dx = target.x - origin.x
+        let dy = target.y - origin.y
         let baseAngle = atan2(dy, dx)
-        let count = weapon.bulletCount
-        let spreadDeg = weapon.spreadDegrees
-        // Spread evenly around the centerline. count == 1 → spread 0.
+        let count = w.bulletCount
+        let spreadDeg = w.spreadDegrees
         for i in 0..<count {
             let t: CGFloat = count == 1
                 ? 0
                 : CGFloat(i) / CGFloat(count - 1) - 0.5
             let theta = baseAngle + CGFloat(spreadDeg) * .pi / 180 * t
-            spawnBullet(from: pp, angle: theta)
+            spawnBullet(weapon: w, from: origin, angle: theta)
         }
     }
 
-    private func spawnBullet(from origin: CGPoint, angle: CGFloat) {
-        let color = weapon.bulletColor
-        let radius: CGFloat = weapon.bulletRadius
-        let pierce = weapon.pierces
-        let dmg = weapon.bulletDamage * bulletDamage
-        let speed = bulletSpeed * weapon.speedMultiplier
+    private func spawnBullet(weapon w: WeaponLoadout, from origin: CGPoint, angle: CGFloat) {
+        let color = w.bulletColor
+        let radius: CGFloat = w.bulletRadius
+        let pierce = w.pierces
+        let dmg = w.bulletDamage * bulletDamage
+        let speed = bulletSpeed * w.speedMultiplier
         let bullet = bulletPool.acquire {
             let n = SKShapeNode(circleOfRadius: radius)
             n.zPosition = 5
@@ -631,12 +657,59 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
             dx: cos(angle) * speed, dy: sin(angle) * speed)
         bullet.removeAction(forKey: "lifespan")
         bullet.run(.sequence([
-            .wait(forDuration: weapon.lifespan),
+            .wait(forDuration: w.lifespan),
             .run { [weak self, weak bullet] in
                 guard let bullet else { return }
                 self?.recycle(bullet, into: self?.bulletPool)
             },
         ]), withKey: "lifespan")
+    }
+
+    // ── Gun loadout helpers ──────────────────────────────────────
+    private func gunWorldPosition(index: Int) -> CGPoint {
+        guard let p = player?.position else { return .zero }
+        let count = max(1, guns.count)
+        let radius: CGFloat = 38
+        let angle = (CGFloat(index) / CGFloat(count)) * 2 * .pi
+        return CGPoint(x: p.x + cos(angle) * radius,
+                       y: p.y + sin(angle) * radius)
+    }
+
+    private func layoutGunSprites() {
+        for (i, sprite) in gunSprites.enumerated() {
+            sprite.position = gunWorldPosition(index: i)
+        }
+    }
+
+    /// Add or replace a gun. `replacing` is the index of an existing
+    /// gun to swap (used when the player buys a new weapon while
+    /// already at the cap); pass nil for "append if room".
+    fileprivate func equip(weapon w: WeaponLoadout, replacing slot: Int?) {
+        if let slot, guns.indices.contains(slot) {
+            guns[slot] = Gun(weapon: w, lastFire: 0)
+        } else if guns.count < Self.maxGuns {
+            guns.append(Gun(weapon: w, lastFire: 0))
+        } else {
+            // Pool is full and the caller didn't pick a slot to
+            // overwrite — silently drop the request rather than
+            // exceeding the cap. Shop UI already handles "pick a
+            // slot" before reaching this branch.
+            return
+        }
+        // Rebuild the orbital indicators so positions stay tidy.
+        for sprite in gunSprites { sprite.removeFromParent() }
+        gunSprites = []
+        for g in guns {
+            let s = SKShapeNode(circleOfRadius: 6)
+            s.fillColor = g.weapon.bulletColor
+            s.strokeColor = SKColor.white.withAlphaComponent(0.85)
+            s.lineWidth = 0.6
+            s.zPosition = 11
+            addChild(s)
+            gunSprites.append(s)
+        }
+        layoutGunSprites()
+        updateHud()
     }
 
     private func spawnEnemy() {
@@ -781,8 +854,10 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         lastUpdate = 0
         moveTouchDown = nil
         moveTarget = .zero
-        weapon = .arcaneBolt
-        ownedWeapons = [.arcaneBolt]
+        for sprite in gunSprites { sprite.removeFromParent() }
+        gunSprites = []
+        guns = []
+        equip(weapon: .arcaneBolt, replacing: nil)
         bulletDamage = 1
         bulletSpeed = 460
         fireRateMul = 1.0
@@ -809,7 +884,8 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         moveTouchDown = nil
 
         // Roll three distinct affordable + relevant upgrades.
-        let pool = Upgrade.draftPool(currentScore: score, owned: ownedWeapons)
+        let equipped = Set(guns.map { $0.weapon })
+        let pool = Upgrade.draftPool(currentScore: score, equippedWeapons: equipped)
         let drafted = pool.shuffled().prefix(3)
 
         let group = SKNode()
@@ -911,31 +987,168 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         return card
     }
 
-    /// Called from touchesBegan when the shop is open.
+    /// Called from touchesEnded when the shop is open.
     private func handleShopTap(at point: CGPoint) {
+        // Replace-slot picker takes priority — it sits on top of
+        // the shop overlay when the player is at the gun cap.
+        if replacePickerNode != nil { handleReplaceTap(at: point); return }
         guard let shop = shopNode else { return }
         let nodes = self.nodes(at: point)
         for n in nodes {
-            // Walk up to the card root.
             var cur: SKNode? = n
             while let c = cur {
                 if c.name == "shop_skip" {
-                    closeShop()
-                    return
+                    closeShop(); return
                 }
-                if let upgradeId = c.userData?["upgrade"] as? String,
-                   let cost = c.userData?["cost"] as? Int {
-                    if score >= cost, let up = Upgrade.byId(upgradeId) {
-                        score -= cost
-                        up.apply(self)
-                        closeShop()
-                    }
+                if let upgradeId = c.userData?["upgrade"] as? String {
+                    if let up = Upgrade.byId(upgradeId) { tryPurchase(up) }
                     return
                 }
                 cur = c.parent
                 if cur === shop { break }
             }
         }
+    }
+
+    /// Either deducts + applies + closes immediately, or — for
+    /// weapon unlocks while the gun cap is full — opens the
+    /// replace-slot picker WITHOUT deducting yet.
+    private func tryPurchase(_ up: Upgrade) {
+        guard score >= up.cost else { return }
+        if let weapon = up.weaponUnlock, guns.count >= Self.maxGuns {
+            openReplacePicker(weapon: weapon, cost: up.cost)
+            return
+        }
+        score -= up.cost
+        if let weapon = up.weaponUnlock {
+            equip(weapon: weapon, replacing: nil)
+        } else {
+            up.apply(self)
+        }
+        closeShop()
+    }
+
+    // ── Replace-slot picker ─────────────────────────────────────
+    private var replacePickerNode: SKNode?
+    private var replacePickerWeapon: WeaponLoadout?
+    private var replacePickerCost: Int = 0
+
+    private func openReplacePicker(weapon: WeaponLoadout, cost: Int) {
+        replacePickerWeapon = weapon
+        replacePickerCost = cost
+        let group = SKNode()
+        group.zPosition = 350
+        let bg = SKShapeNode(rect: CGRect(origin: .zero, size: size))
+        bg.fillColor = SKColor.black.withAlphaComponent(0.85)
+        bg.strokeColor = .clear
+        group.addChild(bg)
+
+        let title = SKLabelNode(fontNamed: "Menlo-Bold")
+        title.text = "REPLACE A GUN"
+        title.fontSize = 22
+        title.fontColor = SKColor(red: 1, green: 0.9, blue: 0.55, alpha: 1)
+        title.position = CGPoint(x: size.width / 2, y: size.height - 130)
+        group.addChild(title)
+
+        let sub = SKLabelNode(fontNamed: "Menlo")
+        sub.text = "Buying \(weapon.displayName) (\(cost) pts) — pick a slot to swap out."
+        sub.fontSize = 12
+        sub.fontColor = .white.withAlphaComponent(0.8)
+        sub.numberOfLines = 0
+        sub.preferredMaxLayoutWidth = size.width - 60
+        sub.position = CGPoint(x: size.width / 2, y: size.height - 156)
+        group.addChild(sub)
+
+        let cardW: CGFloat = min(size.width - 36, 320)
+        let cardH: CGFloat = 78
+        let gap: CGFloat = 12
+        let total = cardH * 3 + gap * 2
+        let topY = size.height / 2 + total / 2
+        for (i, g) in guns.enumerated() {
+            let card = makeReplaceCard(slot: i, weapon: g.weapon,
+                                       width: cardW, height: cardH)
+            card.position = CGPoint(
+                x: size.width / 2,
+                y: topY - CGFloat(i) * (cardH + gap) - cardH / 2,
+            )
+            group.addChild(card)
+        }
+        let cancel = SKLabelNode(fontNamed: "Menlo-Bold")
+        cancel.text = "Cancel"
+        cancel.fontSize = 16
+        cancel.fontColor = .white.withAlphaComponent(0.7)
+        cancel.name = "replace_cancel"
+        cancel.horizontalAlignmentMode = .center
+        cancel.position = CGPoint(x: size.width / 2, y: 80)
+        cancel.zPosition = 1
+        group.addChild(cancel)
+
+        addChild(group)
+        replacePickerNode = group
+    }
+
+    private func makeReplaceCard(slot: Int, weapon: WeaponLoadout,
+                                 width: CGFloat, height: CGFloat) -> SKNode {
+        let card = SKNode()
+        let rect = CGRect(x: -width / 2, y: -height / 2, width: width, height: height)
+        let bg = SKShapeNode(rect: rect, cornerRadius: 10)
+        bg.fillColor = SKColor(red: 0.10, green: 0.10, blue: 0.18, alpha: 0.96)
+        bg.strokeColor = SKColor(red: 0.85, green: 0.65, blue: 0.20, alpha: 1)
+        bg.lineWidth = 1.4
+        card.addChild(bg)
+
+        let label = SKLabelNode(fontNamed: "Menlo-Bold")
+        label.text = "Slot \(slot + 1)  ·  \(weapon.displayName)"
+        label.fontSize = 15
+        label.fontColor = SKColor(red: 1, green: 0.92, blue: 0.65, alpha: 1)
+        label.horizontalAlignmentMode = .left
+        label.position = CGPoint(x: -width / 2 + 14, y: 6)
+        card.addChild(label)
+
+        let hint = SKLabelNode(fontNamed: "Menlo")
+        hint.text = "Tap to replace this slot"
+        hint.fontSize = 11
+        hint.fontColor = .white.withAlphaComponent(0.65)
+        hint.horizontalAlignmentMode = .left
+        hint.position = CGPoint(x: -width / 2 + 14, y: -14)
+        card.addChild(hint)
+
+        card.userData = ["replace_slot": slot]
+        return card
+    }
+
+    private func handleReplaceTap(at point: CGPoint) {
+        guard let picker = replacePickerNode else { return }
+        let nodes = self.nodes(at: point)
+        for n in nodes {
+            var cur: SKNode? = n
+            while let c = cur {
+                if c.name == "replace_cancel" {
+                    closeReplacePicker(refund: false)
+                    // Drop back to the live shop. Player keeps
+                    // their score; they can pick a different
+                    // upgrade or skip the wave.
+                    return
+                }
+                if let slot = c.userData?["replace_slot"] as? Int,
+                   let weapon = replacePickerWeapon {
+                    score -= replacePickerCost
+                    equip(weapon: weapon, replacing: slot)
+                    closeReplacePicker(refund: false)
+                    closeShop()
+                    return
+                }
+                cur = c.parent
+                if cur === picker { break }
+            }
+        }
+    }
+
+    private func closeReplacePicker(refund: Bool) {
+        replacePickerNode?.removeFromParent()
+        replacePickerNode = nil
+        replacePickerWeapon = nil
+        replacePickerCost = 0
     }
 
     private func closeShop() {
@@ -967,7 +1180,15 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
 
 // ── Weapons ─────────────────────────────────────────────────────
 
-enum WeaponLoadout: String, CaseIterable {
+// One equipped gun on the player's orbital ring. Brotato-style:
+// each gun fires its own pattern on its own cadence; the loadout
+// is up to MAX_GUNS distinct WeaponLoadouts at once.
+fileprivate struct Gun {
+    let weapon: WeaponLoadout
+    var lastFire: TimeInterval
+}
+
+fileprivate enum WeaponLoadout: String, CaseIterable {
     case arcaneBolt   // default — single straight shot
     case twinBlades   // 2 spread bullets
     case frostLance   // pierces, +1 damage, slower fire
@@ -985,6 +1206,18 @@ enum WeaponLoadout: String, CaseIterable {
         case .shadowstrike:  return "Shadowstrike"
         case .dragonsBreath: return "Dragon's Breath"
         case .stormcaller:   return "Stormcaller"
+        }
+    }
+    /// Compact tag for the HUD caption (3 guns side-by-side).
+    var shortName: String {
+        switch self {
+        case .arcaneBolt:    return "Bolt"
+        case .twinBlades:    return "Twin"
+        case .frostLance:    return "Lance"
+        case .holyTrinity:   return "Trinity"
+        case .shadowstrike:  return "Shadow"
+        case .dragonsBreath: return "Breath"
+        case .stormcaller:   return "Storm"
         }
     }
     var bulletCount: Int {
@@ -1073,68 +1306,80 @@ fileprivate struct Upgrade {
     let name: String
     let desc: String
     let cost: Int
+    /// Non-nil for weapon unlocks. The shop short-circuits the
+    /// "guns full → replace picker" flow before invoking apply()
+    /// so this closure stays pure for stat upgrades.
+    let weaponUnlock: WeaponLoadout?
     let apply: (GameScene) -> Void
 }
 
 fileprivate extension Upgrade {
+    /// Brotato-priced — costs scale with the typical points-per-
+    /// wave (~150-300 once medium-class enemies are dying). One or
+    /// two upgrades per wave is the intended cadence; weapon
+    /// unlocks are the most expensive tier so they read as a
+    /// proper milestone.
     static let pool: [Upgrade] = [
-        // Stat boosts.
+        // ── Stat upgrades ──────────────────────────────────────
         Upgrade(id: "swift_boots",    name: "Swift Boots",
-                desc: "+25 % movement speed.",          cost: 35,
+                desc: "+25 % movement speed.",
+                cost: 90, weaponUnlock: nil,
                 apply: { $0.applyMoveSpeedBoost(0.25) }),
         Upgrade(id: "chain_mail",     name: "Chain Mail",
-                desc: "+30 max HP, full heal.",         cost: 45,
+                desc: "+30 max HP, full heal.",
+                cost: 130, weaponUnlock: nil,
                 apply: { $0.applyMaxHpBoost(30, fullHeal: true) }),
         Upgrade(id: "sharpshooter",   name: "Sharpshooter",
-                desc: "+1 bullet damage.",              cost: 55,
+                desc: "+1 bullet damage on every gun.",
+                cost: 180, weaponUnlock: nil,
                 apply: { $0.applyBulletDamageBoost(1) }),
         Upgrade(id: "fleet_arrows",   name: "Fleet Arrows",
-                desc: "+30 % bullet speed.",            cost: 30,
+                desc: "+30 % bullet speed.",
+                cost: 90, weaponUnlock: nil,
                 apply: { $0.applyBulletSpeedBoost(0.3) }),
         Upgrade(id: "quickdraw",      name: "Quickdraw",
-                desc: "+25 % fire rate.",               cost: 50,
+                desc: "+25 % fire rate on every gun.",
+                cost: 150, weaponUnlock: nil,
                 apply: { $0.applyFireRateBoost(0.25) }),
         Upgrade(id: "battle_hardened", name: "Battle Hardened",
-                desc: "Take 3 less damage from each hit.", cost: 50,
+                desc: "Take 3 less damage from each hit.",
+                cost: 130, weaponUnlock: nil,
                 apply: { $0.applyDamageReduction(3) }),
         Upgrade(id: "vampiric",       name: "Vampiric Aura",
-                desc: "Heal 1 HP for every kill.",      cost: 70,
+                desc: "Heal 1 HP for every kill.",
+                cost: 220, weaponUnlock: nil,
                 apply: { $0.applyLifesteal(1) }),
-        // Weapon unlocks. Each one swaps the active weapon.
+        // ── Weapon unlocks ─────────────────────────────────────
+        // Each one adds a new gun to the orbital ring (or, when
+        // already at the cap, prompts the player to replace one).
         Upgrade(id: "weapon_twin",    name: "Twin Blades",
-                desc: "Two-bullet 16° spread.",         cost: 60,
-                apply: { $0.unlockAndEquip(.twinBlades) }),
+                desc: "Adds a gun firing a 2-bullet 16° spread.",
+                cost: 180, weaponUnlock: .twinBlades, apply: { _ in }),
         Upgrade(id: "weapon_frost",   name: "Frost Lance",
-                desc: "Pierces enemies. 2 damage.",     cost: 80,
-                apply: { $0.unlockAndEquip(.frostLance) }),
+                desc: "Adds a gun whose bullets pierce. 2 damage.",
+                cost: 240, weaponUnlock: .frostLance, apply: { _ in }),
         Upgrade(id: "weapon_trinity", name: "Holy Trinity",
-                desc: "Three-bullet 26° spread.",       cost: 75,
-                apply: { $0.unlockAndEquip(.holyTrinity) }),
+                desc: "Adds a gun firing a 3-bullet 26° spread.",
+                cost: 220, weaponUnlock: .holyTrinity, apply: { _ in }),
         Upgrade(id: "weapon_shadow",  name: "Shadowstrike",
-                desc: "1.5× bullet speed, 1.6× fire rate.", cost: 85,
-                apply: { $0.unlockAndEquip(.shadowstrike) }),
+                desc: "Adds a fast gun. 1.5× speed, 1.6× fire rate.",
+                cost: 260, weaponUnlock: .shadowstrike, apply: { _ in }),
         Upgrade(id: "weapon_breath",  name: "Dragon's Breath",
-                desc: "3-bullet cone, 1.4× fire rate.", cost: 90,
-                apply: { $0.unlockAndEquip(.dragonsBreath) }),
+                desc: "Adds a 3-bullet cone gun, 1.4× fire rate.",
+                cost: 280, weaponUnlock: .dragonsBreath, apply: { _ in }),
         Upgrade(id: "weapon_storm",   name: "Stormcaller",
-                desc: "1.7× speed, 3 damage, slower cadence.", cost: 100,
-                apply: { $0.unlockAndEquip(.stormcaller) }),
+                desc: "Adds a heavy gun. 3 damage, 0.65× cadence.",
+                cost: 320, weaponUnlock: .stormcaller, apply: { _ in }),
     ]
     static func byId(_ id: String) -> Upgrade? { pool.first { $0.id == id } }
-    /// Filtered draft pool — drops weapon unlocks the player
-    /// already owns and weapons whose cost is far beyond their
-    /// current score so the cards mostly read as "affordable".
-    static func draftPool(currentScore: Int, owned: Set<WeaponLoadout>) -> [Upgrade] {
+
+    /// Drops weapon unlocks the player already has equipped — re-
+    /// adding the same weapon to a different slot wouldn't change
+    /// anything visible. Keeps the card draft varied.
+    static func draftPool(currentScore: Int, equippedWeapons: Set<WeaponLoadout>) -> [Upgrade] {
         return pool.filter { up in
-            switch up.id {
-            case "weapon_twin":    return !owned.contains(.twinBlades)
-            case "weapon_frost":   return !owned.contains(.frostLance)
-            case "weapon_trinity": return !owned.contains(.holyTrinity)
-            case "weapon_shadow":  return !owned.contains(.shadowstrike)
-            case "weapon_breath":  return !owned.contains(.dragonsBreath)
-            case "weapon_storm":   return !owned.contains(.stormcaller)
-            default: return true
-            }
+            guard let w = up.weaponUnlock else { return true }
+            return !equippedWeapons.contains(w)
         }
     }
 }
@@ -1163,17 +1408,6 @@ private extension GameScene {
     }
     func applyLifesteal(_ amount: Int) {
         lifestealOnKill += amount
-    }
-    func unlockAndEquip(_ w: WeaponLoadout) {
-        ownedWeapons.insert(w)
-        weapon = w
-        // Each weapon brings its own native fire-rate baseline so
-        // Stormcaller's slower cadence sticks even after upgrades.
-        // We re-derive fireRateMul from the base of 1.0 + the
-        // weapon's nativeBoost so swapping doesn't lose +Quickdraws.
-        // Simpler model: just apply native boost once on swap.
-        fireRateMul = max(0.5, fireRateMul) * w.nativeFireRateBoost
-        updateHud()
     }
 }
 

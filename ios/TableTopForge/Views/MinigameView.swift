@@ -442,10 +442,32 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var moveSpeedMul: CGFloat = 1.0
     private var lifestealOnKill: Int = 0
     private var bonusEnemyDamageReduction: Int = 0
+    /// Whether spawnPlayer / spawnHud have run. They depend on a
+    /// non-zero scene size, which under `.resizeFill` isn't always
+    /// available at `didMove(to:)` time — the SKView's layout pass
+    /// can race the scene presentation. We arm the flag once and
+    /// run initial layout whenever the size first becomes valid.
+    private var didInitialLayout = false
 
     override func didMove(to view: SKView) {
         physicsWorld.gravity = .zero
         physicsWorld.contactDelegate = self
+        attemptInitialLayout()
+    }
+
+    override func didChangeSize(_ oldSize: CGSize) {
+        super.didChangeSize(oldSize)
+        attemptInitialLayout()
+        // After initial layout, keep the HUD centered if the scene
+        // resizes (rotation, split-view, Mac Catalyst window resize).
+        if didInitialLayout && oldSize != size {
+            relayoutHud()
+        }
+    }
+
+    private func attemptInitialLayout() {
+        guard !didInitialLayout, size.width > 0, size.height > 0 else { return }
+        didInitialLayout = true
         spawnPlayer()
         spawnHud()
         // Default loadout: a single Arcane Bolt orbiting the player.
@@ -523,6 +545,17 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         updateHud()
     }
 
+    /// Reposition existing HUD nodes when the scene resizes. Avoids
+    /// having to tear down + recreate the bar.
+    private func relayoutHud() {
+        let bottomY: CGFloat = 70
+        let centerX = size.width / 2
+        hpBarBack?.position = CGPoint(x: centerX, y: bottomY)
+        hpBarFill?.position = CGPoint(x: centerX - hpBarWidth / 2, y: bottomY)
+        hpBarLabel?.position = CGPoint(x: centerX, y: bottomY)
+        hudLabel?.position = CGPoint(x: centerX, y: bottomY + hpBarHeight / 2 + 8)
+    }
+
     private func updateHud() {
         let pct = max(0, min(1, CGFloat(hp) / CGFloat(maxHp)))
         hpBarFill?.xScale = pct
@@ -567,6 +600,11 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
     // ── Update loop ──────────────────────────────────────────────
     override func update(_ currentTime: TimeInterval) {
         guard gameOverNode == nil else { return }
+        // Skip the tick until SKView has handed us a real size and
+        // we've placed the player + HUD. Without this guard, the
+        // first few frames spawn enemies and run physics against a
+        // zero-sized scene, leaving the player at (0,0).
+        guard didInitialLayout else { return }
         if lastUpdate == 0 { lastUpdate = currentTime }
         let dt = currentTime - lastUpdate
         lastUpdate = currentTime

@@ -329,7 +329,11 @@ const TokenArt = React.memo(function TokenArt({ src, w, h, x, y }) {
 // offset: { x, y } is the grid origin in map-space (so token at col,row renders
 // at map position offset + col*gridSize, offset + row*gridSize).
 // dragVisPos, when set, is already in map-space (includes the offset).
-function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = false, dragVisPos, playerTokenId, showLabel = true, overrideOpacity = null, tokenNameFontSize = 45 }) {
+//
+// Wrapped in React.memo with a field-level equality below so a parent re-render
+// (which happens on every socket event in this app) doesn't redraw 30+ tokens
+// when only one moved. Hot path on crowded maps.
+function TokenInner({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = false, dragVisPos, playerTokenId, showLabel = true, overrideOpacity = null, tokenNameFontSize = 45 }) {
   const sz = TOKEN_SIZES[token.size] || TOKEN_SIZES.medium;
   const tW = sz.gridW * gridSize;
   const tH = sz.gridH * gridSize;
@@ -582,6 +586,50 @@ function Token({ token, gridSize, offset, isPlayer, isSelected, isCurrentTurn = 
     </Group>
   );
 }
+
+// React.memo wrapper for Token. The default shallow compare wouldn't
+// help — the `token` prop is a fresh object on every parent render
+// (sortByZBump returns a new array, etc.), so we'd skip nothing. The
+// custom comparator below short-circuits when nothing the renderer
+// actually reads has changed: scalar tokenInner props + the specific
+// fields TokenInner pulls off `token`. Saves the dominant render
+// cost on crowded maps where one token moves and the parent
+// re-renders 30+ untouched tokens for free.
+function tokenPropsEqual(a, b) {
+  if (a.gridSize !== b.gridSize) return false;
+  if (a.offset.x !== b.offset.x || a.offset.y !== b.offset.y) return false;
+  if (a.isPlayer !== b.isPlayer) return false;
+  if (a.isSelected !== b.isSelected) return false;
+  if (a.isCurrentTurn !== b.isCurrentTurn) return false;
+  if (a.playerTokenId !== b.playerTokenId) return false;
+  if (a.showLabel !== b.showLabel) return false;
+  if (a.overrideOpacity !== b.overrideOpacity) return false;
+  if (a.tokenNameFontSize !== b.tokenNameFontSize) return false;
+  // dragVisPos: ref equality on the position object is enough — the
+  // parent rebuilds the map every drag tick so changed positions
+  // come through with a fresh reference.
+  if (a.dragVisPos !== b.dragVisPos) return false;
+  // Token shape — compare just the fields TokenInner reads.
+  const x = a.token, y = b.token;
+  if (x === y) return true;
+  if (x.id !== y.id) return false;
+  if (x.size !== y.size) return false;
+  if (x.grid_col !== y.grid_col || x.grid_row !== y.grid_row) return false;
+  if (x.image_path !== y.image_path) return false;
+  if (x.creature_image !== y.creature_image) return false;
+  if (x.is_player !== y.is_player) return false;
+  if (x.is_dead !== y.is_dead) return false;
+  if (x.current_hp !== y.current_hp || x.max_hp !== y.max_hp) return false;
+  if (x.temp_hp !== y.temp_hp) return false;
+  if (x.name !== y.name) return false;
+  if (x.nickname !== y.nickname) return false;
+  // conditions array — different reference is fine; compare length + items.
+  const xc = x.conditions || [], yc = y.conditions || [];
+  if (xc.length !== yc.length) return false;
+  for (let i = 0; i < xc.length; i++) if (xc[i] !== yc[i]) return false;
+  return true;
+}
+const Token = React.memo(TokenInner, tokenPropsEqual);
 
 // ── Wall shapes ───────────────────────────────────────────────────────────────
 
@@ -1499,8 +1547,10 @@ export default function MapStage({
       });
     }
   }, [tokens]);
-  function sortByZBump(list) {
-    return [...list].sort((a, b) => {
+  // Sort once per (tokens, tokenZBumps) change — each layer used to
+  // recall sortedTokens and burn an O(n log n) every render.
+  const sortedTokens = useMemo(() => {
+    return [...tokens].sort((a, b) => {
       const ab = tokenZBumps.get(a.id);
       const bb = tokenZBumps.get(b.id);
       if (ab == null && bb == null) return 0;
@@ -1508,7 +1558,7 @@ export default function MapStage({
       if (bb == null) return 1;
       return ab - bb;
     });
-  }
+  }, [tokens, tokenZBumps]);
   const [stageSize, setStageSize] = useState({ w: 800, h: 600 });
 
   // Force fog/glow canvases to redraw when the browser tab becomes visible again.
@@ -4681,7 +4731,7 @@ export default function MapStage({
         {/* Submerged tokens — below the water canvas so they get distorted.
             GM sees them at reduced opacity to signal they are hidden from players. */}
         <Layer listening={false} ref={submergedTokensLayerRef} perfectDrawEnabled={false}>
-          {sortByZBump(tokens).map(t => {
+          {sortedTokens.map(t => {
             const isSubmerged = Array.isArray(t.conditions) && t.conditions.includes('submerged');
             if (!isSubmerged) return null;
             const overrideOpacity = !isPlayer ? 0.55 : null;
@@ -4708,7 +4758,7 @@ export default function MapStage({
         {/* Non-submerged tokens — composited above the water canvas so they
             appear on the surface undistorted. */}
         <Layer listening={false} ref={aboveWaterTokensLayerRef} perfectDrawEnabled={false}>
-          {sortByZBump(tokens).map(t => {
+          {sortedTokens.map(t => {
             const isSubmerged = Array.isArray(t.conditions) && t.conditions.includes('submerged');
             if (isSubmerged) return null;
 

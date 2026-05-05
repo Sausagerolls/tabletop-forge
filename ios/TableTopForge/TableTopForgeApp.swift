@@ -1,19 +1,18 @@
 import SwiftUI
 
 // TableTopForgeApp — @main entry. SwiftUI multiplatform target. The
-// same WindowGroup ships to iPhone, iPad, and Mac (Designed-for-iPad).
-// The Mac build needs a slightly larger default window than the iPad
-// one; everything else is identical across destinations.
+// same WindowGroup ships to iPhone, iPad, and Mac via Mac Catalyst.
+// Mac Catalyst surfaces a resizable AppKit-backed window so the
+// modifier below pins a sane default size (the iPhone/iPad
+// destinations ignore it). os(macOS) covers a future native AppKit
+// build; targetEnvironment(macCatalyst) covers the current one.
 @main
 struct TableTopForgeApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
         }
-        // Mac-only: pin a sane default window size so the app doesn't
-        // open at iPhone-portrait dimensions on first launch. iPhone
-        // and iPad ignore this modifier.
-        #if os(macOS)
+        #if os(macOS) || targetEnvironment(macCatalyst)
         .defaultSize(width: 480, height: 720)
         #endif
     }

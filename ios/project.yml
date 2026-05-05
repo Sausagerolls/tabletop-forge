@@ -4,6 +4,11 @@ options:
   createIntermediateGroups: true
   deploymentTarget:
     iOS: "17.0"
+    # Mac Catalyst maps the iOS app to AppKit-backed windowing so
+    # the same SwiftUI codebase runs as a real macOS app (resizable
+    # window, menu bar, keyboard shortcuts) — not as a stretched
+    # iPad. macCatalyst 17 ↔ macOS 14 (Sonoma) per Apple's table.
+    macCatalyst: "17.0"
 
 # Socket.IO via SPM. Pin to the same major the README documents so the
 # generated project matches manual setups.
@@ -100,3 +105,18 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"  # iPhone + iPad
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        # Mac Catalyst — produces a real macOS .app from the same
+        # iOS sources. Same bundle id across the platform variants
+        # so a TestFlight install on the Mac shows up alongside
+        # the iOS one in App Store Connect, not as a separate app.
+        SUPPORTS_MACCATALYST: "YES"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: "NO"
+        # Macs render iPad UI scale by default ("optimized for iPad");
+        # Mac idiom widens controls + uses native traffic-light
+        # window chrome. Worth the extra polish on bigger windows.
+        # The "macCatalyst" / "scaled" choice can also be toggled
+        # per-build in Xcode → Signing & Capabilities → Mac Catalyst
+        # row if you ever want to compare both looks.
+        MARKETING_VERSION: "1.9.2"
+        CURRENT_PROJECT_VERSION: "2"

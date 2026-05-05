@@ -346,12 +346,15 @@ private fun FieldRow(
 ) {
     var focused by remember { mutableStateOf(false) }
     Row(
+        // Bumped 0.04 → 0.14 so the field reads as a real panel
+        // against the dark frosted login card, and the unfocused
+        // border 0.08 → 0.18 to match. Same change landed on iOS.
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.04f))
+            .background(Color.White.copy(alpha = 0.14f))
             .border(
                 width = if (focused) 1.4.dp else 1.dp,
                 color = if (focused) Gold.copy(alpha = 0.6f)
-                        else Color.White.copy(alpha = 0.08f),
+                        else Color.White.copy(alpha = 0.18f),
                 shape = RoundedCornerShape(12.dp),
             )
             .padding(horizontal = 12.dp, vertical = 4.dp),
@@ -364,7 +367,10 @@ private fun FieldRow(
         TextField(
             value = value,
             onValueChange = onValueChange,
-            placeholder = { Text(placeholder, color = Color.White.copy(alpha = 0.4f)) },
+            // Placeholder bumped 0.4 → 0.55 — the previous shade
+            // was the same brightness as the panel background,
+            // making the hint nearly invisible.
+            placeholder = { Text(placeholder, color = Color.White.copy(alpha = 0.55f)) },
             singleLine = true,
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = Color.Transparent,

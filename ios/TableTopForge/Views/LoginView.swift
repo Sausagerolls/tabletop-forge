@@ -266,19 +266,31 @@ private struct FieldRow: View {
                 .font(.callout)
                 .foregroundStyle(.yellow.opacity(0.9))
                 .frame(width: 22)
-            TextField(placeholder, text: $text)
+            // Custom prompt with an explicit higher-contrast color
+            // so the placeholder reads against the dark glass card.
+            // Default SwiftUI placeholder is far too dim against
+            // ultraThinMaterial.
+            TextField(
+                "",
+                text: $text,
+                prompt: Text(placeholder).foregroundStyle(.white.opacity(0.55))
+            )
                 .textInputAutocapitalization(autocap)
                 .keyboardType(keyboard)
                 .autocorrectionDisabled()
-                .font(monospaced ? .system(.body, design: .monospaced) : .body)
+                .font(monospaced ? .system(.body, design: .monospaced).weight(.medium)
+                                 : .body.weight(.medium))
                 .foregroundStyle(.white)
+                .tint(.yellow)
         }
         .padding(.horizontal, 12).padding(.vertical, 12)
-        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+        // Bumped from 0.04 → 0.14 so the field reads as a real
+        // panel against the frosted card instead of a hairline.
+        .background(Color.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isFocused ? Color.yellow.opacity(0.6)
-                                  : Color.white.opacity(0.08),
+                                  : Color.white.opacity(0.18),
                         lineWidth: isFocused ? 1.4 : 1)
                 .animation(.easeInOut(duration: 0.18), value: isFocused)
         )

@@ -299,34 +299,36 @@ enum EnemySize: String {
         case .gargantuan: return 0.45
         }
     }
-    /// Hit points — bigger = tougher. Tuned so a default Arcane
-    /// Bolt (1 dmg) needs ~3 hits on a Medium and ~18 hits on a
-    /// Gargantuan; Sharpshooter and weapon-damage upgrades cut
-    /// those numbers fast but the early game stays crunchy.
+    /// Hit points — bigger = tougher. Easier early-game tier:
+    /// a default Arcane Bolt (1 dmg) clears a Tiny in one shot
+    /// and a Medium in 3, with the chunky tiers reserved for
+    /// later waves once the player has more guns.
     var hp: Int {
         switch self {
-        case .tiny: return 2
-        case .small: return 3
-        case .medium: return 5
-        case .large: return 9
-        case .huge: return 14
-        case .gargantuan: return 22
+        case .tiny: return 1
+        case .small: return 2
+        case .medium: return 3
+        case .large: return 6
+        case .huge: return 10
+        case .gargantuan: return 16
         }
     }
-    /// Damage dealt to the player on contact. Bigger enemies hit
-    /// harder so Larges-and-up can two-shot a fresh player.
+    /// Damage dealt to the player on contact. Eased so a fresh
+    /// player tanks ~15 tiny hits and even a Gargantuan needs
+    /// three contacts to drop them.
     var contactDamage: Int {
         switch self {
-        case .tiny: return 8
-        case .small: return 12
-        case .medium: return 18
-        case .large: return 28
-        case .huge: return 40
-        case .gargantuan: return 55
+        case .tiny: return 6
+        case .small: return 9
+        case .medium: return 13
+        case .large: return 20
+        case .huge: return 28
+        case .gargantuan: return 38
         }
     }
-    /// Score awarded on kill — scales with toughness. Lowered so
-    /// the typical wave nets ~150–250 points instead of 300+.
+    /// Score awarded on kill — scales with toughness. A typical
+    /// wave nets ~150–250 points which is what the shop is
+    /// priced against.
     var scoreReward: Int {
         switch self {
         case .tiny: return 4
@@ -335,6 +337,19 @@ enum EnemySize: String {
         case .large: return 20
         case .huge: return 34
         case .gargantuan: return 55
+        }
+    }
+
+    /// Tier index 0…5 — used to gate which sizes can appear on
+    /// each wave so wave 1 isn't a Gargantuan lottery.
+    var tier: Int {
+        switch self {
+        case .tiny: return 0
+        case .small: return 1
+        case .medium: return 2
+        case .large: return 3
+        case .huge: return 4
+        case .gargantuan: return 5
         }
     }
 }
@@ -391,8 +406,8 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var lastSpawn: TimeInterval = 0
     private var waveStart: TimeInterval = 0
     private let waveDuration: TimeInterval = 20
-    private var spawnInterval: TimeInterval = 1.2
-    private var enemyBaseSpeed: CGFloat = 65
+    private var spawnInterval: TimeInterval = 1.5
+    private var enemyBaseSpeed: CGFloat = 55
     private var moveTouchDown: CGPoint?
     private var moveTarget: CGVector = .zero
     private var hudLabel: SKLabelNode!
@@ -455,18 +470,18 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func spawnHud() {
-        // Top-CENTER HP bar — far easier to spot than the previous
-        // top-left placement. SKSpriteNode with a left anchor so
-        // xScale drains right-to-left from the bar's left edge,
-        // and so a half-empty bar still looks like a bar (not a
-        // weird centered rectangle).
-        let topY = size.height - 90
+        // BOTTOM-CENTER HP bar — the top of the screen is occupied
+        // by the close button + thumb-blocker, and the player's
+        // eyes are already glued to the bottom half during play
+        // (joystick lives there). Bar sits well clear of the home
+        // indicator on every modern phone.
+        let bottomY: CGFloat = 70
         let centerX = size.width / 2
 
         let backColor = SKColor(red: 0.04, green: 0.04, blue: 0.06, alpha: 0.92)
         let back = SKSpriteNode(color: backColor, size: CGSize(
             width: hpBarWidth + 6, height: hpBarHeight + 6))
-        back.position = CGPoint(x: centerX, y: topY)
+        back.position = CGPoint(x: centerX, y: bottomY)
         back.zPosition = 99
         addChild(back)
         hpBarBack = back
@@ -475,7 +490,7 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         let fill = SKSpriteNode(color: fillColor, size: CGSize(
             width: hpBarWidth, height: hpBarHeight))
         fill.anchorPoint = CGPoint(x: 0, y: 0.5)
-        fill.position = CGPoint(x: centerX - hpBarWidth / 2, y: topY)
+        fill.position = CGPoint(x: centerX - hpBarWidth / 2, y: bottomY)
         fill.zPosition = 100
         addChild(fill)
         hpBarFill = fill
@@ -488,20 +503,19 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         hpText.fontColor = .white
         hpText.horizontalAlignmentMode = .center
         hpText.verticalAlignmentMode = .center
-        hpText.position = CGPoint(x: centerX, y: topY)
+        hpText.position = CGPoint(x: centerX, y: bottomY)
         hpText.zPosition = 101
         addChild(hpText)
         hpBarLabel = hpText
 
-        // Score / wave / guns caption above the bar. Two-line so
-        // it doesn't crowd the bar; TOP-aligned to the screen so
-        // it never overlaps the bar itself.
+        // Wave / score / guns caption ABOVE the bar so the bottom
+        // edge stays clean. Single line; readable at a glance.
         let l = SKLabelNode(fontNamed: "Menlo-Bold")
         l.fontSize = 12
         l.fontColor = .white
         l.horizontalAlignmentMode = .center
         l.verticalAlignmentMode = .bottom
-        l.position = CGPoint(x: centerX, y: topY + hpBarHeight / 2 + 8)
+        l.position = CGPoint(x: centerX, y: bottomY + hpBarHeight / 2 + 8)
         l.zPosition = 100
         l.numberOfLines = 1
         addChild(l)
@@ -743,7 +757,15 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private func spawnEnemy() {
         guard !enemyKinds.isEmpty else { return }
-        let kind = enemyKinds.randomElement()!
+        // Wave-gated tier cap. Wave 1 caps at Small, then unlocks
+        // one tier per wave up to Gargantuan from wave 6 onward.
+        // If no kinds in the database fall under the cap (rare —
+        // depends on what tokens the user has), fall back to the
+        // smallest available kind so spawning never stalls.
+        let maxTier = min(5, max(1, wave))
+        let allowed = enemyKinds.filter { $0.size.tier <= maxTier }
+        let kind = (allowed.randomElement()
+                    ?? enemyKinds.min(by: { $0.size.tier < $1.size.tier })!)
         let diameter = kind.size.diameter
         let radius = diameter / 2
         let enemyNode = enemyPool.acquire {
@@ -874,8 +896,8 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         hp = 100
         score = 0
         wave = 1
-        spawnInterval = 1.2
-        enemyBaseSpeed = 65
+        spawnInterval = 1.5
+        enemyBaseSpeed = 55
         elapsed = 0
         lastShot = 0
         lastSpawn = 0
@@ -1185,9 +1207,10 @@ private final class GameScene: SKScene, SKPhysicsContactDelegate {
         shopNode = nil
         paused_ = false
         wave += 1
-        // Tighten difficulty for the next wave.
-        spawnInterval = max(0.18, spawnInterval * 0.85)
-        enemyBaseSpeed = min(220, enemyBaseSpeed * 1.07)
+        // Tighten difficulty for the next wave — gentler ramp than
+        // before so wave 3+ still feels playable on a fresh build.
+        spawnInterval = max(0.28, spawnInterval * 0.92)
+        enemyBaseSpeed = min(180, enemyBaseSpeed * 1.04)
         waveStart = 0   // resets on the next update tick
         lastSpawn = 0
         lastShot = 0

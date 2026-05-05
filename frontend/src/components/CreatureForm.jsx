@@ -901,6 +901,81 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   const [bgEquipment, setBgEquipment] = useState('a');         // 'a' | 'b'
 
   const [showItemLibrary, setShowItemLibrary] = useState(false);
+
+  // Spell library cache — keyed by lowercase name → full SRD row.
+  // Class kits + auto-grant choices add spells by name only ({name,
+  // level}); the effect below enriches each entry with the full
+  // stat block (school, casting_time, range, damage_entries,
+  // description, …) the moment the cache is available, so a Ranger
+  // who just picked the class doesn't see "Hunter's Mark" with no
+  // details — they get the full SRD record automatically.
+  // Edition preference: 2024 first, then 2014. The user's class
+  // came from the 2024 SRD pack, so default-newer makes the right
+  // pick when both editions ship a spell with the same name.
+  const [spellLibraryByName, setSpellLibraryByName] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/spell-library')
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((rows) => {
+        if (cancelled) return;
+        // Newest edition wins on collision so the picker prefers
+        // the 2024 stat block when both shapes exist for a name.
+        const editionRank = (e) => (e === '2024' ? 2 : (e === '2014' ? 1 : 0));
+        const map = new Map();
+        for (const r of (Array.isArray(rows) ? rows : [])) {
+          const k = String(r.name || '').toLowerCase();
+          if (!k) continue;
+          const prev = map.get(k);
+          if (!prev || editionRank(r.edition) > editionRank(prev.edition)) {
+            map.set(k, r);
+          }
+        }
+        setSpellLibraryByName(map);
+      })
+      .catch(() => { /* offline or fresh install — no enrichment, names still work */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Enrich placeholder spell entries (just {name, level, prepared,
+  // __source}) by merging in the full SRD record once the cache
+  // has loaded. Only touches entries WITHOUT a description so a
+  // user's manual tweaks to a granted spell aren't clobbered.
+  useEffect(() => {
+    if (!spellLibraryByName || spellLibraryByName.size === 0) return;
+    const list = Array.isArray(form.spells) ? form.spells : [];
+    if (list.length === 0) return;
+    let mutated = false;
+    const next = list.map((s) => {
+      const isPlaceholder = s && s.name && !s.description && !s.school;
+      if (!isPlaceholder) return s;
+      const lib = spellLibraryByName.get(String(s.name).toLowerCase());
+      if (!lib) return s;
+      mutated = true;
+      return {
+        ...s,
+        level: s.level ?? lib.level ?? 0,
+        type: s.type || lib.type || '',
+        school: s.school || lib.school || '',
+        casting_time: s.casting_time || lib.casting_time || '',
+        range_area: s.range_area || lib.range_area || '',
+        duration: s.duration || lib.duration || '',
+        comp_v: s.comp_v ?? lib.comp_v ?? false,
+        comp_s: s.comp_s ?? lib.comp_s ?? false,
+        comp_m: s.comp_m ?? lib.comp_m ?? false,
+        comp_m_text: s.comp_m_text || lib.comp_m_text || '',
+        attack_save: s.attack_save || lib.attack_save || '',
+        save_ability: s.save_ability || lib.save_ability || '',
+        damage_entries: (Array.isArray(s.damage_entries) && s.damage_entries.length)
+          ? s.damage_entries
+          : (Array.isArray(lib.damage_entries) ? lib.damage_entries : []),
+        extra_effects: s.extra_effects || lib.extra_effects || '',
+        description: s.description || lib.description || '',
+      };
+    });
+    if (mutated) setForm((f) => ({ ...f, spells: next }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spellLibraryByName, form.spells]);
   // Bardic Inspiration "Grant" picker — opened from the BI row in the
   // Resources panel. Holds the def (so we know which die size + total)
   // until the user picks a target or cancels.

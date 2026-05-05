@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import LanguagePicker from './LanguagePicker.jsx';
 import { useAllClasses, useAllSubclasses, useClassChoices, computeHitDicePool, formatHitDicePool, hitDieFor } from '../utils/classes.js';
 import { getClassBuild, formatPrimaryAbility } from '../data/class_build.js';
@@ -787,9 +787,31 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     spells: 'Spells', inventory: 'Inventory', loot: 'Loot', weapons: 'Weapons',
   };
 
-  function setField(key, value) {
+  // Stable setField — useCallback with no deps so children that
+  // memoise on it (or close over it) don't see a new reference on
+  // every keystroke. setForm is stable per React's contract.
+  const setField = useCallback((key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
-  }
+  }, []);
+
+  // Lookups invoked from inline IIFEs further down were re-running
+  // on EVERY keystroke (typing in the name field would re-walk the
+  // SRD weapon catalog through expandWeaponProficiency, recompute
+  // the hit-dice pool, re-look up the class build, etc.). These are
+  // narrow useMemos that key on only the fields each lookup reads —
+  // a name-field keystroke now skips all three.
+  const cachedClassBuild = useMemo(
+    () => (form.char_class ? getClassBuild(form.char_class) : null),
+    [form.char_class],
+  );
+  const cachedHitDicePool = useMemo(
+    () => (isPlayerCharacter ? (computeHitDicePool(form) || []) : []),
+    [isPlayerCharacter, form.is_player_character, form.char_class, form.char_level, form.multiclasses],
+  );
+  const cachedWeaponProfsExpanded = useMemo(
+    () => Array.from(expandWeaponProficiency(form.weapon_proficiencies || '')),
+    [form.weapon_proficiencies],
+  );
 
   function handleImageChange(e) {
     const file = e.target.files[0];
@@ -2938,7 +2960,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                     flow through the existing class-choices apply
                     machinery (Phase 2). */}
                 {form.char_class && (() => {
-                  const build = getClassBuild(form.char_class);
+                  const build = cachedClassBuild;
                   if (!build) return null;
                   const sa = build.startingEquipment || {};
                   const optA = sa.optionA?.items?.length
@@ -3091,9 +3113,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                   // concrete SRD weapon list so the Fighter Weapon
                   // Mastery picker shows Greatsword / Longsword /
                   // Shortbow etc. rather than just "Simple", "Martial".
-                  const weaponProfs = Array.from(
-                    expandWeaponProficiency(form.weapon_proficiencies || '')
-                  );
+                  const weaponProfs = cachedWeaponProfsExpanded;
                   const mcs = form.multiclasses || [];
                   // Total level = primary + sum(multiclass levels).
                   const totalLevel = (Number(form.char_level) || 0)
@@ -3562,7 +3582,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             </div>
 
             {isPlayerCharacter && (() => {
-              const pool = computeHitDicePool(form) || [];
+              const pool = cachedHitDicePool;
               const usedMap = (form.hit_dice_used_by_type && typeof form.hit_dice_used_by_type === 'object')
                 ? form.hit_dice_used_by_type : {};
               return (

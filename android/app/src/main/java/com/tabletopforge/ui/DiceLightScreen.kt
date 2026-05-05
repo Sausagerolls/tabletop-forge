@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -30,8 +31,10 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,10 +58,25 @@ fun DiceLightScreen(store: SessionStore, socketHolder: SocketHolder, resourceSto
     var diceCount by remember { mutableIntStateOf(1) }
     var modifier  by remember { mutableIntStateOf(0) }
     var showEditor by remember { mutableStateOf(false) }
+    var showMinigame by remember { mutableStateOf(false) }
+    var serverVersion by remember { mutableStateOf("—") }
+    // 3-tap detector on the version row. Counter resets after a 2-
+    // second idle gap so accidental double-taps don't drift in.
+    var versionTapCount by remember { mutableIntStateOf(0) }
+    var lastVersionTapAt by remember { mutableLongStateOf(0L) }
     val sc = socketHolder.current
     val rolls = sc?.diceRolls
     val lastRoll = rolls?.lastOrNull()
     val creatureId = sc?.creature?.value?.id ?: store.lastCreatureId.value
+
+    LaunchedEffect(store.serverUrl.value) {
+        serverVersion = fetchServerVersion(store.baseUrl)
+    }
+
+    if (showMinigame) {
+        MinigameScreen(store = store, onClose = { showMinigame = false })
+        return
+    }
 
     if (showEditor) {
         CharacterEditorWebView(
@@ -199,6 +217,31 @@ fun DiceLightScreen(store: SessionStore, socketHolder: SocketHolder, resourceSto
             }
         }
 
+        // Server — version row is the easter-egg trigger. Three taps
+        // within 2 seconds opens the Brotato-style minigame.
+        SectionHeader("Server")
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        val now = System.currentTimeMillis()
+                        if (now - lastVersionTapAt > 2000) versionTapCount = 0
+                        versionTapCount += 1
+                        lastVersionTapAt = now
+                        if (versionTapCount >= 3) {
+                            versionTapCount = 0
+                            showMinigame = true
+                        }
+                    },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Version", modifier = Modifier.weight(1f),
+                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(serverVersion, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+
         // Cache controls
         SectionHeader("Storage")
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -274,4 +317,23 @@ private fun statusLabel(s: ConnectionStatus?): String = when (s) {
     ConnectionStatus.Disconnected -> "Disconnected"
     ConnectionStatus.Failed       -> "Failed"
     null -> "—"
+}
+
+/** GET /api/version on the live server, returning the version
+ * string for display on the Server row. Returns "—" on any error
+ * so an offline server doesn't block the rest of the screen. */
+private suspend fun fetchServerVersion(baseUrl: String?): String {
+    if (baseUrl.isNullOrBlank()) return "—"
+    return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching {
+            val u = java.net.URL("$baseUrl/api/version")
+            val text = (u.openConnection() as java.net.HttpURLConnection).run {
+                connectTimeout = 5000; readTimeout = 5000
+                inputStream.bufferedReader().use { it.readText() }
+                    .also { disconnect() }
+            }
+            val m = Regex("\"version\"\\s*:\\s*\"([^\"]+)\"").find(text)
+            m?.groupValues?.get(1) ?: "—"
+        }.getOrDefault("—")
+    }
 }

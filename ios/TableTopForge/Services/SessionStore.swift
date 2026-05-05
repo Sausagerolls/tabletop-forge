@@ -18,12 +18,23 @@ final class SessionStore {
         static let sessionCode   = "vtt.sessionCode"
         static let playerName    = "vtt.playerName"
         static let lastCreatureId = "vtt.lastCreatureId"
+        // Offline cache — last successful Creature JSON. Read on
+        // launch so the player tabs render instantly with stale
+        // data instead of flashing "Loading character…" for the
+        // duration of the live REST fetch. Mirrors the Android
+        // SessionStore key.
+        static let cachedCreature = "vtt.cachedCreature"
     }
 
     var serverUrl: String
     var sessionCode: String
     var playerName: String
     var lastCreatureId: Int?
+    /// Raw JSON of the last Creature successfully fetched from the
+    /// server. Persisted across launches so the app can hydrate
+    /// state instantly + show a usable sheet when the device is
+    /// offline.
+    var cachedCreatureJson: String?
 
     // Login completes when we get session_joined back from the server;
     // until then we're either on the Login screen (loggedIn=false) or
@@ -39,6 +50,7 @@ final class SessionStore {
         self.playerName  = defaults.string(forKey: Keys.playerName)  ?? ""
         let storedCreature = defaults.integer(forKey: Keys.lastCreatureId)
         self.lastCreatureId = storedCreature > 0 ? storedCreature : nil
+        self.cachedCreatureJson = defaults.string(forKey: Keys.cachedCreature)
     }
 
     func persist() {
@@ -53,16 +65,33 @@ final class SessionStore {
         }
     }
 
+    /// Stash the JSON returned by the most recent successful
+    /// `GET /api/creatures/<id>` so a subsequent cold launch can
+    /// hydrate the tabs without waiting for the live fetch.
+    func cacheCreatureJson(_ json: String) {
+        cachedCreatureJson = json
+        UserDefaults.standard.set(json, forKey: Keys.cachedCreature)
+    }
+
+    /// Wipe the persisted creature JSON. Surfaced from the
+    /// Storage section in Dice & Settings.
+    func clearCachedCreature() {
+        cachedCreatureJson = nil
+        UserDefaults.standard.removeObject(forKey: Keys.cachedCreature)
+    }
+
     func logout() {
         let d = UserDefaults.standard
         d.removeObject(forKey: Keys.serverUrl)
         d.removeObject(forKey: Keys.sessionCode)
         d.removeObject(forKey: Keys.playerName)
         d.removeObject(forKey: Keys.lastCreatureId)
+        d.removeObject(forKey: Keys.cachedCreature)
         serverUrl = ""
         sessionCode = ""
         playerName = ""
         lastCreatureId = nil
+        cachedCreatureJson = nil
         loggedIn = false
         lastError = nil
     }

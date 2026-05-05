@@ -8,10 +8,19 @@ struct APIClient {
     let baseURL: URL
 
     func fetchCreature(id: Int) async throws -> Creature {
+        let (creature, _) = try await fetchCreatureWithRaw(id: id)
+        return creature
+    }
+
+    /// Fetch + decode AND return the raw JSON bytes so the caller
+    /// can stash them in the offline cache. Avoids re-encoding
+    /// (which would lose any unknown fields the model didn't decode).
+    func fetchCreatureWithRaw(id: Int) async throws -> (Creature, Data) {
         let url = baseURL.appendingPathComponent("api/creatures/\(id)")
         let (data, resp) = try await URLSession.shared.data(from: url)
         try Self.checkOk(resp, data: data)
-        return try JSONDecoder().decode(Creature.self, from: data)
+        let creature = try JSONDecoder().decode(Creature.self, from: data)
+        return (creature, data)
     }
 
     // For now we only support patching the simple scalar fields the

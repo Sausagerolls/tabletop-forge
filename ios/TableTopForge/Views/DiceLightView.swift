@@ -47,6 +47,7 @@ struct DiceLightView: View {
                 appearanceSection
                 connectionSection
                 serverSection
+                storageSection
                 logoutSection
             }
             .navigationTitle("Dice & Settings")
@@ -226,6 +227,33 @@ struct DiceLightView: View {
         case .reconnecting: return "Reconnecting…"
         case .disconnected: return "Disconnected"
         case .failed:       return "Failed"
+        }
+    }
+
+    // ── Storage (offline cache) ───────────────────────────────────
+    // Mirrors the Android Storage card: shows whether a cached
+    // creature is on disk + a Clear button to wipe it. The cached
+    // copy is what HomeView hydrates from on cold launch when the
+    // device is offline or the live REST fetch is still in flight.
+    @ViewBuilder
+    private var storageSection: some View {
+        Section("Storage") {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cached character")
+                        .font(.body.weight(.semibold))
+                    Text(store.cachedCreatureJson != nil
+                         ? "Last fetched copy is stored on device — used when offline."
+                         : "No cached copy yet.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Clear") {
+                    store.clearCachedCreature()
+                }
+                .disabled(store.cachedCreatureJson == nil)
+            }
         }
     }
 

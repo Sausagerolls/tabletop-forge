@@ -67,8 +67,20 @@ struct HomeView: View {
                 .tabItem { Label("Dice & Settings", systemImage: "dice.fill") }
         }
         .task(id: refreshKey) {
+            // Bootstrap with the cached creature so the tabs render
+            // instantly while the live fetch is in flight. Live fetch
+            // overwrites it as soon as it lands; if the device is
+            // offline, the cached sheet remains visible and writes
+            // are queued by the per-tab views as before.
+            if socket.creature == nil, let json = store.cachedCreatureJson,
+               let data = json.data(using: .utf8),
+               let cached = try? JSONDecoder().decode(Creature.self, from: data) {
+                socket.creature = cached
+            }
             guard let cid = creatureId else {
-                fetchDiag = "No creature id resolved (token=\(socket.playerTokenId.map(String.init) ?? "—"), tokens=\(socket.tokens.count), lastId=\(store.lastCreatureId.map(String.init) ?? "—"))"
+                if socket.creature == nil {
+                    fetchDiag = "No creature id resolved (token=\(socket.playerTokenId.map(String.init) ?? "—"), tokens=\(socket.tokens.count), lastId=\(store.lastCreatureId.map(String.init) ?? "—"))"
+                }
                 return
             }
             guard let base = store.baseURL else {
@@ -77,11 +89,21 @@ struct HomeView: View {
             }
             fetchDiag = nil
             do {
-                socket.creature = try await APIClient(baseURL: base).fetchCreature(id: cid)
+                let (creature, raw) = try await APIClient(baseURL: base)
+                    .fetchCreatureWithRaw(id: cid)
+                socket.creature = creature
+                if let s = String(data: raw, encoding: .utf8) {
+                    store.cacheCreatureJson(s)
+                }
                 store.lastCreatureId = cid
                 store.persist()
             } catch {
-                fetchDiag = "GET \(base.absoluteString)/api/creatures/\(cid) failed: \(error)"
+                // Surface the failure only when we don't have any
+                // sheet to show. With a cached sheet the user gets
+                // stale-but-readable data instead of an error wall.
+                if socket.creature == nil {
+                    fetchDiag = "GET \(base.absoluteString)/api/creatures/\(cid) failed: \(error)"
+                }
             }
         }
         // Connection health banner — shown above the tab content when

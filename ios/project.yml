@@ -74,6 +74,20 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         # Display name on the home screen.
         CFBundleDisplayName: TT Forge
+        # App Store Connect's encryption-export questionnaire pops up
+        # at every TestFlight / App Store upload unless we set this
+        # explicitly. We use only HTTPS (URLSession + Socket.IO over
+        # WSS) and Apple's stock crypto on top of the user-typed
+        # local IP — that's "exempt" under the standard exemption
+        # for HTTPS / Apple-provided crypto. Setting false dismisses
+        # the wizard.
+        ITSAppUsesNonExemptEncryption: false
+        # Public marketing version + build number. App Store rejects
+        # uploads where these don't match the value the GM puts in
+        # App Store Connect — keeping them here means a fresh
+        # xcodegen run preserves whatever the latest release is.
+        CFBundleShortVersionString: "1.9.2"
+        CFBundleVersion: "2"
     settings:
       base:
         # DEVELOPMENT_TEAM is intentionally NOT set here — xcodegen

@@ -223,10 +223,22 @@ struct LoginView: View {
         )
     }
 
-    // Accept "192.168.50.131" or "host" as shorthand and prepend http://
+    // Accept "192.168.50.131", "forge.example.com", or a full URL.
+    // Public hostnames default to https (the App Store build's ATS
+    // posture only allows http for local IPs / .local domains, so a
+    // bare http://forge.example.com would silently fail in release
+    // builds). IP literals + .local hostnames default to http for
+    // LAN-only deployments.
     private func normaliseUrl(_ raw: String) -> String {
         if raw.hasPrefix("http://") || raw.hasPrefix("https://") { return raw }
-        return "http://\(raw)"
+        // Strip any leading slashes the user may have typed.
+        let host = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let isIP = host.split(separator: ":").first.map { piece in
+            piece.split(separator: ".")
+                .allSatisfy { Int($0) != nil }
+        } ?? false
+        let isMDNS = host.lowercased().hasSuffix(".local")
+        return ((isIP || isMDNS) ? "http://" : "https://") + raw
     }
 }
 

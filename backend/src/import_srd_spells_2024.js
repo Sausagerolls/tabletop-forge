@@ -179,10 +179,14 @@ async function main() {
     }
   }
   console.log(`Imported / updated ${imported} spells with edition='2024'.`);
-  process.exit(0);
+  return imported;
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+module.exports = { main };
+
+// CLI invocation — keep working as a one-shot script.
+if (require.main === module) {
+  main()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(err); process.exit(1); });
+}

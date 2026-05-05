@@ -3114,6 +3114,33 @@ server.listen(PORT, async () => {
     // dropped here too. plugin_data is left alone in either case.
     try { await reconcilePluginsTable(); }
     catch (e) { console.warn('Plugin reconcile warning:', e.message); }
+
+    // Seed the SRD 5.1 (2014) + SRD 5.2 (2024) spell catalogues on
+    // first boot. The importers are idempotent (UPSERT on
+    // (name, edition)) so re-runs are safe, but to keep startup
+    // quiet we only fire when the matching edition has 0 rows.
+    // Open5e network reach is required for first-boot — if it
+    // can't be reached we log + carry on; the GM can re-run the
+    // CLI scripts later.
+    try {
+      const counts = await db.query(
+        `SELECT edition, COUNT(*)::int AS n
+           FROM spell_library
+          WHERE edition IN ('2014', '2024')
+          GROUP BY edition`
+      );
+      const by = Object.fromEntries(counts.rows.map((r) => [r.edition, r.n]));
+      if (!by['2014']) {
+        console.log('SRD 2014 spells missing — importing from Open5e v1…');
+        try { await require('./import_srd_spells').main(); }
+        catch (e) { console.warn('SRD 2014 seed failed:', e.message); }
+      }
+      if (!by['2024']) {
+        console.log('SRD 2024 spells missing — importing from Open5e v2…');
+        try { await require('./import_srd_spells_2024').main(); }
+        catch (e) { console.warn('SRD 2024 seed failed:', e.message); }
+      }
+    } catch (e) { console.warn('SRD seed check failed:', e.message); }
   } catch (err) {
     console.warn('Migration warning:', err.message);
   }

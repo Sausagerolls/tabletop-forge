@@ -563,13 +563,19 @@ code {
 ════════════════════════════════════════════════ */
 footer {
   padding: 32px 52px; border-top: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-  position: relative; z-index: 1; flex-wrap: wrap; gap: 12px;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 14px;
+  position: relative; z-index: 1;
+}
+.foot-row {
+  display: flex; align-items: center; justify-content: center;
+  flex-wrap: wrap; gap: 14px;
 }
 .foot-brand { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.14em; color: var(--accent-l); display: flex; align-items: center; gap: 8px; }
 .foot-copy { font-size: 14px; color: var(--text-d); }
 .foot-link { color: var(--text-m); transition: color 0.2s; }
 .foot-link:hover { color: var(--accent-l); }
+.foot-sep { color: var(--text-d); opacity: 0.5; }
 
 /* ════════════════════════════════════════════════
    REVEAL ANIMATIONS
@@ -1517,8 +1523,17 @@ cd TabletopForge</div>
 
 <!-- ═══════════ FOOTER ═══════════ -->
 <footer>
-  <div class="foot-brand">⚒️ TABLETP FORGE</div>
-  <div class="foot-copy">© 2025 <a href="https://giantmushroom.studio" class="foot-link" target="_blank">Giant Mushroom Studio</a> · Free &amp; Open for all adventurers · <a href="https://github.com/Sausagerolls/tabletop-forge" class="foot-link" target="_blank" rel="noopener">Source on GitHub</a></div>
+  <div class="foot-brand">⚒️ TABLETOP FORGE</div>
+  <div class="foot-copy">© 2025 <a href="https://giantmushroom.studio" class="foot-link" target="_blank">Giant Mushroom Studio</a> · Free for personal use at your table · <a href="https://github.com/Sausagerolls/tabletop-forge" class="foot-link" target="_blank" rel="noopener">Source on GitHub</a></div>
+  <div class="foot-row">
+    <a href="/terms.html" class="foot-link">Terms of Use</a>
+    <span class="foot-sep">·</span>
+    <a href="/privacy.html" class="foot-link">Privacy Policy</a>
+    <span class="foot-sep">·</span>
+    <a href="mailto:jakewatts809@googlemail.com" class="foot-link">Contact</a>
+    <span class="foot-sep">·</span>
+    <a href="https://github.com/Sausagerolls/tabletop-forge/issues" class="foot-link" target="_blank" rel="noopener">Report a Bug</a>
+  </div>
 </footer>
 
 <script>

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — TableTop Forge</title>
+<meta name="description" content="Privacy Policy for TableTop Forge — a self-hosted virtual tabletop for D&D 5e.">
+<meta name="theme-color" content="#060404">
+<link rel="icon" type="image/png" sizes="32x32"  href="/icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16"  href="/icons/icon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+<link rel="shortcut icon" href="/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #060404;
+    --panel: #0d0808;
+    --border: rgba(184, 50, 50, 0.18);
+    --text-l: #f4ede3;
+    --text-m: #cfc0a8;
+    --text-d: #87796a;
+    --accent: #b83232;
+    --accent-l: #d4af37;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--text-l); font-family: 'Crimson Pro', Georgia, serif; line-height: 1.7; }
+  a { color: var(--accent-l); text-decoration: none; border-bottom: 1px dotted var(--accent-l); }
+  a:hover { border-bottom-style: solid; }
+  header.page-head {
+    padding: 26px 52px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  .brand { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.16em; color: var(--accent-l); }
+  .brand a { color: inherit; border: none; }
+  .nav-back { font-size: 14px; color: var(--text-m); }
+  main { max-width: 760px; margin: 0 auto; padding: 60px 28px 80px; }
+  h1 {
+    font-family: 'Cinzel', serif; font-size: 42px; font-weight: 600;
+    color: var(--accent-l); letter-spacing: 0.04em; margin-bottom: 6px;
+  }
+  .meta { color: var(--text-d); font-size: 14px; margin-bottom: 36px; font-style: italic; }
+  h2 {
+    font-family: 'Cinzel', serif; font-size: 22px; font-weight: 500;
+    color: var(--text-l); letter-spacing: 0.02em; margin-top: 36px; margin-bottom: 12px;
+  }
+  p, li { color: var(--text-m); font-size: 17px; margin-bottom: 12px; }
+  ul { padding-left: 22px; margin-bottom: 12px; }
+  strong { color: var(--text-l); }
+  .callout {
+    border-left: 3px solid var(--accent-l); background: rgba(212, 175, 55, 0.06);
+    padding: 16px 20px; margin: 24px 0; border-radius: 4px;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  footer.page-foot {
+    border-top: 1px solid var(--border); padding: 22px 28px; text-align: center;
+    color: var(--text-d); font-size: 14px;
+  }
+  footer.page-foot a { color: var(--text-m); border-bottom: none; }
+  footer.page-foot a:hover { color: var(--accent-l); }
+</style>
+</head>
+<body>
+<header class="page-head">
+  <div class="brand"><a href="/">⚒️ TABLETOP FORGE</a></div>
+  <a class="nav-back" href="/">← back to home</a>
+</header>
+
+<main>
+  <h1>Privacy Policy</h1>
+  <p class="meta">Last updated 5 May 2026.</p>
+
+  <div class="callout">
+    <p>
+      <strong>Short version:</strong> this website doesn't collect anything,
+      and the application you download runs entirely on your own machine.
+      There are no analytics, no cookies, no trackers, no accounts, and
+      nothing transmitted back to us once the download is complete.
+    </p>
+  </div>
+
+  <h2>1. The website (forge.giantmushroom.studio)</h2>
+  <p>
+    The marketing site is a static page served over HTTPS via Cloudflare.
+    It loads no analytics scripts, sets no cookies, and stores nothing in
+    your browser's local storage. Cloudflare's edge keeps minimal request
+    logs for abuse prevention as part of their standard service — those
+    logs are governed by
+    <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener">Cloudflare's privacy policy</a>
+    and we don't query or export them.
+  </p>
+
+  <h2>2. The application (the release zip + Android APK)</h2>
+  <p>
+    TableTop Forge is self-hosted. Once you've downloaded it and run the
+    Docker stack on your own machine, the app talks only to:
+  </p>
+  <ul>
+    <li>
+      <strong>Its own Postgres database</strong>, running in the same
+      Docker network on your machine, holding your sessions, characters,
+      maps, and plugin data. Never leaves your network.
+    </li>
+    <li>
+      <strong>Player web browsers</strong> connecting to the server you
+      stand up — typically over your LAN, optionally through a tunnel you
+      configured (Cloudflare, Tailscale, Ngrok, your call).
+    </li>
+    <li>
+      <strong>Open5e</strong> for the one-time SRD spell + monster import
+      on first boot, if the database is empty. After that the seed is
+      cached locally and Open5e is never contacted again.
+    </li>
+    <li>
+      <strong>Your own AI provider</strong> (Anthropic / OpenAI / a local
+      SwarmUI host) — only if you enabled and configured the AI features
+      in the GM panel. The keys you supply stay in your database. We
+      don't proxy through any service we operate.
+    </li>
+  </ul>
+
+  <h2>3. The mobile companion apps (Android, iOS / macOS)</h2>
+  <p>
+    The native player apps connect only to the TableTop Forge server URL
+    you type into the login screen. They store the following on your
+    device, in standard system storage (UserDefaults on Apple, DataStore
+    on Android):
+  </p>
+  <ul>
+    <li>The server URL, session code, and player name you typed in.</li>
+    <li>The id of the last character you played, so the app can resume it.</li>
+    <li>Theme preference (System / Light / Dark).</li>
+    <li>An offline cache of the last creature sheet you loaded.</li>
+    <li>Per-resource counters for your class abilities (Bardic Inspiration uses, etc.).</li>
+  </ul>
+  <p>
+    Logging out wipes those keys. Nothing is uploaded to any server we run.
+  </p>
+
+  <h2>4. The mobile apps' Privacy Manifest (iOS)</h2>
+  <p>
+    The iOS / macOS build ships a
+    <code>PrivacyInfo.xcprivacy</code> manifest declaring two
+    required-reason API uses (UserDefaults for the items above, Date()
+    for in-app timestamps), no third-party SDK trackers, and no data
+    collection. Submitted as <strong>Data Not Collected</strong> across
+    every category on the App Store privacy nutrition label.
+  </p>
+
+  <h2>5. Children</h2>
+  <p>
+    The application has no age-gating or COPPA-relevant data flow because
+    it doesn't collect data. Whether the people at your table are
+    children is your call as the GM running the campaign.
+  </p>
+
+  <h2>6. Changes</h2>
+  <p>
+    If a future version of TableTop Forge adds an opt-in feature that
+    transmits data anywhere new (e.g. a hosted dice-broadcast service),
+    it'll be off by default and described here before it ships.
+  </p>
+
+  <h2>7. Contact</h2>
+  <p>
+    Questions about how the app handles your data:
+    <a href="mailto:jakewatts809@googlemail.com">jakewatts809@googlemail.com</a>.
+  </p>
+</main>
+
+<footer class="page-foot">
+  © 2025 <a href="https://giantmushroom.studio" target="_blank" rel="noopener">Giant Mushroom Studio</a>
+  · <a href="/">Home</a>
+  · <a href="/terms.html">Terms of Use</a>
+</footer>
+</body>
+</html>

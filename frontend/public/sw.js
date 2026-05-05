@@ -22,7 +22,7 @@
 //
 // Versioning: bump CACHE_NAME on any breaking change to this file.
 // Old caches are evicted on activate.
-const CACHE_NAME = 'forge-shell-v3';
+const CACHE_NAME = 'forge-shell-v4';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest',
                '/icons/icon-192.png', '/icons/icon-512.png',
                '/icons/apple-touch-icon.png'];

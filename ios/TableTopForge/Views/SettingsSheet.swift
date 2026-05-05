@@ -109,9 +109,7 @@ private struct WebView: UIViewRepresentable {
     let url: URL
 
     func makeUIView(context: Context) -> WKWebView {
-        let cfg = WKWebViewConfiguration()
-        cfg.allowsInlineMediaPlayback = true
-        let view = WKWebView(frame: .zero, configuration: cfg)
+        let view = WKWebView(frame: .zero)
         view.allowsBackForwardNavigationGestures = true
         view.load(URLRequest(url: url))
         return view

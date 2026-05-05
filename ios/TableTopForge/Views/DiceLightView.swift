@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 // DiceSettingsView — the right-most tab. Used to be "Dice & Light" but
 // the light source picker now lives on the Inventory tab where it
@@ -24,6 +25,8 @@ struct DiceLightView: View {
 
     private static let dieFaces = [4, 6, 8, 10, 12, 20, 100]
 
+    @State private var showCharacterEditor: Bool = false
+
     var body: some View {
         NavigationStack {
             Form {
@@ -33,12 +36,65 @@ struct DiceLightView: View {
                         LastRollRow(roll: r)
                     }
                 }
+                characterSection
                 appearanceSection
                 connectionSection
                 logoutSection
             }
             .navigationTitle("Dice & Settings")
+            .sheet(isPresented: $showCharacterEditor) {
+                if let url = characterEditorURL {
+                    NavigationStack {
+                        WebView(url: url)
+                            .navigationTitle("Edit Stat Block")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Done") { showCharacterEditor = false }
+                                }
+                            }
+                    }
+                }
+            }
         }
+    }
+
+    // ── Character ────────────────────────────────────────────────────
+    // Opens the web client's /edit-character?id=N route in a
+    // WKWebView so the player gets the same CreatureForm the GM uses
+    // on the desktop — race / class / multiclass / inventory /
+    // spells / abilities — without us re-porting the editor to
+    // SwiftUI. Disabled until a creature id resolves so the button
+    // still surfaces during the post-login "Loading character…" gap.
+    @ViewBuilder
+    private var characterSection: some View {
+        Section("Character") {
+            Button {
+                showCharacterEditor = true
+            } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Edit Stat Block")
+                        Text("Race, class, abilities, inventory, spells. Same as the desktop site.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "pencil.and.list.clipboard")
+                        .foregroundStyle(.tint)
+                }
+            }
+            .disabled(characterEditorURL == nil)
+        }
+    }
+
+    private var characterEditorURL: URL? {
+        guard let base = store.baseURL else { return nil }
+        guard let cid = socket.creature?.id ?? store.lastCreatureId else { return nil }
+        var comps = URLComponents(url: base.appendingPathComponent("edit-character"),
+                                  resolvingAgainstBaseURL: false)
+        comps?.queryItems = [URLQueryItem(name: "id", value: "\(cid)")]
+        return comps?.url
     }
 
     // ── Dice ──────────────────────────────────────────────────────────
@@ -170,5 +226,22 @@ private struct LastRollRow: View {
             Text("\(roll.total)")
                 .font(.system(.title2, design: .monospaced).weight(.bold))
         }
+    }
+}
+
+// Re-declared here so the character-editor sheet works without
+// adding a separate WebView.swift to the Xcode project. Mirror of
+// the private struct in SettingsSheet.swift — both privates are
+// scoped to their file so the duplication is intentional.
+fileprivate struct WebView: UIViewRepresentable {
+    let url: URL
+    func makeUIView(context: Context) -> WKWebView {
+        let view = WKWebView(frame: .zero)
+        view.allowsBackForwardNavigationGestures = true
+        view.load(URLRequest(url: url))
+        return view
+    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        if uiView.url != url { uiView.load(URLRequest(url: url)) }
     }
 }

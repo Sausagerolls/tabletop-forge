@@ -328,6 +328,21 @@ struct StatsView: View {
                             Text("\(entry.qty - used) / \(entry.qty)")
                                 .font(.system(.body, design: .monospaced))
                                 .frame(minWidth: 70)
+                            // Decrement-only — burn a die without
+                            // rolling or healing. Mirrors the web
+                            // sheet's checkbox toggle: "this die is
+                            // gone, GM handled the HP separately"
+                            // (e.g. the Bard's Song of Rest healed
+                            // for them, the GM said "you used one
+                            // off-screen", or the player wants to
+                            // revert a botched Use Hit Die press
+                            // without rolling another one).
+                            Button { consumeHitDie(type: entry.type) } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .disabled(used >= entry.qty)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.tint)
                             Button { restoreHitDie(type: entry.type) } label: {
                                 Image(systemName: "plus.circle")
                             }
@@ -374,6 +389,23 @@ struct StatsView: View {
         var map = creature.hit_dice_used_by_type ?? [:]
         let cur = map[type] ?? 0
         map[type] = max(0, cur - 1)
+        creature.hit_dice_used_by_type = map
+        socket.creature = creature
+        Task { await persist(["hit_dice_used_by_type": map]) }
+    }
+
+    // Consume one die for the given type WITHOUT rolling or healing.
+    // Inverse of restoreHitDie. Used when the GM is handling the HP
+    // change off-screen (e.g. Bardic Song of Rest, narrative healing)
+    // and the player just needs to mark the die as gone.
+    private func consumeHitDie(type: String) {
+        guard var creature else { return }
+        let pool = computeHitDicePool(creature)
+        guard let entry = pool.first(where: { $0.type == type }) else { return }
+        var map = creature.hit_dice_used_by_type ?? [:]
+        let cur = map[type] ?? 0
+        guard cur < entry.qty else { return }
+        map[type] = cur + 1
         creature.hit_dice_used_by_type = map
         socket.creature = creature
         Task { await persist(["hit_dice_used_by_type": map]) }

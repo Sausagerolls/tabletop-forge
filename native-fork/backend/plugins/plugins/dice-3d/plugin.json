@@ -1,0 +1,9 @@
+{
+  "id": "dice-3d",
+  "name": "3D Dice",
+  "version": "1.0.0",
+  "description": "Throws CSS-3D dice across the screen and settles on the result. DM rolls; everyone sees the same animation.",
+  "author": "TableTop Forge",
+  "frontend_entry": "client.js",
+  "extension_points": ["dmTabs"]
+}

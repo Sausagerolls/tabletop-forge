@@ -1,0 +1,10 @@
+{
+  "id": "encounter-builder",
+  "name": "Random Encounter Builder",
+  "version": "1.0.0",
+  "description": "Pure DM-side utility — pick a biome, set party size and level, hit Roll for a random encounter description. Recent rolls are saved per session.",
+  "author": "TableTop Forge",
+  "requires": [],
+  "frontend_entry": "client.js",
+  "extension_points": ["dm_tab"]
+}

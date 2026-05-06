@@ -1,0 +1,9 @@
+{
+  "id": "theme-customizer",
+  "name": "Theme Customizer",
+  "version": "1.0.0",
+  "description": "DM-tunable accent colour, panel/background tones, and UI font family. Live-syncs across DM and players.",
+  "author": "TableTop Forge",
+  "frontend_entry": "client.js",
+  "extension_points": ["dmTabs", "panelTabExtensions"]
+}

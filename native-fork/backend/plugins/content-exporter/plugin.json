@@ -1,0 +1,9 @@
+{
+  "id": "content-exporter",
+  "name": "Content Exporter",
+  "version": "1.3.0",
+  "description": "Pick creatures, spells, terrain pieces, AND treasure-chest items from your DM panel and bundle them as an installable plugin .zip. The exported pack auto-installs its library content (creatures + spells + terrain) on enable and removes it on disable; bundled treasure items are pushed into the destination DM's treasure chest once on first install.",
+  "author": "TableTop Forge",
+  "frontend_entry": "client.js",
+  "extension_points": ["dmTabs"]
+}

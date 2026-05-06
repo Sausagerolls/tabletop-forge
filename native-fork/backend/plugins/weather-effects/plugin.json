@@ -1,0 +1,10 @@
+{
+  "id": "weather-effects",
+  "name": "Weather Effects",
+  "version": "1.0.0",
+  "description": "DM-controlled animated weather across the whole map — rain, snow, fog — with intensity and wind controls. Visible to all players in the session.",
+  "author": "TableTop Forge",
+  "requires": [],
+  "frontend_entry": "client.js",
+  "extension_points": ["dm_tab", "map_decoration"]
+}

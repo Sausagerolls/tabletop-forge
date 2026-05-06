@@ -18,6 +18,8 @@ yarn-error.log*
 
 # Frontend build output
 frontend/dist/
+native-fork/frontend/dist/
+native-fork/backend/uploads/
 
 # Backend runtime data — user uploads, generated assets
 backend/uploads/

@@ -1,0 +1,9 @@
+{
+  "id": "srd-pack-2024",
+  "name": "SRD 2024 Content Pack",
+  "version": "1.0.0",
+  "description": "Adds a curated set of creatures, magic items, and treasure tables from the 2024 SRD. All inserted creatures are removed when the plugin is disabled.",
+  "author": "TableTop Forge",
+  "frontend_entry": "client.js",
+  "extension_points": ["dmTabs"]
+}

@@ -2127,15 +2127,25 @@ export default function MapStage({
 
     // Collect all light sources: static lights + token-attached lights.
     // Hoisted out of the RAF loop so we don't re-build the array 60×/sec.
+    //
+    // Defensive: any light entry whose coords or radius would resolve to
+    // NaN gets dropped before it can reach createRadialGradient (which
+    // throws "non-finite double" and aborts the entire glow canvas).
+    // Spectator view triggers this whenever the party-union includes a
+    // player token that hasn't been placed yet (grid_col / grid_row
+    // null in the DB) — Number(null)*gridSize is NaN, propagates
+    // through cx/cy, then explodes here. Player view never tripped it
+    // because it only uses the player's own token's coords.
+    const isFiniteNum = (n) => typeof n === 'number' && Number.isFinite(n);
     const allGlowLights = [
       ...lights.map(l => ({
         // Stable per-light seed for the flicker phase. Two lights with the
         // same coords would otherwise pulse in lockstep, so we mix the id
         // (or a derived hash if the id is missing) into the seed.
         seed: ((l.id != null ? Number(l.id) : (l.x * 13 + l.y * 31)) * 0.1731) % (Math.PI * 2),
-        x: l.x, y: l.y,
-        brightR: l.bright_radius || 60,
-        dimR: l.dim_radius || 120,
+        x: Number(l.x), y: Number(l.y),
+        brightR: Number(l.bright_radius) || 60,
+        dimR: Number(l.dim_radius) || 120,
         color: l.color || '#fbbf24',
         dir: l.direction ?? 0,
         spread: l.spread_angle ?? 360,
@@ -2147,12 +2157,14 @@ export default function MapStage({
         const brightFt = Number(t.token_light_bright) || 0;
         const dimFt    = Number(t.token_light_dim)    || 0;
         if (brightFt <= 0 && dimFt <= 0) return [];
+        const col = Number(t.grid_col), row = Number(t.grid_row);
+        if (!Number.isFinite(col) || !Number.isFinite(row)) return [];
         const sz = TOKEN_SIZES[t.size] || TOKEN_SIZES.medium;
         const pxPerFt = gridSize / FEET_PER_SQUARE;
         const ox = gridSize > 0 ? (mW % gridSize) / 2 : 0;
         const oy = gridSize > 0 ? (mH % gridSize) / 2 : 0;
-        const cx = ox + Number(t.grid_col) * gridSize + (sz.gridW * gridSize) / 2;
-        const cy = oy + Number(t.grid_row) * gridSize + (sz.gridH * gridSize) / 2;
+        const cx = ox + col * gridSize + (sz.gridW * gridSize) / 2;
+        const cy = oy + row * gridSize + (sz.gridH * gridSize) / 2;
         return [{
           seed: ((Number(t.id) || 0) * 0.2389 + 1.7) % (Math.PI * 2),
           x: cx, y: cy,
@@ -2166,7 +2178,8 @@ export default function MapStage({
           flicker: t.token_light_flicker !== false,
         }];
       }),
-    ];
+    ].filter(g => isFiniteNum(g.x) && isFiniteNum(g.y)
+                  && isFiniteNum(g.brightR) && isFiniteNum(g.dimR));
 
     function hexToRgb(hex) {
       const h = hex.replace('#', '');
@@ -2223,6 +2236,13 @@ export default function MapStage({
         const fDimR    = Math.max(0, dimR    * flickerR);
         const outerR   = Math.max(fDimR, fBrightR);
         if (outerR <= 0) continue;
+        // Defence-in-depth — even though allGlowLights filters
+        // non-finite entries above, a future contributor could feed
+        // NaN through brightR/dimR via a new code path. createRadialGradient
+        // throws "non-finite double" the moment one slips in and that
+        // tears the whole glow canvas down for every other light too,
+        // so skip the entry instead of letting it propagate.
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(outerR)) continue;
         const [r, g, b] = hexToRgb(color || '#fbbf24');
         ctx.save();
         clipToWedge(ctx, x, y, outerR, dir, spread);

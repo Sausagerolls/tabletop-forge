@@ -26,6 +26,7 @@ struct DiceLightView: View {
     private static let dieFaces = [4, 6, 8, 10, 12, 20, 100]
 
     @State private var showCharacterEditor: Bool = false
+    @State private var showSessionSwitcher: Bool = false
     @State private var serverVersion: String = "—"
     // Easter-egg state — three taps on the version row within ~2s
     // launches the Brotato-style minigame. Tap counter resets on
@@ -46,6 +47,7 @@ struct DiceLightView: View {
                 characterSection
                 appearanceSection
                 connectionSection
+                sessionsSection
                 serverSection
                 storageSection
                 logoutSection
@@ -54,6 +56,19 @@ struct DiceLightView: View {
             .task(id: store.serverUrl) { await refreshServerVersion() }
             .fullScreenCover(isPresented: $showMinigame) {
                 MinigameView(socket: socket, store: store, onClose: { showMinigame = false })
+            }
+            .sheet(isPresented: $showSessionSwitcher) {
+                SessionSwitcherView(
+                    store: store,
+                    socket: socket,
+                    isPresented: $showSessionSwitcher,
+                ) {
+                    // "Add another" — drop the live socket + active
+                    // session fields so the root view falls back to
+                    // LoginView with empty fields.
+                    socket.disconnect()
+                    store.clearActive()
+                }
             }
             .sheet(isPresented: $showCharacterEditor) {
                 if let url = characterEditorURL {
@@ -253,6 +268,32 @@ struct DiceLightView: View {
                     store.clearCachedCreature()
                 }
                 .disabled(store.cachedCreatureJson == nil)
+            }
+        }
+    }
+
+    // ── Sessions ──────────────────────────────────────────────────────
+    // Switch between previously-used sessions on this device, or
+    // start a fresh login. Always visible — even with one row in
+    // the list ("Add Another Session" is the new-login entry-point
+    // and the user shouldn't have to rummage to find it).
+    @ViewBuilder
+    private var sessionsSection: some View {
+        Section("Sessions") {
+            Button {
+                showSessionSwitcher = true
+            } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Switch Session")
+                        Text("Pick a different campaign you've joined before, or add a new one.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "rectangle.2.swap")
+                        .foregroundStyle(.tint)
+                }
             }
         }
     }

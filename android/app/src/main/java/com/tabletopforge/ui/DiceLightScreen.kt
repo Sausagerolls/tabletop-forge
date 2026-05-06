@@ -72,6 +72,7 @@ fun DiceLightScreen(store: SessionStore, socketHolder: SocketHolder, resourceSto
     var modifier  by remember { mutableIntStateOf(0) }
     var showEditor by remember { mutableStateOf(false) }
     var showMinigame by remember { mutableStateOf(false) }
+    var showSwitcher by remember { mutableStateOf(false) }
     var serverVersion by remember { mutableStateOf("—") }
     // 3-tap detector on the version row. Counter resets after a 2-
     // second idle gap so accidental double-taps don't drift in.
@@ -84,6 +85,22 @@ fun DiceLightScreen(store: SessionStore, socketHolder: SocketHolder, resourceSto
 
     LaunchedEffect(store.serverUrl.value) {
         serverVersion = fetchServerVersion(store.baseUrl)
+    }
+
+    if (showSwitcher) {
+        SessionSwitcherScreen(
+            store = store,
+            socketHolder = socketHolder,
+            onClose = { showSwitcher = false },
+            onAddNew = {
+                // "Add another session" — drop the live socket +
+                // active fields so AppRoot falls back to LoginScreen
+                // with empty fields.
+                socketHolder.current?.disconnect()
+                store.clearActiveOnly()
+            },
+        )
+        return
     }
 
     if (showMinigame) {
@@ -227,6 +244,28 @@ fun DiceLightScreen(store: SessionStore, socketHolder: SocketHolder, resourceSto
                 LabeledRow("Session", store.sessionCode.value)
                 LabeledRow("Player",  store.playerName.value)
                 LabeledRow("Status",  statusLabel(sc?.connectionStatus?.value))
+            }
+        }
+
+        // Sessions — switch between previously-used sessions or
+        // "Add another" to start a fresh login. Mirrors the iOS
+        // DiceLightView placement.
+        SectionHeader("Sessions")
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { showSwitcher = true }
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Switch Session", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Pick a different campaign you've joined before, or add a new one.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 

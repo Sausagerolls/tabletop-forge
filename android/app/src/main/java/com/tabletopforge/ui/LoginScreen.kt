@@ -88,6 +88,21 @@ fun LoginScreen(store: SessionStore, socketHolder: SocketHolder) {
     var playerName  by store.playerName
     val connecting  by store.connecting
     val lastError   by store.lastError
+    val saved       by store.savedSessions
+    var showSwitcher by remember { mutableStateOf(false) }
+
+    if (showSwitcher) {
+        SessionSwitcherScreen(
+            store = store,
+            socketHolder = socketHolder,
+            onClose = { showSwitcher = false },
+            // "Add another" is a no-op here — we're already on
+            // LoginScreen, so just dropping the sheet leaves the
+            // user staring at the typing form.
+            onAddNew = { /* stay on LoginScreen */ },
+        )
+        return
+    }
 
     Box(
         modifier = Modifier.fillMaxSize().background(
@@ -216,6 +231,33 @@ fun LoginScreen(store: SessionStore, socketHolder: SocketHolder) {
                 if (!canConnect) {
                     Box(modifier = Modifier.fillMaxSize()
                         .background(Color.Black.copy(alpha = 0.45f)))
+                }
+            }
+
+            if (saved.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                        .pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val ev = awaitPointerEvent()
+                                    if (ev.changes.any { it.changedToUp() }) {
+                                        showSwitcher = true
+                                    }
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Switch to a Saved Session",
+                        color = Gold,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                    )
                 }
             }
 

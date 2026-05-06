@@ -17,6 +17,7 @@ struct LoginView: View {
     @State private var serverUrl: String = ""
     @State private var sessionCode: String = ""
     @State private var playerName: String = ""
+    @State private var showSessionSwitcher: Bool = false
     @FocusState private var focusedField: Field?
 
     private enum Field { case server, session, name }
@@ -36,6 +37,21 @@ struct LoginView: View {
                         }
                         connectButton
                             .padding(.top, 4)
+                        if !store.savedSessions.isEmpty {
+                            Button {
+                                showSessionSwitcher = true
+                            } label: {
+                                Label("Switch to a Saved Session", systemImage: "rectangle.2.swap")
+                                    .font(.callout.weight(.semibold))
+                                    .foregroundStyle(.yellow)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.yellow.opacity(0.4), lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
                         footer
                             .padding(.top, 8)
                     }
@@ -50,6 +66,17 @@ struct LoginView: View {
             serverUrl   = store.serverUrl
             sessionCode = store.sessionCode
             playerName  = store.playerName
+        }
+        .sheet(isPresented: $showSessionSwitcher) {
+            SessionSwitcherView(
+                store: store,
+                socket: socket,
+                isPresented: $showSessionSwitcher,
+            ) {
+                // "Add another" already means "stay on LoginView with
+                // empty fields", which is exactly where we are. Just
+                // dismiss the sheet.
+            }
         }
     }
 

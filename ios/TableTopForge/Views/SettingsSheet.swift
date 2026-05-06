@@ -13,6 +13,7 @@ struct SettingsSheet: View {
     @Binding var isPresented: Bool
 
     @State private var showCharacterEditor = false
+    @State private var showSessionSwitcher = false
 
     var body: some View {
         NavigationStack {
@@ -23,6 +24,29 @@ struct SettingsSheet: View {
                         .font(.system(.body, design: .monospaced))
                     LabeledContent("Player", value: store.playerName)
                     LabeledContent("Status", value: statusLabel)
+                }
+                // Switch between previously-used sessions, or fall
+                // back to the LoginView form to add a brand-new one.
+                // Hidden when there's nothing to switch to so the
+                // Settings list isn't littered with dead options.
+                if !store.savedSessions.isEmpty {
+                    Section("Sessions") {
+                        Button {
+                            showSessionSwitcher = true
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Switch Session")
+                                    Text("Pick a different campaign you've joined before, or add a new one.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: "rectangle.2.swap")
+                                    .foregroundStyle(.tint)
+                            }
+                        }
+                    }
                 }
                 Section("Character") {
                     Button {
@@ -72,6 +96,20 @@ struct SettingsSheet: View {
                                 }
                             }
                     }
+                }
+            }
+            .sheet(isPresented: $showSessionSwitcher) {
+                SessionSwitcherView(
+                    store: store,
+                    socket: socket,
+                    isPresented: $showSessionSwitcher,
+                ) {
+                    // "Add another" — drop the live session so the
+                    // root view falls back to LoginView with empty
+                    // fields and the user can type a new one.
+                    socket.disconnect()
+                    store.clearActive()
+                    isPresented = false
                 }
             }
         }

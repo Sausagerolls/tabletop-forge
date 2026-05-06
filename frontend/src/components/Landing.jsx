@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CreatureForm from './CreatureForm.jsx';
+import {
+  listPlayerSessions,
+  listGmSessions,
+  rememberPlayerSession,
+  rememberGmSession,
+  forgetSession,
+} from '../utils/knownSessions.js';
 
 // Real app icon — loads from /public/icons/ which already mirrors
 // the website + native-app icon set. Falling back to an inline SVG
@@ -48,6 +55,62 @@ export default function Landing() {
   const [charsLoading, setCharsLoading] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
 
+  // Session switcher — shown by default when the user has previous
+  // player or GM logins on this device. The "+ Add Another Session"
+  // button flips this to false and reveals the original tabbed form
+  // so a brand-new session can still be joined / created.
+  const [knownPlayer, setKnownPlayer] = useState(() => listPlayerSessions());
+  const [knownGm, setKnownGm]         = useState(() => listGmSessions());
+  const hasKnown = knownPlayer.length > 0 || knownGm.length > 0;
+  const [showSwitcher, setShowSwitcher] = useState(hasKnown);
+
+  function refreshKnown() {
+    const p = listPlayerSessions();
+    const g = listGmSessions();
+    setKnownPlayer(p);
+    setKnownGm(g);
+    // If the user just forgot the last entry, drop back to the tabs
+    // so they aren't staring at an empty switcher with nowhere to go.
+    if (p.length === 0 && g.length === 0) setShowSwitcher(false);
+  }
+
+  function rejoinPlayer(entry) {
+    rememberPlayerSession(entry); // refresh lastUsedAt
+    navigate(
+      `/play?code=${encodeURIComponent(entry.code)}` +
+      `&name=${encodeURIComponent(entry.playerName)}` +
+      `&creatureId=${entry.creatureId}`,
+    );
+  }
+
+  async function rejoinGm(entry) {
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/sessions/${entry.code}/verify-dm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dmPassword: entry.pass }),
+      });
+      const data = await res.json();
+      if (!data.valid) {
+        setError('GM password no longer works for this session — log in again to refresh it.');
+        return;
+      }
+      rememberGmSession(entry); // refresh lastUsedAt
+      navigate(`/dm?code=${entry.code}&pass=${encodeURIComponent(entry.pass)}`);
+    } catch {
+      setError('Connection failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleForget(id) {
+    forgetSession(id);
+    refreshKnown();
+  }
+
   // Load existing characters when entering step 2
   useEffect(() => {
     if (playerStep !== 2) return;
@@ -64,7 +127,16 @@ export default function Landing() {
   }, [playerStep]);
 
   function enterGame(creature) {
-    navigate(`/play?code=${playerCode.trim().toUpperCase()}&name=${encodeURIComponent(playerName.trim())}&creatureId=${creature.id}`);
+    const code = playerCode.trim().toUpperCase();
+    const name = playerName.trim();
+    rememberPlayerSession({
+      code,
+      playerName: name,
+      creatureId: creature.id,
+      creatureName: creature.name,
+      creatureImagePath: creature.image_path,
+    });
+    navigate(`/play?code=${code}&name=${encodeURIComponent(name)}&creatureId=${creature.id}`);
   }
 
   function handleCharacterSaved(creature) {
@@ -93,7 +165,17 @@ export default function Landing() {
       });
       const data = await res.json();
       if (!data.valid) { setError('Invalid code or password'); return; }
-      navigate(`/dm?code=${dmCode.trim().toUpperCase()}&pass=${encodeURIComponent(dmPass)}`);
+      const code = dmCode.trim().toUpperCase();
+      // Best-effort fetch of the session name so the switcher row
+      // can show "The Lost Mines" instead of just the code. The
+      // /api/sessions/:code endpoint is public, so no auth needed.
+      let sessionName = null;
+      try {
+        const info = await fetch(`/api/sessions/${code}`).then((r) => r.ok ? r.json() : null);
+        sessionName = info?.name || null;
+      } catch {}
+      rememberGmSession({ code, pass: dmPass, sessionName });
+      navigate(`/dm?code=${code}&pass=${encodeURIComponent(dmPass)}`);
     } catch {
       setError('Connection failed');
     } finally {
@@ -113,6 +195,11 @@ export default function Landing() {
       });
       const data = await res.json();
       if (data.error) { setError(data.error); return; }
+      rememberGmSession({
+        code: data.session_code,
+        pass: newSession.password,
+        sessionName: data.name || newSession.name,
+      });
       navigate(`/dm?code=${data.session_code}&pass=${encodeURIComponent(newSession.password)}`);
     } catch {
       setError('Failed to create session');
@@ -138,6 +225,18 @@ export default function Landing() {
         </div>
 
         <div className="bg-dnd-panel rounded-xl overflow-hidden shadow-2xl border border-gray-700">
+          {showSwitcher ? (
+            <SessionSwitcher
+              players={knownPlayer}
+              gms={knownGm}
+              loading={loading}
+              error={error}
+              onRejoinPlayer={rejoinPlayer}
+              onRejoinGm={rejoinGm}
+              onForget={handleForget}
+              onAddNew={() => { setShowSwitcher(false); setError(''); setTab('player'); setPlayerStep(1); }}
+            />
+          ) : (<>
           <div className="flex border-b border-gray-700">
             <button className={tabClass('player')} onClick={() => { setTab('player'); setPlayerStep(1); }}><PersonIcon />Join as Player</button>
             <button className={tabClass('dm')} onClick={() => setTab('dm')}><DiceIcon />GM Login</button>
@@ -378,9 +477,115 @@ export default function Landing() {
                 </button>
               </form>
             )}
+            {hasKnown && (
+              <button
+                type="button"
+                onClick={() => { setShowSwitcher(true); setError(''); }}
+                className="mt-4 w-full text-sm text-gray-400 hover:text-gray-200 py-1"
+              >
+                ← Back to remembered sessions
+              </button>
+            )}
           </div>
+          </>)}
         </div>
       </div>
+    </div>
+  );
+}
+
+function SessionSwitcher({ players, gms, loading, error, onRejoinPlayer, onRejoinGm, onForget, onAddNew }) {
+  return (
+    <div className="p-6 space-y-5">
+      <div className="text-center">
+        <h2 className="text-dnd-gold font-semibold text-lg">Welcome Back</h2>
+        <p className="text-xs text-gray-400 mt-1">Pick a session to rejoin, or add a new one.</p>
+      </div>
+
+      {error && (
+        <div className="p-3 bg-red-900/50 border border-red-500 rounded-lg text-red-200 text-sm">
+          {error}
+        </div>
+      )}
+
+      {players.length > 0 && (
+        <div>
+          <h3 className="text-xs uppercase tracking-wider text-gray-500 mb-2">Player Characters</h3>
+          <div className="space-y-2">
+            {players.map((p) => (
+              <SessionRow
+                key={p.id}
+                avatar={p.creatureImagePath ? `/uploads/${p.creatureImagePath}` : '/uploads/creatures/default_player.png'}
+                title={p.creatureName || p.playerName}
+                subtitle={`${p.playerName} • Session ${p.code}`}
+                cta={loading ? '…' : 'Play →'}
+                onClick={() => onRejoinPlayer(p)}
+                onForget={() => onForget(p.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {gms.length > 0 && (
+        <div>
+          <h3 className="text-xs uppercase tracking-wider text-gray-500 mb-2">GM Logins</h3>
+          <div className="space-y-2">
+            {gms.map((g) => (
+              <SessionRow
+                key={g.id}
+                emoji="🎲"
+                title={g.sessionName || `Session ${g.code}`}
+                subtitle={`GM • ${g.code}`}
+                cta={loading ? '…' : 'Resume →'}
+                onClick={() => onRejoinGm(g)}
+                onForget={() => onForget(g.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={onAddNew}
+        className="w-full py-2 text-sm text-dnd-gold border border-dnd-gold/40 rounded-lg hover:bg-dnd-gold/10 transition-colors"
+      >
+        + Add Another Session
+      </button>
+    </div>
+  );
+}
+
+function SessionRow({ avatar, emoji, title, subtitle, cta, onClick, onForget }) {
+  return (
+    <div className="flex items-center gap-3 bg-gray-800 rounded-xl p-3 border border-gray-700 hover:border-dnd-gold/50 transition-colors">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-3 flex-1 min-w-0 text-left"
+      >
+        <div className="w-12 h-12 rounded-full bg-gray-700 overflow-hidden shrink-0 flex items-center justify-center">
+          {avatar ? (
+            <img src={avatar} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-2xl">{emoji || '🧙'}</span>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-white text-sm truncate">{title}</div>
+          <div className="text-xs text-gray-400 truncate">{subtitle}</div>
+        </div>
+        <div className="text-dnd-gold text-sm shrink-0">{cta}</div>
+      </button>
+      <button
+        type="button"
+        onClick={onForget}
+        title="Forget this session"
+        className="shrink-0 text-gray-500 hover:text-red-400 px-2 py-1 text-xs"
+      >
+        Forget
+      </button>
     </div>
   );
 }

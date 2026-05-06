@@ -13,6 +13,7 @@
 		44DA4726E71FB8B0E1AC44C6 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3431102439A271FD3313467B /* ContentView.swift */; };
 		4593253D74B0A9A3950F28A8 /* AbilitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F83B270F689AA739D0653CC /* AbilitiesView.swift */; };
 		46A97A834C2325307AF1EE04 /* DiceLightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47A89A68E59A6F0AB2673D2 /* DiceLightView.swift */; };
+		7166096C351064D49AA9E8F7 /* SessionSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C662A58A4F605DD0C859D01 /* SessionSwitcherView.swift */; };
 		7F53A68A64F538BD9B79E644 /* CharacterPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08BE7D5F9522CBF387264744 /* CharacterPickerView.swift */; };
 		8542B8C9C6E0F9AE2EC62270 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 187774F8E5623F6B199231CD /* HomeView.swift */; };
 		85B931685458B0B19BEDD03A /* TableTopForgeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF3F927EF9E270F0E68248E0 /* TableTopForgeApp.swift */; };
@@ -40,6 +41,7 @@
 		51D5AA9D9779B4BEFA75546C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		561BC95B9A7E4ADAFDE4B022 /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
 		773E10475EFAE6E9144CD9A1 /* TableTopForge.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TableTopForge.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7C662A58A4F605DD0C859D01 /* SessionSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSwitcherView.swift; sourceTree = "<group>"; };
 		9935DF9F92E1BA2ACCC3CBFB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AF3F927EF9E270F0E68248E0 /* TableTopForgeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableTopForgeApp.swift; sourceTree = "<group>"; };
 		B4AAC0E27C5602C19085CF15 /* SocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketClient.swift; sourceTree = "<group>"; };
@@ -127,6 +129,7 @@
 				4210520F9F64C5B85826E7F0 /* InventoryView.swift */,
 				B6228B67B08E15BD1065719B /* LoginView.swift */,
 				CFB686C7099D1A6005614EEA /* MinigameView.swift */,
+				7C662A58A4F605DD0C859D01 /* SessionSwitcherView.swift */,
 				F047ED166074EAADA695736E /* SettingsSheet.swift */,
 				21CC48455C00D093D568C45D /* SpellsView.swift */,
 				561BC95B9A7E4ADAFDE4B022 /* StatsView.swift */,
@@ -223,6 +226,7 @@
 				C83B765DF91F6AB30703B91E /* Models.swift in Sources */,
 				F1CDB6CA72C67B191B6E170B /* NotificationManager.swift in Sources */,
 				0ECFAD5B351366BE33B0B57E /* SessionStore.swift in Sources */,
+				7166096C351064D49AA9E8F7 /* SessionSwitcherView.swift in Sources */,
 				8FE67DA6387F9770622B29F7 /* SettingsSheet.swift in Sources */,
 				291A18B78AE3C64C7A1FC883 /* SocketClient.swift in Sources */,
 				D9047D23A4F537114A1CBFCC /* SpellsView.swift in Sources */,

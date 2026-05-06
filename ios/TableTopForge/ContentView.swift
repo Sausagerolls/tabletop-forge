@@ -9,9 +9,18 @@ import SwiftUI
 // flips it back. Hard refresh / app relaunch re-uses the persisted
 // credentials but still re-runs the login flow so the user sees what
 // went wrong if the server is unreachable.
+//
+// As of the session-switcher change, on cold launch we no longer dump
+// the user back at the empty Login form — if `savedSessions` has any
+// entries, we auto-connect to the most recent one. They can still
+// switch via the in-app switcher (Settings → Switch Session, or the
+// "Switch session" button overlaid on LoginView while a connect is in
+// flight). Failures fall through to LoginView with the usual error
+// banner.
 struct ContentView: View {
     @State private var store = SessionStore()
     @State private var socket = SocketClient()
+    @State private var didAutoRejoin = false
     // Theme picker lives on the right-most tab; ContentView reads
     // the same UserDefaults key and applies preferredColorScheme so
     // the choice cascades to every screen.
@@ -47,6 +56,7 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(preferredScheme)
+        .onAppear { autoRejoinIfPossible() }
         .onChange(of: socket.connectionStatus) { _, new in
             switch new {
             case .connected:
@@ -63,5 +73,39 @@ struct ContentView: View {
                 break
             }
         }
+        // Refresh the saved-sessions row once we have the live
+        // creature in hand, so the switcher row carries the char
+        // name + portrait next time the app launches.
+        .onChange(of: socket.creature?.id) { _, cid in
+            guard let cid else { return }
+            store.lastCreatureId = cid
+            store.persist()
+            store.rememberCurrent(
+                creatureId: cid,
+                creatureName: socket.creature?.name,
+                creatureImagePath: socket.creature?.image_path,
+            )
+        }
+    }
+
+    /// Called once on first appear. If the user has at least one
+    /// saved session, fold its values into the live store and kick
+    /// off a socket connect — the LoginView will render briefly
+    /// behind the .connecting state until session_joined flips us
+    /// over to HomeView.
+    private func autoRejoinIfPossible() {
+        guard !didAutoRejoin else { return }
+        didAutoRejoin = true
+        guard !store.loggedIn,
+              socket.connectionStatus != .connecting,
+              let entry = store.savedSessionsByRecency.first else { return }
+        store.adopt(entry)
+        store.connecting = true
+        socket.connect(
+            serverUrl: entry.serverUrl,
+            sessionCode: entry.sessionCode,
+            playerName: entry.playerName,
+            creatureId: entry.creatureId,
+        )
     }
 }

@@ -1,8 +1,23 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+}
+
+// Release signing config — loaded from android/keystore.properties,
+// which is gitignored. Format:
+//   storeFile=keystore/release.jks
+//   storePassword=…
+//   keyAlias=tabletopforge
+//   keyPassword=…
+// File missing? `signingConfigs.release` falls back to no-op so debug
+// builds and CI still work; only release builds need the keystore.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) load(keystorePropsFile.inputStream())
 }
 
 android {
@@ -15,6 +30,22 @@ android {
         targetSdk = 34
         versionCode = 9
         versionName = "1.9.13"
+    }
+
+    signingConfigs {
+        create("release") {
+            val storePath = keystoreProps.getProperty("storeFile")
+            if (storePath != null) {
+                // storeFile path is resolved relative to the android/
+                // root directory (where keystore.properties lives), so
+                // the same string works whether you run gradle from the
+                // android/ folder or from the repo root via gradlew.
+                storeFile = rootProject.file(storePath)
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias      = keystoreProps.getProperty("keyAlias")
+                keyPassword   = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     // Two distribution channels:
@@ -50,6 +81,12 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Only attach the release signing config when we actually
+            // loaded a keystore — otherwise gradle errors out on every
+            // task that touches the release variant (e.g. lint).
+            if (keystoreProps.getProperty("storeFile") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             // Local OTA loopback. Debug builds point at the host

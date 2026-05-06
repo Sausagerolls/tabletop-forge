@@ -41,3 +41,10 @@ FixesReadme.rtf
 # Deploy credentials — never commit. See .deploy-env.example for the
 # expected format.
 .deploy-env
+
+# Android signing — release keystore + the properties file that holds
+# its passwords. Lose either of these and you can't push updates to
+# the same applicationId on Play Store, so they live ON DISK ONLY and
+# need a manual off-machine backup.
+android/keystore/
+android/keystore.properties

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>TableTop Forge</title>
+  <style>
+    /* Plain HTML so the splash renders without waiting for the
+       React bundle to compile. Visible until main.rs finishes
+       wait_for_backend() and rewrites window.location to the
+       Express server. */
+    html, body { margin: 0; padding: 0; height: 100%; background: #0a0e16; color: #f4d28a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 24px; }
+    h1 { font-family: "Cinzel", "Times New Roman", serif; font-size: 36px; font-weight: 700; letter-spacing: 0.04em; margin: 0; }
+    p { font-size: 14px; color: rgba(244, 210, 138, 0.6); margin: 0; }
+    .spinner { width: 36px; height: 36px; border: 3px solid rgba(244, 210, 138, 0.2); border-top-color: #f4d28a; border-radius: 50%; animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>TableTop Forge</h1>
+    <div class="spinner"></div>
+    <p>Starting up — first launch can take a moment while the database initialises.</p>
+  </div>
+</body>
+</html>

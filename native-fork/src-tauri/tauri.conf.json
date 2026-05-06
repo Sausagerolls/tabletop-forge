@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "TableTop Forge",
+  "version": "1.9.13",
+  "identifier": "studio.giantmushroom.tabletopforge",
+  "build": {
+    "frontendDist": "../frontend/dist",
+    "beforeDevCommand":   "npm --prefix ../frontend run build",
+    "beforeBuildCommand": "npm --prefix ../frontend run build"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "TableTop Forge",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "url": "loading.html"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "category": "Entertainment",
+    "copyright": "© 2026 Giant Mushroom Studio",
+    "shortDescription": "Dungeons & Dragons 5.5e Virtual Tabletop",
+    "longDescription": "TableTop Forge — a self-contained desktop build of the VTT. Bundles its own Postgres-compatible database (PGlite) and runs entirely offline; no Docker, no external server, no network round-trip for the basics.",
+    "targets": "all",
+    "icon": [
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "resources": [
+      "../backend/**/*",
+      "../frontend/dist/**/*",
+      "../init.sql",
+      "../sounds/**/*",
+      "../default_player.png"
+    ]
+  }
+}

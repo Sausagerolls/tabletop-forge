@@ -62,30 +62,80 @@ Persistent data lives at `~/.tabletopforge/`:
 
 ## What's left before this can ship as a native app
 
-1. **Tauri shell** — wraps the Express+PGlite process as a sidecar
-   inside a webview-only Mac/Windows/Linux app. Needs Rust
-   toolchain (`brew install rustup-init && rustup-init`) and
-   `npm install --save-dev @tauri-apps/cli`. Wire-up: `tauri.conf.json`
-   declares the Node binary as a sidecar, the splash command runs
-   `node src/index.js` on a free port, and the webview loads
-   `http://127.0.0.1:<port>/`. Ports the app icon in too so the
-   .dmg / .msi looks native.
-2. **Bundled Node runtime.** Right now the user needs Node
-   installed. Two options once Tauri's in: Tauri's `binaries`
-   config bundles a per-platform Node binary, OR replace Node
-   with `bun build --compile` to produce a single x86_64 / arm64
-   executable.
-3. **Uploads + plugins dir.** Today both live next to the backend
-   (`backend/uploads/`, `backend/plugins/`). For a packaged app
-   they should redirect to `~/.tabletopforge/uploads` and
-   `~/.tabletopforge/plugins` — the .app bundle's resources are
-   read-only on macOS once codesigned. Hook lives at the top of
+### Phase 2 — Tauri shell (DONE)
+
+* `src-tauri/` is a Rust crate that wraps the Express + PGlite
+  process as a sidecar. On launch it picks a free port, spawns
+  `node ../backend/src/index.js` with `PORT` + `VTT_DATA_DIR`
+  set, polls until the server binds, then redirects the webview
+  at `http://127.0.0.1:<port>/`. On window close the `Child`
+  handle stored in Tauri state gets `.kill()`d so node doesn't
+  outlive the shell.
+* `tauri.conf.json` ships `backend/`, `frontend/dist/`,
+  `init.sql`, `sounds/`, and `default_player.png` as bundled
+  resources under `Contents/Resources/_up_/`. The bundled
+  Node app reads from there at runtime.
+* App icons regenerated from `frontend/public/icons/icon-512.png`
+  via `npx tauri icon`, covers macOS .icns + Windows .ico +
+  Linux PNGs + the Android / iOS sets it produces as a side
+  effect.
+* macOS smoke test: `tauri build` produces a 50MB .app + 19MB
+  .dmg. Double-click the .app, backend warms up in ~3s, the
+  webview loads the React Landing screen, character creation
+  + GM session create + plugin manager all work.
+
+```bash
+# From native-fork/
+source ~/.cargo/env       # cargo + rustc on PATH
+npm install               # Tauri CLI
+npm run tauri:build       # produces src-tauri/target/release/bundle/...
+```
+
+The .app currently still requires `node` on the user's PATH —
+Tauri spawns it via `Command::new("node")`. Bundling Node as a
+sidecar is the next-up Phase 2.5 task below.
+
+### Phase 2.5 — Bundle Node binary as sidecar
+
+Tauri's `bundle.externalBin` config drops platform-specific
+binaries into the .app/Contents/MacOS/ directory at bundle
+time. We'd download Node 22.x for `aarch64-apple-darwin`,
+`x86_64-apple-darwin`, `x86_64-pc-windows-msvc`, and
+`x86_64-unknown-linux-gnu` from <https://nodejs.org/dist/>,
+rename them to `node-<target-triple>`, drop into
+`src-tauri/binaries/`, and reference via `externalBin` so each
+platform-specific bundle gets the right one. The Rust shell
+swaps `Command::new("node")` for the resolved sidecar path.
+
+Cleaner alternative: replace Node with `bun build --compile`
+to produce a single self-contained executable that bakes in
+the entire backend + node_modules. ~70MB extra per platform vs
+~30MB for raw Node + bundled JS, but no spawn-the-runtime step.
+
+### Phase 3 — productionising for end users
+
+1. **Uploads + plugins dir relocation.** Today both live next
+   to the backend (`backend/uploads/`, `backend/plugins/`). For
+   a packaged app they should redirect to the per-user
+   `app_data_dir` Tauri exposes (already passed in via
+   `VTT_DATA_DIR`) — the .app bundle's resources are read-only
+   on macOS once codesigned. Hook lives at the top of
    `backend/src/index.js` where the multer dest is set.
-4. **PDF parsing.** The spell-scanner imports a Python script
+2. **PDF parsing.** The spell-scanner imports a Python script
    path for SRD parsing (`parseSrd2024.py`). On a packaged app
    we'd either bundle a Python sidecar too or rewrite that step
    in JS. Not on the critical path — first-boot SRD seed already
    pulls from Open5e over HTTP, so the scanner is GM-side optional.
+3. **Code-signing + notarisation.** macOS Gatekeeper will warn
+   on first launch until the .app is signed with the team's
+   Developer ID and notarised by Apple. Same for Windows
+   SmartScreen with an EV cert. Both feed off the same Tauri
+   bundle output so the integration is mostly CI plumbing.
+4. **Auto-update.** Tauri has a built-in updater plugin that
+   reads a JSON manifest similar to the Android OTA flow. Wire
+   it to a release URL on `forge.giantmushroom.studio/desktop/`
+   and the .app self-updates without re-downloading from the
+   marketing site.
 
 ## Things tested *not* to be issues
 

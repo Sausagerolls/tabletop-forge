@@ -1295,12 +1295,17 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       ];
 
       // Spells — strip prev, append new (each tagged with casting_ability + prepared).
+      // Honour the per-ref `prepared` flag carried by fetchSpellsByRef
+      // (defaults to true). A ref written as `{ name, prepared: false }`
+      // adds the spell to the character's known list without flagging
+      // it as always-prepared, so it has to be slotted into a prep
+      // list like any other prepared-caster spell.
       next.spells = [
         ...stripSpells(f.spells, prevAdded.spells),
         ...fetchedSpells.map((s) => ({
           ...s,
           casting_ability: castingAbility || s.casting_ability || '',
-          prepared: true,
+          prepared: s.__ref_prepared !== false,
           __source: sourceTag,
         })),
       ];
@@ -1444,7 +1449,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           .map((s) => ({
             ...s,
             casting_ability: castingAbility || s.casting_ability || '',
-            prepared: true,
+            prepared: s.__ref_prepared !== false,
             __source: sourceTag,
           }));
         if (toAdd.length === 0) return f;
@@ -1498,6 +1503,12 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   // damage_entries / school / etc. populated. Skips silently when a
   // spell isn't in the library so a typo in races.js doesn't break
   // the entire apply.
+  //
+  // Per-ref `prepared` flag is forwarded onto the returned row as
+  // `__ref_prepared` so callers materializing into creature.spells
+  // can honour the author's choice without a second name lookup.
+  // Defaults to true when the ref doesn't specify, preserving the
+  // pre-existing "race spells are always prepared" behaviour.
   async function fetchSpellsByRef(refs) {
     if (!refs || refs.length === 0) return [];
     const out = [];
@@ -1514,7 +1525,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         ) || (list || []).find((s) =>
           String(s.name).toLowerCase() === String(ref.name).toLowerCase()
         );
-        if (exact) out.push(exact);
+        if (exact) out.push({ ...exact, __ref_prepared: ref.prepared !== false });
       } catch (err) {
         console.warn('race spell fetch failed for', ref.name, err);
       }
@@ -1918,7 +1929,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           if (!has) {
             next.spells = [
               ...(next.spells || []),
-              { id: Date.now() + Math.random(), name: sp.name, level: sp.level ?? 0, prepared: true, __source: tag },
+              { id: Date.now() + Math.random(), name: sp.name, level: sp.level ?? 0, prepared: sp.prepared !== false, __source: tag },
             ];
             added.spells.push(sp.name);
           }
@@ -2282,7 +2293,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           if (!has) {
             next.spells = [
               ...(next.spells || []),
-              { id: Date.now() + Math.random(), name: sp.name, level: sp.level ?? 0, prepared: true, __source: tag },
+              { id: Date.now() + Math.random(), name: sp.name, level: sp.level ?? 0, prepared: sp.prepared !== false, __source: tag },
             ];
             added.spells.push(sp.name);
           }

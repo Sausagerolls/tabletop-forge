@@ -22,9 +22,13 @@
 //     armor: ['light' | 'medium' | 'heavy' | 'shields'],
 //     weapons: ['Martial weapons' | 'Longsword' | …],
 //     skills: [{ skill: 'skill_x', level: 'proficient' | 'expertise' }],
-//     spells: [{ name: 'Hunter\'s Mark', minLevel: 1 }],
+//     spells: [{ name: 'Hunter\'s Mark', minLevel: 1, prepared: true }],
 //     traits: [{ name, desc, category: 'specialAbility'|'action'|'bonusAction'|'reaction' }],
 //   }
+// `prepared` (default true) controls whether the spell lands on the
+// character sheet flagged as always-prepared (lineage / class-feature
+// behaviour) or just appended to the known list for the player to
+// slot into a prep list themselves.
 
 export const CLASS_CHOICES_2024 = {
   Cleric: [
@@ -96,7 +100,11 @@ export const CLASS_CHOICES_2024 = {
       // class_state.added so it reverts on class swap.
       kind: 'auto',
       adds: {
-        spells: [{ name: "Hunter's Mark", minLevel: 1 }],
+        // The 2024 PHB feature explicitly says "you always have the
+        // Hunter's Mark spell prepared" — keep prepared: true here as
+        // the rules-text shorthand. Other class-feature spells can
+        // opt out by setting prepared: false.
+        spells: [{ name: "Hunter's Mark", minLevel: 1, prepared: true }],
       },
     },
   ],

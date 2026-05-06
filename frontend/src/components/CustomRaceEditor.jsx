@@ -251,7 +251,7 @@ export default function CustomRaceEditor({ initial, onClose, onSaved, parentRace
           <ListEditor
             items={data.addsSpells}
             onChange={(arr) => patch({ addsSpells: arr })}
-            blank={() => ({ name: '', minLevel: 1 })}
+            blank={() => ({ name: '', minLevel: 1, prepared: true })}
             renderRow={(it, set) => (
               <>
                 <input className={INPUT_SM + ' flex-1'} placeholder="Spell name"
@@ -259,6 +259,15 @@ export default function CustomRaceEditor({ initial, onClose, onSaved, parentRace
                 <span className="text-xs text-gray-400">unlocks at level</span>
                 <NumIn value={it.minLevel || 1}
                   onChange={(v) => set({ ...it, minLevel: v })} />
+                {/* "Prepared" governs whether the spell auto-flags as
+                    always-prepared on the player's sheet (lineage-spell
+                    behaviour) or just lands in the known list for the
+                    player to slot into a prep list themselves. */}
+                <label className="flex items-center gap-1 text-xs text-gray-300">
+                  <input type="checkbox" checked={it.prepared !== false}
+                    onChange={(e) => set({ ...it, prepared: e.target.checked })} />
+                  Prepared
+                </label>
               </>
             )}
           />

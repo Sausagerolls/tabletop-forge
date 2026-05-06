@@ -452,10 +452,13 @@ function FeatureList({ features, subclasses, onChange }) {
 
 // Typeahead multi-picker backed by /api/spell-library. Caches the
 // list once per editor mount so re-rendering features doesn't
-// re-fetch. Picks are kept as plain spell names — the apply
-// pipeline (frontend/src/components/CreatureForm.jsx) enriches by
-// name from the spell library when a character takes the class so
-// the granted spell lands with full stat block details.
+// re-fetch.
+//
+// Picks are stored as `{ name, prepared }` objects so the GM can
+// flag a granted spell as "always prepared" (lineage-spell
+// behaviour) vs "just added to the known list" per-spell. Plain
+// strings from older saves still work — `pickObj()` coerces them
+// to objects with prepared=true (the prior implicit behaviour).
 function SpellMultiPick({ picks, onChange }) {
   const [draft, setDraft] = React.useState('');
   const [library, setLibrary] = React.useState(null);
@@ -467,8 +470,12 @@ function SpellMultiPick({ picks, onChange }) {
       .catch(() => { if (!cancelled) setLibrary([]); });
     return () => { cancelled = true; };
   }, []);
+  const pickObj = (p) => (typeof p === 'string'
+    ? { name: p, prepared: true }
+    : { name: p.name, prepared: p.prepared !== false });
+  const objs = picks.map(pickObj);
   const lcDraft = draft.trim().toLowerCase();
-  const lcPicks = new Set(picks.map((s) => String(s).toLowerCase()));
+  const lcPicks = new Set(objs.map((s) => s.name.toLowerCase()));
   const matches = (library || [])
     .filter((s) => s.name && s.name.toLowerCase().includes(lcDraft) && !lcPicks.has(s.name.toLowerCase()))
     .slice(0, 8);
@@ -476,16 +483,39 @@ function SpellMultiPick({ picks, onChange }) {
     const v = String(name || '').trim();
     if (!v) return;
     if (lcPicks.has(v.toLowerCase())) { setDraft(''); return; }
-    onChange([...picks, v]);
+    onChange([...objs, { name: v, prepared: true }]);
     setDraft('');
+  }
+  function togglePrepared(i) {
+    const next = objs.slice();
+    next[i] = { ...next[i], prepared: !(next[i].prepared !== false) };
+    onChange(next);
+  }
+  function removeAt(i) {
+    onChange(objs.filter((_, j) => j !== i));
   }
   return (
     <div>
       <div className="flex flex-wrap gap-1 mb-1">
-        {picks.map((s, i) => (
-          <span key={i} className="text-xs bg-purple-900/30 border border-purple-700/50 rounded px-2 py-0.5 flex items-center gap-1">
-            {s}
-            <button type="button" onClick={() => onChange(picks.filter((_, j) => j !== i))}
+        {objs.map((s, i) => (
+          <span key={i}
+            className={`text-xs border rounded px-2 py-0.5 flex items-center gap-1 ${
+              s.prepared !== false
+                ? 'bg-purple-900/30 border-purple-700/50'
+                : 'bg-gray-800/60 border-gray-700/50'
+            }`}
+            title={s.prepared !== false
+              ? 'Always prepared — toggle off to add as a known-but-not-prepared spell'
+              : 'Known but not prepared — toggle on to flag as always prepared'}
+          >
+            {s.name}
+            <button type="button" onClick={() => togglePrepared(i)}
+              className={`text-[10px] uppercase font-semibold tracking-wide ${
+                s.prepared !== false ? 'text-purple-200 hover:text-white' : 'text-gray-400 hover:text-gray-200'
+              }`}>
+              {s.prepared !== false ? 'Prep' : 'Known'}
+            </button>
+            <button type="button" onClick={() => removeAt(i)}
               className="text-red-300 hover:text-red-100">×</button>
           </span>
         ))}

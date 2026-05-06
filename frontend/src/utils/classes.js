@@ -193,9 +193,20 @@ export function getClassChoicesMerged(charClass, opts = {}) {
       // handles spell entries by name; the post-apply enrichment
       // effect then back-fills school / damage / description from
       // the spell library so the player gets a full stat block.
+      //
+      // Spells are stored on the feature as either a plain string
+      // (legacy shorthand → always prepared) or an object
+      // `{ name, prepared, minLevel? }`. Both shapes are normalised
+      // to objects with an explicit `prepared` flag here so the
+      // downstream applyAdds pass can rely on it. `prepared`
+      // defaults to true to preserve the prior behaviour.
       const spellList = Array.isArray(f.spells)
-        ? f.spells.map((s) => (typeof s === 'string' ? { name: s } : s))
-                  .filter((s) => s && s.name)
+        ? f.spells
+            .map((s) => (typeof s === 'string'
+              ? { name: s, prepared: true }
+              : { name: s.name, prepared: s.prepared !== false,
+                  ...(s.minLevel != null ? { minLevel: s.minLevel } : {}) }))
+            .filter((s) => s && s.name)
         : [];
       push({
         id: `custom-feature:${(f.name || 'feature').toLowerCase().replace(/\s+/g, '-')}:${lvl}`,

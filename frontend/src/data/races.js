@@ -991,11 +991,13 @@ export const RACE_CATALOG = [
         "addsSpells": [
           {
             "name": "Dancing Lights",
-            "minLevel": 1
+            "minLevel": 1,
+            "prepared": true
           },
           {
             "name": "Darkness",
-            "minLevel": 5
+            "minLevel": 5,
+            "prepared": true
           }
         ],
         "breathWeaponType": null
@@ -1024,15 +1026,18 @@ export const RACE_CATALOG = [
         "addsSpells": [
           {
             "name": "Prestidigitation",
-            "minLevel": 1
+            "minLevel": 1,
+            "prepared": true
           },
           {
             "name": "Detect Magic",
-            "minLevel": 3
+            "minLevel": 3,
+            "prepared": true
           },
           {
             "name": "Misty Step",
-            "minLevel": 5
+            "minLevel": 5,
+            "prepared": true
           }
         ],
         "breathWeaponType": null
@@ -1061,15 +1066,18 @@ export const RACE_CATALOG = [
         "addsSpells": [
           {
             "name": "Druidcraft",
-            "minLevel": 1
+            "minLevel": 1,
+            "prepared": true
           },
           {
             "name": "Longstrider",
-            "minLevel": 3
+            "minLevel": 3,
+            "prepared": true
           },
           {
             "name": "Pass Without Trace",
-            "minLevel": 5
+            "minLevel": 5,
+            "prepared": true
           }
         ],
         "breathWeaponType": null
@@ -1527,15 +1535,18 @@ export const RACE_CATALOG = [
         "addsSpells": [
           {
             "name": "Poison Spray",
-            "minLevel": 1
+            "minLevel": 1,
+            "prepared": true
           },
           {
             "name": "Ray of Sickness",
-            "minLevel": 3
+            "minLevel": 3,
+            "prepared": true
           },
           {
             "name": "Hold Person",
-            "minLevel": 5
+            "minLevel": 5,
+            "prepared": true
           }
         ],
         "breathWeaponType": null
@@ -1566,15 +1577,18 @@ export const RACE_CATALOG = [
         "addsSpells": [
           {
             "name": "Chill Touch",
-            "minLevel": 1
+            "minLevel": 1,
+            "prepared": true
           },
           {
             "name": "False Life",
-            "minLevel": 3
+            "minLevel": 3,
+            "prepared": true
           },
           {
             "name": "Ray of Enfeeblement",
-            "minLevel": 5
+            "minLevel": 5,
+            "prepared": true
           }
         ],
         "breathWeaponType": null
@@ -1603,15 +1617,18 @@ export const RACE_CATALOG = [
         "addsSpells": [
           {
             "name": "Fire Bolt",
-            "minLevel": 1
+            "minLevel": 1,
+            "prepared": true
           },
           {
             "name": "Hellish Rebuke",
-            "minLevel": 3
+            "minLevel": 3,
+            "prepared": true
           },
           {
             "name": "Darkness",
-            "minLevel": 5
+            "minLevel": 5,
+            "prepared": true
           }
         ],
         "breathWeaponType": null

@@ -35,6 +35,63 @@ struct StatsView: View {
 
     var body: some View {
         NavigationStack {
+            GeometryReader { geo in
+                // Below this width the screen is too narrow to split
+                // sensibly — iPhone portrait, narrow iPad split-view,
+                // and Catalyst windows the user has tightened down.
+                // Above it (iPhone landscape on a Pro/Plus, iPad in
+                // any orientation, Mac Catalyst with a normal window)
+                // the at-the-table info on the left + reference
+                // material on the right reads much better than one
+                // tall scrolling column.
+                if geo.size.width >= 700 {
+                    twoColumnLayout
+                } else {
+                    singleColumnLayout
+                }
+            }
+            // No nav title on this tab — the avatar + name combo at
+            // the top of the page is the heading. The redundant
+            // "Stats" bar wasted vertical space and competed with
+            // the character name visually.
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+        }
+    }
+
+    // ── Layouts ──────────────────────────────────────────────────────
+    // The two layouts share every Section view-builder — only the
+    // packing differs. Refreshable goes on each Form so a pull-down
+    // works on whichever column the user is touching.
+
+    @ViewBuilder
+    private var singleColumnLayout: some View {
+        Form {
+            identityCard
+            if let token = playerToken { vitalsSection(token: token) }
+            hitDiceSection
+            bardicInspirationSection
+            if (playerToken?.current_hp ?? -1) == 0 { deathSavesSection }
+            combatSection
+            equippedWeaponsSection
+            classDetailsSection
+            statBlockSections
+            conditionsSection
+            whispersSection
+        }
+        .refreshable { await reloadCreature() }
+    }
+
+    /// Wide layout — two side-by-side scrolling Forms. Left column
+    /// is "what I'm doing this turn" (identity + vitals + combat
+    /// + equipped weapons + active conditions); right column is
+    /// "what I am / what was said" (class reference, stat-block
+    /// sections, GM whispers). Both columns scroll independently
+    /// so the player can leave their stat-block expanded on the
+    /// right without losing sight of HP on the left.
+    @ViewBuilder
+    private var twoColumnLayout: some View {
+        HStack(spacing: 0) {
             Form {
                 identityCard
                 if let token = playerToken { vitalsSection(token: token) }
@@ -43,18 +100,20 @@ struct StatsView: View {
                 if (playerToken?.current_hp ?? -1) == 0 { deathSavesSection }
                 combatSection
                 equippedWeaponsSection
+                conditionsSection
+            }
+            .refreshable { await reloadCreature() }
+            .frame(maxWidth: .infinity)
+
+            Divider()
+
+            Form {
                 classDetailsSection
                 statBlockSections
-                conditionsSection
                 whispersSection
             }
-            // No nav title on this tab — the avatar + name combo at
-            // the top of the page is the heading. The redundant
-            // "Stats" bar wasted vertical space and competed with
-            // the character name visually.
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
             .refreshable { await reloadCreature() }
+            .frame(maxWidth: .infinity)
         }
     }
 

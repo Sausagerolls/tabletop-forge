@@ -78,10 +78,25 @@ struct DiceLightView: View {
                         // hash on Update / Cancel; we close the sheet
                         // the moment that's seen so the in-form
                         // buttons feel native.
+                        //
+                        // Title goes through ToolbarItem(.principal)
+                        // rather than `.navigationTitle("Edit Stat
+                        // Block")` because the latter, when applied
+                        // to a UIViewRepresentable child, leaks its
+                        // preference key past the sheet boundary up
+                        // into the outer Dice & Settings NavigationStack
+                        // — leaving an "Edit Stat Block" title stuck
+                        // in the top-left of the Settings tab after
+                        // dismiss. Toolbar items are scoped to their
+                        // own NavigationStack and don't have that
+                        // leak.
                         WebView(url: url, onDone: { showCharacterEditor = false })
-                            .navigationTitle("Edit Stat Block")
                             .navigationBarTitleDisplayMode(.inline)
                             .toolbar {
+                                ToolbarItem(placement: .principal) {
+                                    Text("Edit Stat Block")
+                                        .font(.headline)
+                                }
                                 ToolbarItem(placement: .topBarTrailing) {
                                     Button("Done") { showCharacterEditor = false }
                                 }

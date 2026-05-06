@@ -358,13 +358,13 @@ struct StatsView: View {
                             showHitDicePicker = true
                         }
                     } label: {
-                        Text("Use Hit Die")
+                        Text("Use Hit Die (Auto Heal)")
                             .frame(maxWidth: .infinity)
                     }
                     .disabled(availableTypes.isEmpty || playerToken == nil)
                     .buttonStyle(.borderedProminent)
                     .confirmationDialog(
-                        "Use which hit die?",
+                        "Use which hit die? (rolls + heals)",
                         isPresented: $showHitDicePicker,
                         titleVisibility: .visible,
                     ) {

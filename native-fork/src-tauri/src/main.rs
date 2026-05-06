@@ -131,11 +131,18 @@ fn spawn_backend(app: &AppHandle, port: u16) -> Option<Child> {
         bundled.or(near_exe).or(from_manifest)?
     };
 
-    // Per-user app-support directory for PGlite + uploads. macOS:
-    // ~/Library/Application Support/TableTop Forge/. Windows:
-    // %APPDATA%\TableTop Forge\. Linux: ~/.local/share/TableTop
-    // Forge/. Tauri normalises all of this through the path API.
-    let data_dir = app.path().app_data_dir().ok();
+    // Per-user data dir for PGlite + uploads. We bypass Tauri's
+    // app_data_dir() (~/Library/Application Support/TableTop Forge/
+    // on macOS) because PGlite's WASM aborts at pg_initdb when
+    // the dir path contains spaces — `Application Support` and
+    // the productName "TableTop Forge" both have them, so the
+    // upstream-recommended location double-fails. We fall back
+    // to a no-space dotted dir under $HOME instead, which keeps
+    // every upstream PGlite codepath on its happy path. Override
+    // with VTT_DATA_DIR if a future PGlite release fixes the
+    // space bug and we want to switch back.
+    let data_dir = std::env::var_os("HOME")
+        .map(|home| std::path::PathBuf::from(home).join(".tabletopforge"));
 
     // Tauri's `externalBin` config drops a `node-<target-triple>`
     // binary into the bundle next to the main executable —
@@ -163,8 +170,19 @@ fn spawn_backend(app: &AppHandle, port: u16) -> Option<Child> {
         .env("DM_MASTER_PASSWORD", "dungeonmaster")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
-    if let Some(dir) = data_dir {
-        std::fs::create_dir_all(&dir).ok();
+    // Tauri inherits cwd `/` from macOS LaunchServices when the
+    // .app is double-clicked, and PGlite's WASM aborts at
+    // pg_initdb() when started from a non-writable cwd because
+    // it shells out to a brief tmp scratch file. The .app's own
+    // resource dir is read-only inside a code-signed bundle, so
+    // we use the per-user data dir we already manage — guaranteed
+    // writable, and a sensible place for any other tmp the backend
+    // might create. Express's `path.join(__dirname, ...)` lookups
+    // for uploads/sounds use absolute paths from __dirname so they
+    // don't depend on cwd anyway.
+    if let Some(ref dir) = data_dir {
+        std::fs::create_dir_all(dir).ok();
+        cmd.current_dir(dir);
         cmd.env("VTT_DATA_DIR", dir);
     }
     cmd.spawn().ok()
@@ -229,7 +247,15 @@ fn main() {
             // the React app served by Express. Always navigate to
             // the loopback URL inside the window itself; the LAN
             // form is only useful for OTHER devices.
-            win.eval(&format!("window.location.replace('{}')", local_url)).ok();
+            //
+            // The `?host=1` flag tells Landing.jsx to enter host-
+            // only mode (GM Login + New Session only, no Join as
+            // Player or Spectate). Players hitting the LAN URL
+            // from their phones still get the full landing page
+            // because that origin (192.168.x.x) doesn't carry the
+            // query param.
+            let host_url = format!("{}?host=1", local_url);
+            win.eval(&format!("window.location.replace('{}')", host_url)).ok();
             Ok(())
         })
         .on_window_event(|window, event| {

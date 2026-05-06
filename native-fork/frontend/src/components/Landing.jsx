@@ -37,14 +37,41 @@ const SparkleIcon = () => (
   </svg>
 );
 
+// Host-mode detection for the native (Tauri) build. The shell
+// navigates the in-app webview to `?host=1` after the backend
+// is up — that flag means "this browser is the GM's own native
+// app, so only show GM-relevant entry points (no Join as Player,
+// no Spectate)". Players hitting the same backend from their
+// phones over LAN never carry the param so they get the full
+// landing page unchanged. We persist into sessionStorage on
+// first read so client-side router pushes that strip the query
+// string don't lose host-mode mid-session.
+function detectHostMode() {
+  if (typeof window === 'undefined') return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('host') === '1') {
+      sessionStorage.setItem('dndvtt_host_mode', '1');
+      return true;
+    }
+  } catch {}
+  try {
+    return sessionStorage.getItem('dndvtt_host_mode') === '1';
+  } catch { return false; }
+}
+
 export default function Landing() {
   const navigate = useNavigate();
+  const isHostMode = detectHostMode();
   const [playerCode, setPlayerCode] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [dmCode, setDmCode] = useState('');
   const [dmPass, setDmPass] = useState('');
   const [newSession, setNewSession] = useState({ name: '', password: '' });
-  const [tab, setTab] = useState('player');
+  // In host mode start on the GM Login tab — Join as Player and
+  // Spectate are hidden, so defaulting to 'player' would land on
+  // an empty pane.
+  const [tab, setTab] = useState(isHostMode ? 'dm' : 'player');
   const [spectatorCode, setSpectatorCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -59,13 +86,21 @@ export default function Landing() {
   // player or GM logins on this device. The "+ Add Another Session"
   // button flips this to false and reveals the original tabbed form
   // so a brand-new session can still be joined / created.
-  const [knownPlayer, setKnownPlayer] = useState(() => listPlayerSessions());
+  // In host mode we deliberately hide remembered player rows —
+  // the GM's native app shouldn't offer "rejoin as player" since
+  // the only way they'd want to use it is to GM. Player-side
+  // entries can stay in storage so a later non-host browser
+  // session on the same device still surfaces them; we just
+  // filter the switcher view here.
+  const [knownPlayer, setKnownPlayer] = useState(
+    () => (isHostMode ? [] : listPlayerSessions())
+  );
   const [knownGm, setKnownGm]         = useState(() => listGmSessions());
   const hasKnown = knownPlayer.length > 0 || knownGm.length > 0;
   const [showSwitcher, setShowSwitcher] = useState(hasKnown);
 
   function refreshKnown() {
-    const p = listPlayerSessions();
+    const p = isHostMode ? [] : listPlayerSessions();
     const g = listGmSessions();
     setKnownPlayer(p);
     setKnownGm(g);
@@ -234,14 +269,18 @@ export default function Landing() {
               onRejoinPlayer={rejoinPlayer}
               onRejoinGm={rejoinGm}
               onForget={handleForget}
-              onAddNew={() => { setShowSwitcher(false); setError(''); setTab('player'); setPlayerStep(1); }}
+              onAddNew={() => { setShowSwitcher(false); setError(''); setTab(isHostMode ? 'dm' : 'player'); setPlayerStep(1); }}
             />
           ) : (<>
           <div className="flex border-b border-gray-700">
-            <button className={tabClass('player')} onClick={() => { setTab('player'); setPlayerStep(1); }}><PersonIcon />Join as Player</button>
+            {!isHostMode && (
+              <button className={tabClass('player')} onClick={() => { setTab('player'); setPlayerStep(1); }}><PersonIcon />Join as Player</button>
+            )}
             <button className={tabClass('dm')} onClick={() => setTab('dm')}><DiceIcon />GM Login</button>
             <button className={tabClass('create')} onClick={() => setTab('create')}><SparkleIcon />New Session</button>
-            <button className={tabClass('spectate')} onClick={() => setTab('spectate')} title="Audience-facing TV view">📺 Spectate</button>
+            {!isHostMode && (
+              <button className={tabClass('spectate')} onClick={() => setTab('spectate')} title="Audience-facing TV view">📺 Spectate</button>
+            )}
           </div>
 
           <div className="p-6">

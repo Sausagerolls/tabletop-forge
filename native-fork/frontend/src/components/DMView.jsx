@@ -3328,7 +3328,8 @@ export default function DMView() {
   }
 
   const mapUrl = session.map_image ? `/uploads/${session.map_image}` : null;
-  const playerLink = `${window.location.origin}/play?code=${code}`;
+  const playerLink    = `${window.location.origin}/play?code=${code}`;
+  const spectatorLink = `${window.location.origin}/spectate?code=${code}`;
   const visibleTokens = tokens;
 
   const combatSorted = [...tokens]
@@ -5324,6 +5325,35 @@ export default function DMView() {
                         <span className="text-xs text-gray-300 break-all flex-1 bg-gray-900 rounded p-2">{playerLink}</span>
                         <button
                           onClick={() => navigator.clipboard.writeText(playerLink)}
+                          className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-300 shrink-0"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Spectator / TV view — read-only window the GM
+                        opens on the table TV so the players see the
+                        map without exposing GM-only controls. The
+                        Open button is the headline; we keep Copy too
+                        so a GM hosting on a separate display can
+                        paste the URL straight into a browser there. */}
+                    <div>
+                      <div className="text-xs text-gray-400 mb-1">Spectator (TV View)</div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => window.open(spectatorLink, 'tabletopforge_spectator', 'noopener,noreferrer')}
+                          className="text-xs bg-dnd-gold hover:bg-yellow-500 text-gray-900 font-semibold px-3 py-2 rounded flex items-center gap-1.5 shrink-0"
+                          title="Opens the read-only audience view in a new window — drag it onto your table TV."
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 22h8M12 18v4"/>
+                          </svg>
+                          Open Spectator
+                        </button>
+                        <span className="text-xs text-gray-300 break-all flex-1 bg-gray-900 rounded p-2">{spectatorLink}</span>
+                        <button
+                          onClick={() => navigator.clipboard.writeText(spectatorLink)}
                           className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-300 shrink-0"
                         >
                           Copy

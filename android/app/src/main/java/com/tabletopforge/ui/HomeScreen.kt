@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -37,12 +39,13 @@ import com.tabletopforge.SocketHolder
 import com.tabletopforge.services.ApiClient
 import com.tabletopforge.services.ResourceStore
 import com.tabletopforge.services.SessionStore
+import com.tabletopforge.services.UpdateBus
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 
 private enum class Tab(val label: String) {
     Stats("Stats"), Abilities("Abilities"),
-    Inventory("Inventory"), Spells("Spells"), DiceLight("Dice"),
+    Inventory("Inventory"), Spells("Spells"), DiceLight("Dice & Settings"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -149,10 +152,20 @@ fun HomeScreen(store: SessionStore, socketHolder: SocketHolder, resourceStore: R
                     icon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null) },
                     label = { Text(Tab.Spells.label) },
                 )
+                // OTA badge — show a dot on the Dice & Settings tab
+                // when an update is waiting so the indicator is
+                // visible regardless of which tab the user is on.
+                val updateAvailable by UpdateBus.available
                 NavigationBarItem(
                     selected = tab == Tab.DiceLight,
                     onClick = { tab = Tab.DiceLight },
-                    icon = { Icon(Icons.Filled.Casino, contentDescription = null) },
+                    icon = {
+                        BadgedBox(badge = {
+                            if (updateAvailable != null) Badge()
+                        }) {
+                            Icon(Icons.Filled.Casino, contentDescription = null)
+                        }
+                    },
                     label = { Text(Tab.DiceLight.label) },
                 )
             }

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Background color sampled from the corners of the canonical
+     icon-1024.png so the adaptive-icon parallax doesn't flash a
+     mismatched colour around the foreground when the launcher
+     animates. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#0c1d3a"/>
+    <solid android:color="#02112B"/>
 </shape>

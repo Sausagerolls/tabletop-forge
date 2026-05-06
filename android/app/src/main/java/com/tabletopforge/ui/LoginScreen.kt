@@ -267,10 +267,13 @@ private fun HeroBlock() {
                 .border(1.dp, Gold.copy(alpha = 0.45f), markShape),
             contentAlignment = Alignment.Center,
         ) {
-            androidx.compose.foundation.Image(
-                painter = androidx.compose.ui.res.painterResource(
-                    id = com.tabletopforge.R.mipmap.ic_launcher
-                ),
+            // AsyncImage handles the adaptive-icon XML the launcher
+            // uses on API 26+. painterResource() does not — it only
+            // accepts vector / raster drawables and crashes on the
+            // <adaptive-icon> wrapper that the icon resource resolves
+            // to on modern devices.
+            coil.compose.AsyncImage(
+                model = com.tabletopforge.R.mipmap.ic_launcher,
                 contentDescription = "TableTop Forge",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,

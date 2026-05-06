@@ -19,11 +19,16 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -37,19 +42,27 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tabletopforge.BuildConfig
 import com.tabletopforge.SocketHolder
 import com.tabletopforge.data.DiceRollRequest
 import com.tabletopforge.services.AppTheme
 import com.tabletopforge.services.ConnectionStatus
 import com.tabletopforge.services.ResourceStore
 import com.tabletopforge.services.SessionStore
+import com.tabletopforge.services.UpdateBus
+import com.tabletopforge.services.UpdateChecker
+import kotlinx.coroutines.launch
 
 private val dieFaces = listOf(4, 6, 8, 10, 12, 20, 100)
 
@@ -242,6 +255,13 @@ fun DiceLightScreen(store: SessionStore, socketHolder: SocketHolder, resourceSto
             }
         }
 
+        // App — running build + a manual "Check for updates" button
+        // hooked to the same UpdateBus the cold-launch checker writes
+        // into, so the result lives in one place. Tapping "Update"
+        // surfaces the same prompt the cold-launch flow uses.
+        SectionHeader("App")
+        AppUpdateCard()
+
         // Cache controls
         SectionHeader("Storage")
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -317,6 +337,95 @@ private fun statusLabel(s: ConnectionStatus?): String = when (s) {
     ConnectionStatus.Disconnected -> "Disconnected"
     ConnectionStatus.Failed       -> "Failed"
     null -> "—"
+}
+
+@Composable
+private fun AppUpdateCard() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val checker = remember { UpdateChecker(ctx) }
+    val update by UpdateBus.available
+    val checking by UpdateBus.checking
+    val lastError by UpdateBus.lastError
+    var showPrompt by remember { mutableStateOf(false) }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Running build — versionName + versionCode, monospace so
+            // it lines up with the rest of the connection block.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Installed", modifier = Modifier.weight(1f),
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+
+            // Status row. Three states: checking / update available /
+            // up to date. The colored dot is the permanent indicator
+            // that complements the bottom-nav badge.
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val (dotColor, statusText) = when {
+                    !checker.enabled -> Color(0xFF7A7A7A) to "OTA disabled in this build"
+                    checking -> Color(0xFFF6CD4A) to "Checking…"
+                    update != null -> Color(0xFFEC4D52) to
+                        "Update available — ${update!!.manifest.version_name}"
+                    lastError != null -> Color(0xFFEC4D52) to "Check failed: $lastError"
+                    else -> Color(0xFF5CDF6A) to "Up to date"
+                }
+                Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(dotColor))
+                Text(statusText, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            }
+
+            // Action row. "Check for updates" always visible (when OTA
+            // is enabled); "Update now" only when there's something to
+            // install. Using OutlinedButton + filled Button so both
+            // can sit in the same row without crowding.
+            if (checker.enabled) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                UpdateBus.checking.value = true
+                                UpdateBus.lastError.value = null
+                                runCatching { checker.check() }
+                                    .onSuccess { UpdateBus.available.value = it }
+                                    .onFailure { UpdateBus.lastError.value = it.localizedMessage }
+                                UpdateBus.lastCheckedAt.value = System.currentTimeMillis()
+                                UpdateBus.checking.value = false
+                            }
+                        },
+                        enabled = !checking,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        if (checking) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Text("Check for updates")
+                        }
+                    }
+                    if (update != null) {
+                        Button(
+                            onClick = { showPrompt = true },
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Update now") }
+                    }
+                }
+            }
+        }
+    }
+
+    update?.takeIf { showPrompt }?.let { upd ->
+        UpdatePromptDialog(update = upd, onDismiss = { showPrompt = false })
+    }
 }
 
 /** GET /api/version on the live server, returning the version

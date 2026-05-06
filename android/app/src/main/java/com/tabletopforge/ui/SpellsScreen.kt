@@ -48,10 +48,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.rememberCoroutineScope
 import com.tabletopforge.SocketHolder
 import com.tabletopforge.data.Creature
 import com.tabletopforge.data.Spell
+import com.tabletopforge.data.SpellSlot
+import com.tabletopforge.services.ApiClient
 import com.tabletopforge.services.SessionStore
+import kotlinx.coroutines.launch
+import kotlin.math.max
+import kotlin.math.min
 
 @Composable
 fun SpellsScreen(store: SessionStore, socketHolder: SocketHolder) {
@@ -59,6 +65,33 @@ fun SpellsScreen(store: SessionStore, socketHolder: SocketHolder) {
     val c = sc?.creature?.value
     val all = c?.spells ?: emptyList()
     val prepared = all.filter { (it.prepared ?: false) || (it.level ?: 0) == 0 }
+    val scope = rememberCoroutineScope()
+
+    // Slot tap → flip used count up/down. Mirrors the iOS sheet UX:
+    // tap a "used" slot to clear it (and any later ones); tap an
+    // "available" slot to mark it (and earlier ones) used.
+    val toggleSlot: (Int, Int) -> Unit = toggle@{ level, slotIndex ->
+        val cur = sc?.creature?.value ?: return@toggle
+        val baseUrl = store.baseUrl ?: return@toggle
+        val cid = cur.id
+        val slots = (cur.spell_slots ?: emptyMap()).toMutableMap()
+        val slot  = slots[level.toString()] ?: SpellSlot(total = 0, used = 0)
+        val total = slot.total ?: 0
+        val used  = slot.used  ?: 0
+        val nextUsed = if (slotIndex <= used) slotIndex - 1 else slotIndex
+        slots[level.toString()] = slot.copy(used = max(0, min(total, nextUsed)))
+        sc.creature.value = cur.copy(spell_slots = slots)
+        scope.launch {
+            runCatching {
+                // ApiClient.jsonValueOf handles nested Map<*, *> for us,
+                // so reshape SpellSlot into a plain map of primitives.
+                val payload = slots.mapValues { (_, s) ->
+                    mapOf("total" to s.total, "used" to s.used)
+                }
+                ApiClient(baseUrl).patchCreature(cid, mapOf("spell_slots" to payload))
+            }
+        }
+    }
 
     if (c == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -115,10 +148,14 @@ fun SpellsScreen(store: SessionStore, socketHolder: SocketHolder) {
                                         Text("Slots", fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         for (i in 0 until total) {
-                                            Box(modifier = Modifier.size(14.dp).clip(CircleShape)
+                                            // 1-based slot index for the toggle
+                                            // logic — matches the iOS sheet.
+                                            val slotIndex = i + 1
+                                            Box(modifier = Modifier.size(18.dp).clip(CircleShape)
                                                 .background(if (i < used)
                                                     Color.Gray.copy(alpha = 0.4f)
-                                                else MaterialTheme.colorScheme.primary))
+                                                else MaterialTheme.colorScheme.primary)
+                                                .clickable { toggleSlot(lvl, slotIndex) })
                                         }
                                         Spacer(Modifier.weight(1f))
                                         Text("${total - used}/$total",

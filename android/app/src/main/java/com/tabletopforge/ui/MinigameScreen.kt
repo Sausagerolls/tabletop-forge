@@ -29,6 +29,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -77,11 +78,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.tabletopforge.data.AppJson
 import com.tabletopforge.data.Creature
 import com.tabletopforge.services.SessionStore
@@ -227,8 +228,12 @@ private fun AvatarPicker(
                                 detectTapGestures(onTap = { onPick(bmp) })
                             },
                     ) {
-                        AsyncImage(
-                            model = bmp,
+                        // Coil's AsyncImage rejects ImageBitmap directly —
+                        // a plain Image with the bitmap-painter overload is
+                        // what we want for the already-decoded, already-
+                        // circular-masked token textures.
+                        Image(
+                            bitmap = bmp,
                             contentDescription = c.name,
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -256,7 +261,15 @@ private fun GameArena(
     enemyKinds: List<EnemyKind>,
     modifier: Modifier = Modifier,
 ) {
-    val engine = remember { GameEngine(avatar = avatar, enemyKinds = enemyKinds) }
+    // Display density — all engine constants are in "logical units"
+    // and multiplied by this so the game looks the same physical
+    // size on a 1×, 2×, or 3× display. iOS gets this for free via
+    // SpriteKit points; on Android Compose Canvas works in raw pixels
+    // so we have to wire density in ourselves.
+    val density = LocalDensity.current.density
+    val engine = remember(density) {
+        GameEngine(avatar = avatar, enemyKinds = enemyKinds, scale = density)
+    }
     // tick counter forces Compose to re-read engine state every frame.
     var tick by remember { mutableIntStateOf(0) }
     var canvasSize by remember { mutableStateOf(Size.Zero) }
@@ -316,6 +329,10 @@ private fun GameArena(
 private class GameEngine(
     private val avatar: ImageBitmap,
     private val enemyKinds: List<EnemyKind>,
+    /** Display density — scale multiplier applied to every spatial
+     *  constant (radii, speeds, HUD sizes) so the game renders at
+     *  the same physical size on 1×, 2×, and 3× screens. */
+    val scale: Float = 1f,
 ) {
     // ── World ──
     private var width: Float = 0f
@@ -324,7 +341,7 @@ private class GameEngine(
 
     // ── Player ──
     private var px = 0f; private var py = 0f
-    private val playerRadius = 28f
+    private val playerRadius = 28f * scale
     private var hp = 100
     private var maxHp = 100
     private var moveDx = 0f; private var moveDy = 0f
@@ -339,7 +356,7 @@ private class GameEngine(
     private var elapsed = 0f
     private var spawnInterval = 1.5f
     private var lastSpawn = 0f
-    private var enemyBaseSpeed = 55f
+    private var enemyBaseSpeed = 55f * scale
     private var waveStart = 0f
     private val waveDuration = 20f
     private var paused = false
@@ -350,7 +367,7 @@ private class GameEngine(
     private val bullets = ArrayList<Bullet>(128)
     private val guns = ArrayList<Gun>(MAX_GUNS).apply { add(Gun(Weapon.ARCANE_BOLT)) }
     private var bulletDamage = 1
-    private var bulletSpeed = 460f
+    private var bulletSpeed = 460f * scale
     private var fireRateMul = 1f
     private var gunRotationPhase = 0f
     private val gunRotationRate = 0.4f
@@ -379,11 +396,13 @@ private class GameEngine(
         val dx = at.x - anchor.x
         val dy = at.y - anchor.y
         val mag = hypot(dx, dy).coerceAtLeast(1f)
-        // Same dead-zone-then-clamp as iOS: drag a few px before we
+        // Same dead-zone-then-clamp as iOS: drag a few dp before we
         // commit to a direction; cap to a unit vector so longer drags
         // don't go faster.
-        if (mag < 12f) { moveDx = 0f; moveDy = 0f; return }
-        val clamp = mag.coerceAtMost(60f) / 60f
+        val deadZone = 12f * scale
+        val clampMax = 60f * scale
+        if (mag < deadZone) { moveDx = 0f; moveDy = 0f; return }
+        val clamp = mag.coerceAtMost(clampMax) / clampMax
         moveDx = (dx / mag) * clamp
         moveDy = (dy / mag) * clamp
     }
@@ -431,7 +450,7 @@ private class GameEngine(
         gunRotationPhase += gunRotationRate * dt
 
         // ── Player movement ──
-        val topSpeed = 200f * moveSpeedMul
+        val topSpeed = 200f * scale * moveSpeedMul
         px = (px + moveDx * topSpeed * dt).coerceIn(playerRadius, width - playerRadius)
         py = (py + moveDy * topSpeed * dt).coerceIn(playerRadius, height - playerRadius)
 
@@ -524,7 +543,7 @@ private class GameEngine(
 
     private fun gunWorldPosition(index: Int): Offset {
         val n = max(1, guns.size)
-        val r = 42f
+        val r = 42f * scale
         val angle = (index.toFloat() / n.toFloat()) * 2f * Math.PI.toFloat() + gunRotationPhase
         return Offset(px + cos(angle) * r, py + sin(angle) * r)
     }
@@ -543,7 +562,7 @@ private class GameEngine(
                 Bullet(
                     x = from.x, y = from.y,
                     vx = cos(a) * sp, vy = sin(a) * sp,
-                    radius = w.bulletRadius,
+                    radius = w.bulletRadius * scale,
                     damage = w.bulletDamage * bulletDamage,
                     color = w.bulletColor,
                     pierces = w.pierces,
@@ -561,17 +580,18 @@ private class GameEngine(
             ?: enemyKinds.minByOrNull { it.size.tier } ?: return
         val e = Enemy(
             x = 0f, y = 0f,
-            radius = kind.size.diameter / 2f,
+            radius = (kind.size.diameter / 2f) * scale,
             hp = kind.size.hp,
             size = kind.size,
             contactDamage = kind.size.contactDamage,
             texture = kind.texture,
         )
+        val edge = 30f * scale
         when (Random.nextInt(4)) {
-            0 -> { e.x = -30f; e.y = Random.nextFloat() * height }
-            1 -> { e.x = width + 30f; e.y = Random.nextFloat() * height }
-            2 -> { e.x = Random.nextFloat() * width; e.y = -30f }
-            else -> { e.x = Random.nextFloat() * width; e.y = height + 30f }
+            0 -> { e.x = -edge;        e.y = Random.nextFloat() * height }
+            1 -> { e.x = width + edge; e.y = Random.nextFloat() * height }
+            2 -> { e.x = Random.nextFloat() * width; e.y = -edge }
+            else -> { e.x = Random.nextFloat() * width; e.y = height + edge }
         }
         enemies.add(e)
     }
@@ -582,8 +602,8 @@ private class GameEngine(
         enemies.clear(); bullets.clear()
         guns.clear(); guns.add(Gun(Weapon.ARCANE_BOLT))
         hp = 100; maxHp = 100; score = 0; wave = 1
-        spawnInterval = 1.5f; enemyBaseSpeed = 55f
-        moveSpeedMul = 1f; fireRateMul = 1f; bulletDamage = 1; bulletSpeed = 460f
+        spawnInterval = 1.5f; enemyBaseSpeed = 55f * scale
+        moveSpeedMul = 1f; fireRateMul = 1f; bulletDamage = 1; bulletSpeed = 460f * scale
         lifestealOnKill = 0; bonusEnemyDamageReduction = 0
         elapsed = 0f; waveStart = 0f; lastSpawn = 0f
         gunRotationPhase = 0f
@@ -608,7 +628,7 @@ private class GameEngine(
         paused = false
         wave += 1
         spawnInterval = max(0.28f, spawnInterval * 0.92f)
-        enemyBaseSpeed = min(180f, enemyBaseSpeed * 1.04f)
+        enemyBaseSpeed = min(180f * scale, enemyBaseSpeed * 1.04f)
         waveStart = 0f
         // Heal a token amount each wave so a long run isn't strictly
         // a one-way HP slope.
@@ -662,13 +682,14 @@ private class GameEngine(
         with(scope) {
             // Background grid — subtle dotted look so the arena
             // doesn't feel like a black void.
-            val cell = 60f
+            val cell = 60f * scale
+            val gridStroke = 1f * scale
             var x = 0f
             while (x < size.width) {
                 drawLine(
                     color = Color.White.copy(alpha = 0.04f),
                     start = Offset(x, 0f), end = Offset(x, size.height),
-                    strokeWidth = 1f,
+                    strokeWidth = gridStroke,
                 )
                 x += cell
             }
@@ -677,7 +698,7 @@ private class GameEngine(
                 drawLine(
                     color = Color.White.copy(alpha = 0.04f),
                     start = Offset(0f, y), end = Offset(size.width, y),
-                    strokeWidth = 1f,
+                    strokeWidth = gridStroke,
                 )
                 y += cell
             }
@@ -693,7 +714,7 @@ private class GameEngine(
                 drawCircle(
                     color = Color.White.copy(alpha = 0.7f),
                     radius = b.radius, center = Offset(b.x, b.y),
-                    style = Stroke(width = 0.8f),
+                    style = Stroke(width = 0.8f * scale),
                 )
             }
 
@@ -701,27 +722,25 @@ private class GameEngine(
             drawCircleBitmap(avatar, Offset(px, py), playerRadius)
 
             // Orbital gun ring — small dot per gun, colour-coded.
+            val gunDotR = 6f * scale
             for (i in guns.indices) {
                 val gp = gunWorldPosition(i)
+                drawCircle(color = guns[i].weapon.bulletColor, radius = gunDotR, center = gp)
                 drawCircle(
-                    color = guns[i].weapon.bulletColor,
-                    radius = 6f, center = gp,
-                )
-                drawCircle(
-                    color = Color.White,
-                    radius = 6f, center = gp,
-                    style = Stroke(width = 1f),
+                    color = Color.White, radius = gunDotR, center = gp,
+                    style = Stroke(width = 1f * scale),
                 )
             }
 
             // ── HUD: bottom-center HP bar + caption ──
-            val barW = 260f; val barH = 18f
-            val cx = size.width / 2f; val by = size.height - 70f
+            val barW = 260f * scale; val barH = 18f * scale
+            val barPad = 3f * scale
+            val cx = size.width / 2f; val by = size.height - 70f * scale
             // Trough.
             drawRect(
                 color = Color(0xEE0A0B10),
-                topLeft = Offset(cx - barW / 2f - 3f, by - barH / 2f - 3f),
-                size = Size(barW + 6f, barH + 6f),
+                topLeft = Offset(cx - barW / 2f - barPad, by - barH / 2f - barPad),
+                size = Size(barW + barPad * 2f, barH + barPad * 2f),
             )
             val pct = (hp.toFloat() / maxHp.toFloat()).coerceIn(0f, 1f)
             val fillColor = when {
@@ -734,12 +753,12 @@ private class GameEngine(
                 topLeft = Offset(cx - barW / 2f, by - barH / 2f),
                 size = Size(barW * pct, barH),
             )
-            drawNativeText("$hp / $maxHp", cx, by + 4f, 14f, Color.White, centered = true)
+            drawNativeText("$hp / $maxHp", cx, by + 4f * scale, 14f * scale, Color.White, centered = true)
             val gunNames = if (guns.isEmpty()) "—" else guns.joinToString(" + ") { it.weapon.shortName }
             drawNativeText(
                 "WAVE $wave   ·   SCORE $score   ·   $gunNames",
-                cx, by - barH / 2f - 14f,
-                12f, Color.White, centered = true,
+                cx, by - barH / 2f - 14f * scale,
+                12f * scale, Color.White, centered = true,
             )
 
             // ── Shop overlay ──
@@ -792,19 +811,20 @@ private class GameEngine(
         // Dim the arena.
         drawRect(color = Color.Black.copy(alpha = 0.55f), size = size)
         drawNativeText(
-            "WAVE ${wave - 0} CLEARED",
-            size.width / 2f, 80f, 22f, Color(0xFFF6CD4A), centered = true,
+            "WAVE $wave CLEARED",
+            size.width / 2f, 80f * scale, 22f * scale, Color(0xFFF6CD4A), centered = true,
         )
         drawNativeText(
             "Score: $score",
-            size.width / 2f, 110f, 16f, Color.White, centered = true,
+            size.width / 2f, 110f * scale, 16f * scale, Color.White, centered = true,
         )
         // Cards laid out vertically. Compose dialogs don't compose
         // well with our Canvas-driven rendering, so we draw + tap-
         // test our own.
-        val cardW = (size.width - 60f).coerceAtMost(420f)
-        val cardH = 96f
-        val gap = 12f
+        val cardW = (size.width - 60f * scale).coerceAtMost(420f * scale)
+        val cardH = 96f * scale
+        val gap = 12f * scale
+        val pad = 12f * scale
         val totalH = (s.upgrades.size + 1) * cardH + s.upgrades.size * gap
         var top = (size.height - totalH) / 2f
         val cards = ArrayList<Rect2>(s.upgrades.size + 1)
@@ -812,27 +832,22 @@ private class GameEngine(
             val left = (size.width - cardW) / 2f
             val canAfford = score >= up.cost
             val bg = if (canAfford) Color(0xFF1B2030) else Color(0xFF1A1A1A)
-            drawRect(
-                color = bg,
-                topLeft = Offset(left, top),
-                size = Size(cardW, cardH),
-            )
+            drawRect(color = bg, topLeft = Offset(left, top), size = Size(cardW, cardH))
             drawRect(
                 color = Color.White.copy(alpha = if (canAfford) 0.4f else 0.15f),
-                topLeft = Offset(left, top),
-                size = Size(cardW, cardH),
-                style = Stroke(width = 1f),
+                topLeft = Offset(left, top), size = Size(cardW, cardH),
+                style = Stroke(width = 1f * scale),
             )
             drawNativeText(
-                up.name, left + 12f, top + 22f, 16f,
+                up.name, left + pad, top + 22f * scale, 16f * scale,
                 if (canAfford) Color(0xFFF6CD4A) else Color.Gray, centered = false,
             )
             drawNativeText(
-                up.desc, left + 12f, top + 44f, 12f,
+                up.desc, left + pad, top + 44f * scale, 12f * scale,
                 Color.White.copy(alpha = if (canAfford) 0.85f else 0.4f), centered = false,
             )
             drawNativeText(
-                "Cost ${up.cost}", left + 12f, top + 76f, 13f,
+                "Cost ${up.cost}", left + pad, top + 76f * scale, 13f * scale,
                 if (canAfford) Color(0xFF8AD79A) else Color(0xFFE36767), centered = false,
             )
             cards += Rect2(left, top, cardW, cardH)
@@ -842,8 +857,9 @@ private class GameEngine(
         val left = (size.width - cardW) / 2f
         drawRect(color = Color(0xFF222222), topLeft = Offset(left, top), size = Size(cardW, cardH))
         drawRect(color = Color.White.copy(alpha = 0.2f), topLeft = Offset(left, top),
-                 size = Size(cardW, cardH), style = Stroke(1f))
-        drawNativeText("Skip wave", size.width / 2f, top + cardH / 2f, 16f, Color.White, centered = true)
+                 size = Size(cardW, cardH), style = Stroke(1f * scale))
+        drawNativeText("Skip wave", size.width / 2f, top + cardH / 2f,
+                       16f * scale, Color.White, centered = true)
         cards += Rect2(left, top, cardW, cardH)
         s.cards = cards
     }
@@ -852,29 +868,30 @@ private class GameEngine(
         drawRect(color = Color.Black.copy(alpha = 0.7f), size = size)
         drawNativeText(
             "REPLACE A WEAPON",
-            size.width / 2f, 80f, 20f, Color(0xFFF6CD4A), centered = true,
+            size.width / 2f, 80f * scale, 20f * scale, Color(0xFFF6CD4A), centered = true,
         )
         drawNativeText(
             "New: ${sp.weapon.displayName}",
-            size.width / 2f, 110f, 14f, Color.White, centered = true,
+            size.width / 2f, 110f * scale, 14f * scale, Color.White, centered = true,
         )
-        val cardW = (size.width - 60f).coerceAtMost(420f)
-        val cardH = 80f
-        val gap = 12f
+        val cardW = (size.width - 60f * scale).coerceAtMost(420f * scale)
+        val cardH = 80f * scale
+        val gap = 12f * scale
+        val pad = 12f * scale
         val cards = ArrayList<Rect2>(guns.size + 1)
         var top = (size.height - ((guns.size + 1) * cardH + guns.size * gap)) / 2f
         for ((i, g) in guns.withIndex()) {
             val left = (size.width - cardW) / 2f
             drawRect(color = Color(0xFF1B2030), topLeft = Offset(left, top), size = Size(cardW, cardH))
             drawRect(color = Color.White.copy(alpha = 0.35f), topLeft = Offset(left, top),
-                     size = Size(cardW, cardH), style = Stroke(1f))
+                     size = Size(cardW, cardH), style = Stroke(1f * scale))
             drawNativeText(
                 "Slot ${i + 1}: ${g.weapon.displayName}",
-                left + 12f, top + 30f, 15f, Color.White, centered = false,
+                left + pad, top + 30f * scale, 15f * scale, Color.White, centered = false,
             )
             drawNativeText(
                 "→ ${sp.weapon.displayName}",
-                left + 12f, top + 56f, 13f, Color(0xFF8AD79A), centered = false,
+                left + pad, top + 56f * scale, 13f * scale, Color(0xFF8AD79A), centered = false,
             )
             cards += Rect2(left, top, cardW, cardH)
             top += cardH + gap
@@ -882,19 +899,20 @@ private class GameEngine(
         val left = (size.width - cardW) / 2f
         drawRect(color = Color(0xFF222222), topLeft = Offset(left, top), size = Size(cardW, cardH))
         drawRect(color = Color.White.copy(alpha = 0.2f), topLeft = Offset(left, top),
-                 size = Size(cardW, cardH), style = Stroke(1f))
-        drawNativeText("Cancel", size.width / 2f, top + cardH / 2f, 16f, Color.White, centered = true)
+                 size = Size(cardW, cardH), style = Stroke(1f * scale))
+        drawNativeText("Cancel", size.width / 2f, top + cardH / 2f,
+                       16f * scale, Color.White, centered = true)
         cards += Rect2(left, top, cardW, cardH)
         sp.cards = cards
     }
 
     private fun DrawScope.drawGameOver() {
         drawRect(color = Color.Black.copy(alpha = 0.7f), size = size)
-        drawNativeText("YOU DIED", size.width / 2f, size.height / 2f - 12f,
-                       30f, Color(0xFFEC4D52), centered = true)
+        drawNativeText("YOU DIED", size.width / 2f, size.height / 2f - 12f * scale,
+                       30f * scale, Color(0xFFEC4D52), centered = true)
         drawNativeText(
             "Score $score · Wave $wave · tap to retry",
-            size.width / 2f, size.height / 2f + 14f, 14f,
+            size.width / 2f, size.height / 2f + 14f * scale, 14f * scale,
             Color.White.copy(alpha = 0.9f), centered = true,
         )
     }

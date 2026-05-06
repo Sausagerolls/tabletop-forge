@@ -13,8 +13,8 @@ android {
         applicationId = "com.tabletopforge"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.9.7"
+        versionCode = 6
+        versionName = "1.9.10"
     }
 
     // Two distribution channels:
@@ -50,6 +50,18 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        debug {
+            // Local OTA loopback. Debug builds point at the host
+            // machine's loopback alias (10.0.2.2 from the emulator)
+            // so we can test the OTA flow against a Python HTTP
+            // server without uploading every test APK to the public
+            // site. Release builds keep the production URL set on
+            // the site flavor above.
+            buildConfigField(
+                "String", "UPDATE_MANIFEST_URL",
+                "\"http://10.0.2.2:8765/android/updates.json\"",
+            )
         }
     }
 

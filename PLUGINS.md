@@ -164,25 +164,27 @@ If a plugin breaks your app so badly that the in-app manager can't disable it, s
 
 ### Library content imported by a plugin
 
-If a plugin imports creatures or spells into the host library — the **content-pack pattern** — it should track the inserted ids in plugin KV under these well-known keys so the host's `DELETE /api/plugins/<id>` route can clean them up:
+If a plugin imports creatures or spells into the host library — the **content-pack pattern** — it should track the inserted ids in plugin KV under these well-known keys so the host's cleanup routes can remove them reliably:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `inserted_creature_ids` | `number[]` | Row ids in `creatures` to remove on uninstall |
-| `inserted_spell_ids`    | `number[]` | Row ids in `spell_library` to remove on uninstall |
+| `inserted_creature_ids` | `number[]` | Row ids in `creatures` to remove on disable / uninstall |
+| `inserted_spell_ids`    | `number[]` | Row ids in `spell_library` to remove on disable / uninstall |
 | `content_loaded_v1`     | `true`     | Once-flag — set after first successful import so reloads don't re-import duplicates |
 | `treasure_loaded_v1`    | `true`     | Once-flag for any treasure-chest items pushed via `window.__tabletopForge.treasure.addItems` |
 | `install_status`        | `object`   | Last install state, surfaced in your tab UI |
 
-When a GM clicks **Delete** in the plugin manager:
+When a GM clicks **Disable** *or* **Delete** in the plugin manager:
 
 1. The host reads `inserted_creature_ids` + `inserted_spell_ids` from plugin KV.
 2. Deletes the listed rows from `creatures` and `spell_library`.
 3. Removes the five tracking keys above from plugin KV.
-4. Removes the plugin's files and registry row.
-5. Other KV keys (per-GM preferences, caches) are preserved so a later re-install restores them.
+4. (Delete only) removes the plugin's files and registry row.
+5. Other KV keys (per-GM preferences, caches) are preserved so a later re-enable / re-install restores them.
 
-The GM also has a **Clean up orphaned plugin content** button in the manager that runs the same cleanup for any tracking rows whose plugin row is already gone — useful after upgrading from a host version that didn't auto-clean on Delete.
+The cleanup runs server-side so it's reliable even if the GM closes the tab the moment they hit Disable — the plugin's own frontend `unregister()` is fire-and-forget and would otherwise leak rows when interrupted.
+
+The GM also has a **Clean up orphaned plugin content** button in the manager that runs the same cleanup for any tracking rows whose plugin row is already gone — useful after upgrading from a host version that didn't auto-clean.
 
 **For plugin authors:** if your plugin imports library content, follow the once-flag pattern. Set `content_loaded_v1` after the first successful `/api/creatures/import` + `/api/spell-library/import` call, gate further imports on it, and clear it inside `unregister` only when your tracked-ids array is empty (i.e. the cleanup actually finished). The bundled `content-exporter` plugin's runtime template is the canonical example.
 

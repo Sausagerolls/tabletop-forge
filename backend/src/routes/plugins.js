@@ -178,6 +178,18 @@ router.post('/:id/enable', async (req, res) => {
 });
 
 // POST /api/plugins/:id/disable
+//
+// Mirrors DELETE in cleanup behaviour: any tracked library content
+// (creatures + spells stored under inserted_creature_ids /
+// inserted_spell_ids) is deleted server-side, and the matching KV
+// rows that drove the tracking are cleared. The plugin's own
+// frontend unregister() also tries to clean up but is fire-and-
+// forget — if the GM closes the tab mid-disable the async DELETEs
+// never finish and the imported content lingers in the library.
+// Doing it server-side makes the contract reliable: clicking
+// Disable always wipes the plugin's tracked content, just like a
+// Delete would. Re-enabling later sees an empty slate and re-imports
+// from scratch (which is the same path a fresh install takes).
 router.post('/:id/disable', async (req, res) => {
   try {
     const row = await fetchPluginRow(req.params.id);
@@ -194,8 +206,14 @@ router.post('/:id/disable', async (req, res) => {
         error: `Cannot disable — required by: ${dependents.join(', ')}. Disable those first.`,
       });
     }
+    const cleanup = await cleanupTrackedContent(req.params.id);
+    await db.query(
+      `DELETE FROM plugin_data WHERE plugin_id=$1
+          AND key IN ('inserted_creature_ids','inserted_spell_ids','content_loaded_v1','treasure_loaded_v1','install_status')`,
+      [req.params.id]
+    );
     await db.query('UPDATE plugins SET enabled=false WHERE id=$1', [req.params.id]);
-    res.json({ ok: true });
+    res.json({ ok: true, ...cleanup });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

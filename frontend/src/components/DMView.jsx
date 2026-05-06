@@ -694,6 +694,16 @@ function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
       else unloadPlugin(id);
       await refresh();
       onPluginsChanged && onPluginsChanged();
+      // Disable now runs server-side cleanup of the plugin's tracked
+      // library content (creatures + spells imported via the well-
+      // known `inserted_*_ids` KV keys). Surface the counts so the
+      // GM sees the side-effect — same pattern as deletePlugin().
+      if (!enabled) {
+        const cleaned = (data.creatures || 0) + (data.spells || 0);
+        if (cleaned > 0) {
+          setActionErr(`Disabled — removed ${data.creatures || 0} creature(s) and ${data.spells || 0} spell(s) the plugin had imported.`);
+        }
+      }
     } catch (err) { setActionErr(err.message); }
     finally { setBusy(null); }
   }

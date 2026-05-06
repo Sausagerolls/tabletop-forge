@@ -106,7 +106,27 @@ fn spawn_backend(app: &AppHandle, port: u16) -> Option<Child> {
     // Forge/. Tauri normalises all of this through the path API.
     let data_dir = app.path().app_data_dir().ok();
 
-    let mut cmd = Command::new("node");
+    // Tauri's `externalBin` config drops a `node-<target-triple>`
+    // binary into the bundle next to the main executable —
+    // `Contents/MacOS/node` on macOS, `<install>/node.exe` on
+    // Windows. We probe for it sibling to current_exe() first so
+    // the packaged .app needs no system Node install. If that
+    // fails (e.g. `cargo run` without bundling) we fall back to
+    // whichever `node` is on $PATH so dev-mode iteration still
+    // works without rebuilding the bundle.
+    let bundled_node = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .map(|dir| {
+            let suffix = if cfg!(windows) { ".exe" } else { "" };
+            dir.join(format!("node{}", suffix))
+        })
+        .filter(|p| p.exists());
+    let node_cmd = bundled_node
+        .map(|p| p.into_os_string())
+        .unwrap_or_else(|| std::ffi::OsString::from("node"));
+
+    let mut cmd = Command::new(&node_cmd);
     cmd.arg(&backend_entry)
         .env("PORT", port.to_string())
         .env("DM_MASTER_PASSWORD", "dungeonmaster")

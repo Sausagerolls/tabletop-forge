@@ -4,10 +4,11 @@
   "private": true,
   "description": "Tauri-shelled native build of TableTop Forge — wraps the Express + PGlite backend in a webview-only desktop app.",
   "scripts": {
-    "build:frontend": "npm --prefix frontend run build",
-    "tauri": "tauri",
-    "tauri:dev":   "npm run build:frontend && tauri dev",
-    "tauri:build": "npm run build:frontend && tauri build"
+    "build:frontend":     "npm --prefix frontend run build",
+    "fetch:node-binaries": "bash src-tauri/binaries/fetch.sh",
+    "tauri":              "tauri",
+    "tauri:dev":          "npm run fetch:node-binaries && npm run build:frontend && tauri dev",
+    "tauri:build":        "npm run fetch:node-binaries && npm run build:frontend && tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"

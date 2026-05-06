@@ -25,6 +25,10 @@ native-fork/backend/uploads/
 native-fork/src-tauri/target/
 native-fork/src-tauri/gen/
 
+# Bundled Node sidecars — fetched on demand by
+# native-fork/src-tauri/binaries/fetch.sh, too big to commit.
+native-fork/src-tauri/binaries/node-*
+
 # Backend runtime data — user uploads, generated assets
 backend/uploads/
 generated-images/

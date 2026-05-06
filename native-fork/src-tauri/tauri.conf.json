@@ -47,6 +47,9 @@
       "../init.sql",
       "../sounds/**/*",
       "../default_player.png"
+    ],
+    "externalBin": [
+      "binaries/node"
     ]
   }
 }

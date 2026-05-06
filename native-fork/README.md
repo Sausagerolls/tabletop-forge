@@ -95,22 +95,45 @@ The .app currently still requires `node` on the user's PATH —
 Tauri spawns it via `Command::new("node")`. Bundling Node as a
 sidecar is the next-up Phase 2.5 task below.
 
-### Phase 2.5 — Bundle Node binary as sidecar
+### Phase 2.5 — Bundle Node binary as sidecar (DONE for arm64 macOS)
 
 Tauri's `bundle.externalBin` config drops platform-specific
-binaries into the .app/Contents/MacOS/ directory at bundle
-time. We'd download Node 22.x for `aarch64-apple-darwin`,
-`x86_64-apple-darwin`, `x86_64-pc-windows-msvc`, and
-`x86_64-unknown-linux-gnu` from <https://nodejs.org/dist/>,
-rename them to `node-<target-triple>`, drop into
-`src-tauri/binaries/`, and reference via `externalBin` so each
-platform-specific bundle gets the right one. The Rust shell
-swaps `Command::new("node")` for the resolved sidecar path.
+binaries into `Contents/MacOS/` (or `<install>/` on Win) at
+bundle time. The Rust shell now resolves `node` sibling to its
+own executable first, falling back to `$PATH` only if the
+sidecar is missing (so `cargo run` without bundling still works).
 
-Cleaner alternative: replace Node with `bun build --compile`
-to produce a single self-contained executable that bakes in
-the entire backend + node_modules. ~70MB extra per platform vs
-~30MB for raw Node + bundled JS, but no spawn-the-runtime step.
+Binaries themselves are too big to commit (~114MB raw,
+~46MB compressed each). `src-tauri/binaries/fetch.sh` pulls the
+matching Node 22 LTS for `aarch64-apple-darwin` from
+<https://nodejs.org/dist/>; `npm run tauri:build` runs it
+automatically before bundling. Other platforms have entries
+ready in the script — set `ALL_PLATFORMS=1` to grab x86_64 Mac,
+Windows (x64 .exe), and Linux x64 in one go.
+
+Verified on a clean PATH (`env -i PATH=/usr/bin:/bin …`) so the
+.app launches without a system Node install:
+
+```text
+[shell] node started: /…/TableTop Forge.app/Contents/MacOS/node
+[shell] backend listening on :55665
+[shell] / → 200, /api/health → {"ok":true}
+```
+
+Final bundle sizes with sidecar Node:
+
+* `TableTop Forge.app`  — 164 MB
+* `TableTop Forge_1.9.13_aarch64.dmg`  — 53 MB
+
+Worth-considering alternative: replace Node with
+`bun build --compile`, which bakes the entire backend +
+node_modules into a single self-contained executable. ~30MB
+saved per platform compared to raw Node, no spawn-the-runtime
+step at launch. Deferred — the sidecar approach matches the
+existing CJS codebase 1:1 with zero migration cost, and
+`bun --compile` doesn't yet support every Node API the backend
+touches (e.g. some `pg`-adjacent native bindings via PGlite's
+WASM loader).
 
 ### Phase 3 — productionising for end users
 

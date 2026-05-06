@@ -208,9 +208,8 @@ router.post('/:id/disable', async (req, res) => {
     }
     const cleanup = await cleanupTrackedContent(req.params.id);
     await db.query(
-      `DELETE FROM plugin_data WHERE plugin_id=$1
-          AND key IN ('inserted_creature_ids','inserted_spell_ids','content_loaded_v1','treasure_loaded_v1','install_status')`,
-      [req.params.id]
+      `DELETE FROM plugin_data WHERE plugin_id=$1 AND key = ANY($2::text[])`,
+      [req.params.id, TRACKING_KEYS]
     );
     await db.query('UPDATE plugins SET enabled=false WHERE id=$1', [req.params.id]);
     res.json({ ok: true, ...cleanup });
@@ -278,38 +277,119 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// Clean up library content a plugin imported via the content-exporter
-// runtime pattern (creatureIds + spellIds tracked under well-known KV
-// keys). Runs server-side so a frontend that's never been opened with
-// the plugin enabled still gets a tidy disable. Returns counts so
-// callers can surface what was removed. Safe to call when the keys
-// are missing or empty — no-ops cleanly.
+// Clean up library content a plugin imported via the well-known
+// `inserted_<bucket>_(ids|slugs)` KV tracking keys (the pattern the
+// `content-exporter` plugin's runtime template uses, followed by every
+// content-pack plugin built on top of it). Runs server-side so a
+// frontend that's never opened the session with the plugin enabled
+// still gets a tidy disable + delete. Returns counts so callers can
+// surface what was removed. Safe to call when the keys are missing
+// or empty — each branch no-ops cleanly.
+//
+// Buckets covered (must stay aligned with the content-exporter
+// runtime + the docs in PLUGINS.md → Library content imported by a
+// plugin):
+//   * inserted_creature_ids   → creatures
+//   * inserted_spell_ids      → spell_library
+//   * inserted_terrain_ids    → terrain_library
+//   * inserted_race_ids       → custom_races          (UUID-keyed; sub-races cascade via FK)
+//   * inserted_bg_ids         → custom_backgrounds    (UUID-keyed)
+//   * inserted_class_ids      → custom_classes        (UUID-keyed)
+//   * inserted_lang_slugs     → languages             (slug-keyed)
+//
+// Adding a new bucket here is the canonical extension point: drop in
+// another entry, expose the matching `inserted_<x>_ids` key in the
+// content-exporter runtime, document it in PLUGINS.md, done.
 async function cleanupTrackedContent(pluginId) {
-  const out = { creatures: 0, spells: 0 };
-  try {
-    const cRow = await db.query(
-      'SELECT value FROM plugin_data WHERE plugin_id=$1 AND key=$2',
-      [pluginId, 'inserted_creature_ids']
-    );
-    const cIds = (cRow.rows[0]?.value || []).filter((n) => Number.isFinite(Number(n))).map(Number);
-    if (cIds.length) {
-      const r = await db.query('DELETE FROM creatures WHERE id = ANY($1::int[])', [cIds]);
-      out.creatures = r.rowCount || 0;
+  const out = {
+    creatures: 0, spells: 0, terrain: 0,
+    races: 0, backgrounds: 0, classes: 0, languages: 0,
+  };
+
+  // ── Integer-id buckets ──────────────────────────────────────────
+  const intBuckets = [
+    { key: 'inserted_creature_ids', table: 'creatures',       field: 'creatures' },
+    { key: 'inserted_spell_ids',    table: 'spell_library',   field: 'spells' },
+    { key: 'inserted_terrain_ids',  table: 'terrain_library', field: 'terrain' },
+  ];
+  for (const b of intBuckets) {
+    try {
+      const row = await db.query(
+        'SELECT value FROM plugin_data WHERE plugin_id=$1 AND key=$2',
+        [pluginId, b.key],
+      );
+      const ids = (row.rows[0]?.value || []).filter((n) => Number.isFinite(Number(n))).map(Number);
+      if (ids.length) {
+        const r = await db.query(`DELETE FROM ${b.table} WHERE id = ANY($1::int[])`, [ids]);
+        out[b.field] = r.rowCount || 0;
+      }
+    } catch (err) {
+      console.warn(`cleanupTrackedContent (${pluginId}) ${b.field}:`, err.message);
     }
-  } catch (err) { console.warn(`cleanupTrackedContent (${pluginId}) creatures:`, err.message); }
-  try {
-    const sRow = await db.query(
-      'SELECT value FROM plugin_data WHERE plugin_id=$1 AND key=$2',
-      [pluginId, 'inserted_spell_ids']
-    );
-    const sIds = (sRow.rows[0]?.value || []).filter((n) => Number.isFinite(Number(n))).map(Number);
-    if (sIds.length) {
-      const r = await db.query('DELETE FROM spell_library WHERE id = ANY($1::int[])', [sIds]);
-      out.spells = r.rowCount || 0;
+  }
+
+  // ── UUID-id buckets (custom races / backgrounds / classes) ──────
+  // Stored as text uuids in the JSON array; pg parses them via the
+  // ::uuid[] cast. Sub-races cascade off custom_races via the FK on
+  // parent_id, so deleting a parent kills its children automatically
+  // — that's why we don't have to order parents-first here even
+  // though the content-exporter import did.
+  const uuidBuckets = [
+    { key: 'inserted_race_ids', table: 'custom_races',       field: 'races' },
+    { key: 'inserted_bg_ids',   table: 'custom_backgrounds', field: 'backgrounds' },
+    { key: 'inserted_class_ids',table: 'custom_classes',     field: 'classes' },
+  ];
+  for (const b of uuidBuckets) {
+    try {
+      const row = await db.query(
+        'SELECT value FROM plugin_data WHERE plugin_id=$1 AND key=$2',
+        [pluginId, b.key],
+      );
+      const ids = (row.rows[0]?.value || [])
+        .filter((s) => typeof s === 'string' && /^[0-9a-f-]{36}$/i.test(s));
+      if (ids.length) {
+        const r = await db.query(`DELETE FROM ${b.table} WHERE id = ANY($1::uuid[])`, [ids]);
+        out[b.field] = r.rowCount || 0;
+      }
+    } catch (err) {
+      console.warn(`cleanupTrackedContent (${pluginId}) ${b.field}:`, err.message);
     }
-  } catch (err) { console.warn(`cleanupTrackedContent (${pluginId}) spells:`, err.message); }
+  }
+
+  // ── Slug-keyed bucket (languages) ───────────────────────────────
+  try {
+    const row = await db.query(
+      'SELECT value FROM plugin_data WHERE plugin_id=$1 AND key=$2',
+      [pluginId, 'inserted_lang_slugs'],
+    );
+    const slugs = (row.rows[0]?.value || []).filter((s) => typeof s === 'string' && s.length);
+    if (slugs.length) {
+      const r = await db.query('DELETE FROM languages WHERE slug = ANY($1::text[])', [slugs]);
+      out.languages = r.rowCount || 0;
+    }
+  } catch (err) {
+    console.warn(`cleanupTrackedContent (${pluginId}) languages:`, err.message);
+  }
+
   return out;
 }
+
+// All KV keys cleanupTrackedContent reads from (or pairs with). Stripped
+// alongside the row deletes so a re-enable starts from an empty slate
+// — otherwise the next install would dedupe-by-name against ids that
+// already pointed at deleted rows and skip everything.
+const TRACKING_KEYS = [
+  'inserted_creature_ids',
+  'inserted_spell_ids',
+  'inserted_terrain_ids',
+  'inserted_race_ids',
+  'inserted_bg_ids',
+  'inserted_class_ids',
+  'inserted_lang_slugs',
+  'content_loaded_v1',
+  'treasure_loaded_v1',
+  'install_status',
+];
 
 // POST /api/plugins/cleanup-orphans — find plugin_data tracking rows
 // whose plugin_id is no longer installed, delete the listed library
@@ -320,21 +400,29 @@ router.post('/cleanup-orphans', async (req, res) => {
   try {
     const ids = (await db.query(
       `SELECT DISTINCT plugin_id FROM plugin_data
-        WHERE key IN ('inserted_creature_ids','inserted_spell_ids','content_loaded_v1','treasure_loaded_v1','install_status')
-          AND plugin_id NOT IN (SELECT id FROM plugins)`
+        WHERE key = ANY($1::text[])
+          AND plugin_id NOT IN (SELECT id FROM plugins)`,
+      [TRACKING_KEYS]
     )).rows.map(r => r.plugin_id);
-    let totalCreatures = 0, totalSpells = 0;
+    const total = { creatures: 0, spells: 0, terrain: 0, races: 0, backgrounds: 0, classes: 0, languages: 0 };
     for (const pid of ids) {
       const out = await cleanupTrackedContent(pid);
-      totalCreatures += out.creatures;
-      totalSpells += out.spells;
+      for (const k of Object.keys(total)) total[k] += out[k] || 0;
       await db.query(
-        `DELETE FROM plugin_data WHERE plugin_id=$1
-            AND key IN ('inserted_creature_ids','inserted_spell_ids','content_loaded_v1','treasure_loaded_v1','install_status')`,
-        [pid]
+        `DELETE FROM plugin_data WHERE plugin_id=$1 AND key = ANY($2::text[])`,
+        [pid, TRACKING_KEYS]
       );
     }
-    res.json({ orphanPlugins: ids.length, creaturesRemoved: totalCreatures, spellsRemoved: totalSpells });
+    res.json({
+      orphanPlugins: ids.length,
+      creaturesRemoved: total.creatures,
+      spellsRemoved: total.spells,
+      terrainRemoved: total.terrain,
+      racesRemoved: total.races,
+      backgroundsRemoved: total.backgrounds,
+      classesRemoved: total.classes,
+      languagesRemoved: total.languages,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -365,9 +453,8 @@ router.delete('/:id', async (req, res) => {
     }
     const cleanup = await cleanupTrackedContent(req.params.id);
     await db.query(
-      `DELETE FROM plugin_data WHERE plugin_id=$1
-          AND key IN ('inserted_creature_ids','inserted_spell_ids','content_loaded_v1','treasure_loaded_v1','install_status')`,
-      [req.params.id]
+      `DELETE FROM plugin_data WHERE plugin_id=$1 AND key = ANY($2::text[])`,
+      [req.params.id, TRACKING_KEYS]
     );
     rmDirSafe(path.join(PLUGINS_DIR, req.params.id));
     await db.query('DELETE FROM plugins WHERE id=$1', [req.params.id]);

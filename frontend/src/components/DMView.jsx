@@ -659,6 +659,29 @@ function CombatTracker({ tokens, combatTurn, onNext, onEnd }) {
   );
 }
 
+// Plural-aware summary for the disable / delete cleanup toast. The
+// server returns one count per content bucket it removed; we want a
+// single readable phrase that lists only the buckets that changed
+// ("3 creature(s), 2 race(s)") rather than seven zeroed labels.
+function pluginCleanupSummary(data) {
+  if (!data) return '';
+  const buckets = [
+    ['creatures',   'creature'],
+    ['spells',      'spell'],
+    ['terrain',     'terrain piece'],
+    ['races',       'custom race'],
+    ['backgrounds', 'custom background'],
+    ['classes',     'custom class'],
+    ['languages',   'language'],
+  ];
+  const parts = [];
+  for (const [key, singular] of buckets) {
+    const n = data[key] || 0;
+    if (n > 0) parts.push(`${n} ${singular}${n === 1 ? '' : 's'}`);
+  }
+  return parts.join(', ');
+}
+
 // PluginManager — Session-tab UI for installing, enabling, disabling, and
 // removing plugins. Designed to keep working even if a plugin is broken:
 //   - Listing comes from the plugins table, not the live JS modules, so a
@@ -694,15 +717,13 @@ function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
       else unloadPlugin(id);
       await refresh();
       onPluginsChanged && onPluginsChanged();
-      // Disable now runs server-side cleanup of the plugin's tracked
-      // library content (creatures + spells imported via the well-
-      // known `inserted_*_ids` KV keys). Surface the counts so the
-      // GM sees the side-effect — same pattern as deletePlugin().
+      // Disable now runs server-side cleanup of every tracked
+      // library bucket the plugin imported into — creatures, spells,
+      // terrain, custom races / backgrounds / classes, languages.
+      // Surface the counts so the GM sees the side-effect.
       if (!enabled) {
-        const cleaned = (data.creatures || 0) + (data.spells || 0);
-        if (cleaned > 0) {
-          setActionErr(`Disabled — removed ${data.creatures || 0} creature(s) and ${data.spells || 0} spell(s) the plugin had imported.`);
-        }
+        const summary = pluginCleanupSummary(data);
+        if (summary) setActionErr(`Disabled — removed ${summary} the plugin had imported.`);
       }
     } catch (err) { setActionErr(err.message); }
     finally { setBusy(null); }
@@ -723,10 +744,8 @@ function PluginManager({ loadErrors, pluginsTick, onPluginsChanged, context }) {
       unloadPlugin(id);
       await refresh();
       onPluginsChanged && onPluginsChanged();
-      const cleaned = (data.creatures || 0) + (data.spells || 0);
-      if (cleaned > 0) {
-        setActionErr(`Removed ${data.creatures || 0} creature(s) and ${data.spells || 0} spell(s) imported by this plugin.`);
-      }
+      const summary = pluginCleanupSummary(data);
+      if (summary) setActionErr(`Removed ${summary} imported by this plugin.`);
     } catch (err) { setActionErr(err.message); }
     finally { setBusy(null); }
   }

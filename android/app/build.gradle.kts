@@ -13,8 +13,8 @@ android {
         applicationId = "com.tabletopforge"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.9.12"
+        versionCode = 9
+        versionName = "1.9.13"
     }
 
     // Two distribution channels:

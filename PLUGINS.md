@@ -170,6 +170,11 @@ If a plugin imports creatures or spells into the host library — the **content-
 | --- | --- | --- |
 | `inserted_creature_ids` | `number[]` | Row ids in `creatures` to remove on disable / uninstall |
 | `inserted_spell_ids`    | `number[]` | Row ids in `spell_library` to remove on disable / uninstall |
+| `inserted_terrain_ids`  | `number[]` | Row ids in `terrain_library` to remove on disable / uninstall |
+| `inserted_race_ids`     | `string[]` | UUIDs in `custom_races` to remove on disable / uninstall (sub-races cascade via FK) |
+| `inserted_bg_ids`       | `string[]` | UUIDs in `custom_backgrounds` to remove on disable / uninstall |
+| `inserted_class_ids`    | `string[]` | UUIDs in `custom_classes` to remove on disable / uninstall |
+| `inserted_lang_slugs`   | `string[]` | Slugs in `languages` to remove on disable / uninstall |
 | `content_loaded_v1`     | `true`     | Once-flag — set after first successful import so reloads don't re-import duplicates |
 | `treasure_loaded_v1`    | `true`     | Once-flag for any treasure-chest items pushed via `window.__tabletopForge.treasure.addItems` |
 | `install_status`        | `object`   | Last install state, surfaced in your tab UI |

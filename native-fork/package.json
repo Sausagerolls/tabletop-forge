@@ -1,6 +1,6 @@
 {
   "name": "tabletopforge-native",
-  "version": "1.9.13",
+  "version": "1.9.14",
   "private": true,
   "description": "Tauri-shelled native build of TableTop Forge — wraps the Express + PGlite backend in a webview-only desktop app.",
   "scripts": {

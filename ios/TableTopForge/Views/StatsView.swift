@@ -364,7 +364,7 @@ struct StatsView: View {
                     .disabled(availableTypes.isEmpty || playerToken == nil)
                     .buttonStyle(.borderedProminent)
                     .confirmationDialog(
-                        "Use which hit die? (rolls + heals)",
+                        "Use which hit die? (Auto Heal)",
                         isPresented: $showHitDicePicker,
                         titleVisibility: .visible,
                     ) {

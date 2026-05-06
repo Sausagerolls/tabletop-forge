@@ -2,14 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CreatureForm from './CreatureForm.jsx';
 
+// Real app icon — loads from /public/icons/ which already mirrors
+// the website + native-app icon set. Falling back to an inline SVG
+// here drifts every time the icon is updated, so reference the
+// canonical PNG instead.
 const ForgeIcon = () => (
-  <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-16 h-16 text-dnd-gold">
-    <path d="M32 8L18 22h8v16h12V22h8L32 8z" fill="currentColor" stroke="none" opacity="0.9" />
-    <rect x="20" y="40" width="24" height="8" rx="2" fill="currentColor" stroke="none" opacity="0.7" />
-    <path d="M16 56h32" strokeWidth={3} />
-    <path d="M24 48v8M40 48v8" />
-    <path d="M10 28c-2 4-2 10 0 14" opacity="0.5" /><path d="M54 28c2 4 2 10 0 14" opacity="0.5" />
-  </svg>
+  <img src="/icons/icon-192.png" alt="TableTop Forge"
+       className="w-16 h-16 rounded-2xl" />
 );
 const PersonIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 inline mr-1.5">

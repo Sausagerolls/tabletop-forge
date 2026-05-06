@@ -59,12 +59,38 @@ const CREATURE_FIELDS = [
 
 const JSONB_FIELDS = ['special_abilities', 'actions', 'bonus_actions', 'reactions', 'legendary_actions', 'senses', 'inventory', 'spells', 'spell_slots', 'loot', 'movement_actions', 'class_features', 'feats', 'skill_expertise', 'race_state', 'background_state', 'class_state', 'multiclasses', 'resource_state', 'hit_dice_used_by_type'];
 
+// BOOLEAN columns. Multipart form-data POSTs (the character-create
+// flow with an avatar upload) coerce every value to a string —
+// node-postgres was happy to send "true" / "false" through to a
+// BOOLEAN column and let Postgres parse it server-side, but PGlite
+// (used by the native build) rejects the same input with
+// `invalid input syntax for type boolean: "true"`. Coercing here
+// keeps the JSON-body path unaffected (real booleans pass straight
+// through) while the multipart path gets normalised to actual
+// JS booleans before parameter binding.
+const BOOLEAN_FIELDS = new Set([
+  'shield_equipped', 'is_player_character', 'heroic_inspiration',
+  'prof_light_armor', 'prof_medium_armor', 'prof_heavy_armor', 'prof_shields',
+]);
+
+function coerceBool(v) {
+  if (typeof v === 'boolean') return v;
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') return v !== 0;
+  const s = String(v).trim().toLowerCase();
+  if (['true', 't', '1', 'yes', 'on'].includes(s)) return true;
+  if (['false', 'f', '0', 'no', 'off'].includes(s)) return false;
+  return null;
+}
+
 function parseBody(body) {
   const data = {};
   for (const field of CREATURE_FIELDS) {
     if (body[field] !== undefined) {
       if (JSONB_FIELDS.includes(field)) {
         data[field] = typeof body[field] === 'string' ? JSON.parse(body[field]) : body[field];
+      } else if (BOOLEAN_FIELDS.has(field)) {
+        data[field] = coerceBool(body[field]);
       } else {
         data[field] = body[field] === '' ? null : body[field];
       }

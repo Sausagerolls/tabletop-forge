@@ -30,16 +30,47 @@ use tauri::{AppHandle, Manager};
 /// access.
 struct BackendProc(Mutex<Option<Child>>);
 
-/// Find a free port by binding to :0, reading the port the kernel
-/// assigned, then dropping the listener. Race window between drop
-/// and the Node process picking it up is microseconds; in practice
-/// nothing else on a desktop targets a random localhost port that
-/// fast.
+/// Pick a port for the backend.
+///
+/// Tries the canonical 3001 first (matches the Docker stack so a
+/// returning GM types the same URL into players' phones every
+/// session), then walks up to 3010 looking for a free one, then
+/// falls back to a random port the kernel assigns. Bind probe is
+/// against `0.0.0.0` rather than `127.0.0.1` so a port we claim
+/// here is also free for the backend's LAN-facing socket — Express
+/// listens on all interfaces by default so other devices on the
+/// same Wi-Fi can reach the server.
 fn pick_free_port() -> Option<u16> {
-    TcpListener::bind("127.0.0.1:0")
+    for candidate in 3001u16..=3010 {
+        if TcpListener::bind(("0.0.0.0", candidate)).is_ok() {
+            return Some(candidate);
+        }
+    }
+    TcpListener::bind("0.0.0.0:0")
         .ok()
         .and_then(|l| l.local_addr().ok())
         .map(|a| a.port())
+}
+
+/// Returns the first non-loopback IPv4 address we can find — what
+/// players on the same LAN should type into their phones. Best-
+/// effort: works on macOS / Linux / Windows when the machine has a
+/// network up, returns None otherwise (the splash falls back to
+/// localhost-only in that case).
+fn lan_address() -> Option<String> {
+    use std::process::Command;
+    // `ifconfig` works on macOS + Linux. Pull the first inet that
+    // isn't 127.x or a docker bridge.
+    let out = Command::new("ifconfig").output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with("inet ") { continue; }
+        let addr = trimmed.split_whitespace().nth(1)?.to_string();
+        if addr.starts_with("127.") || addr.starts_with("169.254.") { continue; }
+        return Some(addr);
+    }
+    None
 }
 
 /// Spawn `node <repo>/native-fork/backend/src/index.js` with the
@@ -165,7 +196,8 @@ fn wait_for_backend(port: u16) {
 
 fn main() {
     let port = pick_free_port().expect("no free port available");
-    let url = format!("http://127.0.0.1:{}/", port);
+    let local_url = format!("http://127.0.0.1:{}/", port);
+    let lan_url   = lan_address().map(|ip| format!("http://{}:{}/", ip, port));
 
     tauri::Builder::default()
         .manage(BackendProc(Mutex::new(None)))
@@ -176,12 +208,28 @@ fn main() {
             // REFUSED" while node + PGlite are warming up.
             let child = spawn_backend(&handle, port);
             *handle.state::<BackendProc>().0.lock().unwrap() = child;
-            wait_for_backend(port);
 
-            // Point the webview at the backend's URL.
+            // Surface the URLs to the splash screen IMMEDIATELY —
+            // before wait_for_backend blocks for the next few
+            // seconds — so the GM can already start reading the
+            // LAN address off to players. The loading.html splash
+            // listens for window.__forgeUrls and re-renders.
             let win = app.get_webview_window("main")
                 .expect("main window declared in tauri.conf.json");
-            win.eval(&format!("window.location.replace('{}')", url)).ok();
+            let lan_js = lan_url.as_deref().unwrap_or("");
+            let _ = win.eval(&format!(
+                "window.__forgeUrls = {{ local: '{}', lan: '{}' }}; \
+                 if (window.__renderForgeUrls) window.__renderForgeUrls();",
+                local_url, lan_js,
+            ));
+
+            wait_for_backend(port);
+
+            // Backend is up — flip the webview from the splash to
+            // the React app served by Express. Always navigate to
+            // the loopback URL inside the window itself; the LAN
+            // form is only useful for OTHER devices.
+            win.eval(&format!("window.location.replace('{}')", local_url)).ok();
             Ok(())
         })
         .on_window_event(|window, event| {

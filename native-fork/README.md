@@ -36,6 +36,29 @@ it'll merge back into the main app (or replace its release path).
 * SRD-2014 + SRD-2024 spell seed kicks off automatically on first
   boot. Network-dependent (Open5e); idempotent on re-runs.
 
+## Connecting to the running app
+
+The bundled .app pins the backend to port **3001** (same as the
+Docker stack — keeps muscle memory consistent). Falls back to
+3002…3010 if that's taken, then a random port if the whole range
+is busy.
+
+* **From this Mac** — open <http://localhost:3001/> in any
+  browser, or just use the Tauri window the app opens for you.
+* **From players' phones / iPads on the same Wi-Fi** — open
+  `http://<your-Mac-IP>:3001/`. The launch splash prints both
+  URLs side-by-side the moment the port is reserved, so you can
+  read it off the screen without opening Terminal. Express
+  binds to all interfaces by default; no firewall punching
+  needed unless macOS Application Firewall is on (the first
+  launch will pop a permission dialog — allow it).
+* **From outside your LAN** — the app doesn't tunnel out on its
+  own. The Cloudflare-tunnel + `forgeserver.giantmushroom.studio`
+  setup the Docker stack uses doesn't ship in the desktop
+  build; if you want remote players, run the Docker version on
+  a server they can reach, or front the desktop app with
+  `cloudflared` / Tailscale Funnel manually.
+
 ## How to run it locally
 
 ```bash

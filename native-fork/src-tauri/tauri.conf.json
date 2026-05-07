@@ -33,7 +33,7 @@
     "active": true,
     "category": "Entertainment",
     "copyright": "© 2026 Giant Mushroom Studio",
-    "shortDescription": "Dungeons & Dragons 5.5e Virtual Tabletop",
+    "shortDescription": "Self-hosted virtual tabletop for 5e tabletop RPGs",
     "longDescription": "TableTop Forge — a self-contained desktop build of the VTT. Bundles its own Postgres-compatible database (PGlite) and runs entirely offline; no Docker, no external server, no network round-trip for the basics.",
     "targets": "all",
     "icon": [
@@ -50,6 +50,13 @@
     ],
     "externalBin": [
       "binaries/node"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "entitlements": "macos/Entitlements.DeveloperID.plist",
+      "exceptionDomain": "",
+      "providerShortName": null,
+      "signingIdentity": null
+    }
   }
 }

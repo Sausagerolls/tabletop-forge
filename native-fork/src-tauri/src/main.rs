@@ -131,18 +131,39 @@ fn spawn_backend(app: &AppHandle, port: u16) -> Option<Child> {
         bundled.or(near_exe).or(from_manifest)?
     };
 
-    // Per-user data dir for PGlite + uploads. We bypass Tauri's
-    // app_data_dir() (~/Library/Application Support/TableTop Forge/
-    // on macOS) because PGlite's WASM aborts at pg_initdb when
-    // the dir path contains spaces — `Application Support` and
-    // the productName "TableTop Forge" both have them, so the
-    // upstream-recommended location double-fails. We fall back
-    // to a no-space dotted dir under $HOME instead, which keeps
-    // every upstream PGlite codepath on its happy path. Override
-    // with VTT_DATA_DIR if a future PGlite release fixes the
-    // space bug and we want to switch back.
-    let data_dir = std::env::var_os("HOME")
-        .map(|home| std::path::PathBuf::from(home).join(".tabletopforge"));
+    // Per-user data dir for PGlite + uploads. Two-tier resolution
+    // because the App Sandbox (Mac App Store builds) forces a
+    // container-prefixed path while direct-distribution builds are
+    // free to write anywhere under $HOME:
+    //
+    //   1. App Sandbox active → `app_data_dir()` returns
+    //      `~/Library/Containers/<bundle-id>/Data/Library/
+    //      Application Support/<bundle-id>/`. Bundle id is
+    //      `studio.giantmushroom.tabletopforge` (no spaces),
+    //      which keeps PGlite's WASM happy through pg_initdb.
+    //   2. No sandbox → fall back to `~/.tabletopforge`, the
+    //      dotted dir we've used since v1.9.x. Avoids the
+    //      `Application Support` / `TableTop Forge` paths that
+    //      tripped PGlite earlier; also lets the Docker stack
+    //      and the .dmg share the same on-disk schema.
+    //
+    // Detect sandbox via the resolved path: anything under
+    // `Library/Containers/` means we're sandboxed. The build that
+    // ships through the App Store flips this on by definition;
+    // dev builds via `cargo run` don't.
+    let data_dir = {
+        let app_data = app.path().app_data_dir().ok();
+        let sandboxed = app_data.as_ref()
+            .and_then(|p| p.to_str())
+            .map(|s| s.contains("/Library/Containers/"))
+            .unwrap_or(false);
+        if sandboxed {
+            app_data
+        } else {
+            std::env::var_os("HOME")
+                .map(|home| std::path::PathBuf::from(home).join(".tabletopforge"))
+        }
+    };
 
     // Tauri's `externalBin` config drops a `node-<target-triple>`
     // binary into the bundle next to the main executable —

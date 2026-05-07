@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Direct-distribution entitlements for TableTop Forge.app.
+
+    Used when signing with a "Developer ID Application" certificate
+    for distribution outside the Mac App Store (the .dmg on
+    forge.giantmushroom.studio). The sandbox is OFF here because
+    direct-distribution apps don't require it — Apple uses
+    notarization instead. Hardened runtime is still on (it's a
+    notarization prerequisite), with the JIT + sidecar entitlements
+    we need for the embedded Node + PGlite stack.
+
+    Two separate plists vs one shared because Mac App Store demands
+    `com.apple.security.app-sandbox = true` and direct-distribution
+    apps generally do not — keeping them split avoids accidentally
+    flipping sandbox on for the .dmg release and breaking the
+    network.server / spawn behaviour.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Hardened runtime (required for notarization). -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- Allow the Tauri Rust shell to load + execute the bundled
+         Node sidecar. Without this, the Hardened Runtime rejects
+         the spawn at codesign time. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Apple's notary service requires we declare what executable
+         memory the app uses. JIT + the WebAssembly engine in
+         PGlite both end up touching this. -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

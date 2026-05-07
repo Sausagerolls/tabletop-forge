@@ -43,6 +43,7 @@
 		773E10475EFAE6E9144CD9A1 /* TableTopForge.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TableTopForge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7C662A58A4F605DD0C859D01 /* SessionSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSwitcherView.swift; sourceTree = "<group>"; };
 		9935DF9F92E1BA2ACCC3CBFB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A734064EA71FDA7C7C12CF7A /* TableTopForge.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TableTopForge.entitlements; sourceTree = "<group>"; };
 		AF3F927EF9E270F0E68248E0 /* TableTopForgeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableTopForgeApp.swift; sourceTree = "<group>"; };
 		B4AAC0E27C5602C19085CF15 /* SocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketClient.swift; sourceTree = "<group>"; };
 		B6228B67B08E15BD1065719B /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
@@ -87,6 +88,7 @@
 				3431102439A271FD3313467B /* ContentView.swift */,
 				EBB510FD297BEE1A99A9BE2D /* Info.plist */,
 				9935DF9F92E1BA2ACCC3CBFB /* PrivacyInfo.xcprivacy */,
+				A734064EA71FDA7C7C12CF7A /* TableTopForge.entitlements */,
 				AF3F927EF9E270F0E68248E0 /* TableTopForgeApp.swift */,
 				D20CDD434D3E4FD39AA60906 /* Models */,
 				18175C2517EC708FD415211C /* Services */,
@@ -306,9 +308,10 @@
 			baseConfigurationReference = FB8EE46B50CCDD355AF17D83 /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = TableTopForge/TableTopForge.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				INFOPLIST_FILE = TableTopForge/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -316,7 +319,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9.2;
+				MARKETING_VERSION = 1.9.17;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jakewatts.tabletopforge;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = YES;
@@ -387,9 +390,10 @@
 			baseConfigurationReference = FB8EE46B50CCDD355AF17D83 /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = TableTopForge/TableTopForge.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				INFOPLIST_FILE = TableTopForge/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -397,7 +401,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9.2;
+				MARKETING_VERSION = 1.9.17;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jakewatts.tabletopforge;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = YES;

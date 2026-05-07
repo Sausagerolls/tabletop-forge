@@ -516,10 +516,10 @@ code {
    DOWNLOAD
 ════════════════════════════════════════════════ */
 .dl-section { padding: 80px 52px; }
-.dl-inner { max-width: 680px; margin: 0 auto; text-align: center; }
+.dl-inner { max-width: 1080px; margin: 0 auto; text-align: center; }
 .dl-icon { width: 96px; height: 96px; margin: 0 auto 20px; display: block; }
 .dl-title { font-family: 'Cinzel', serif; font-size: clamp(24px,3vw,36px); font-weight: 700; margin-bottom: 14px; }
-.dl-desc { font-size: 17px; color: var(--text-m); line-height: 1.75; margin-bottom: 36px; }
+.dl-desc { font-size: 17px; color: var(--text-m); line-height: 1.75; margin-bottom: 36px; max-width: 640px; margin-left: auto; margin-right: auto; }
 .dl-btn {
   display: inline-flex; align-items: center; gap: 10px;
   padding: 16px 40px;
@@ -532,6 +532,86 @@ code {
 .dl-btn:hover { transform: translateY(-3px); box-shadow: 0 10px 40px rgba(184,50,50,0.6); }
 .dl-note { margin-top: 18px; font-size: 14px; color: var(--text-d); }
 .dl-req { margin-top: 12px; font-size: 13px; color: var(--text-d); }
+
+/* Two side-by-side download cards. Each presents one distribution
+   channel with equal visual weight; copy differentiates them. The
+   grid collapses to a single column under 720px so phone visitors
+   see them stacked vertically rather than crushed. */
+.dl-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  text-align: left;
+  margin: 8px 0 36px;
+}
+@media (max-width: 720px) { .dl-options { grid-template-columns: 1fr; } }
+.dl-card {
+  background: rgba(13, 8, 8, 0.65);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 26px 26px 30px;
+  display: flex; flex-direction: column;
+  transition: border-color 0.22s, transform 0.22s;
+}
+.dl-card:hover { border-color: rgba(184,50,50,0.45); transform: translateY(-2px); }
+.dl-card-head {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 4px;
+}
+.dl-card-icon {
+  width: 44px; height: 44px; border-radius: 10px;
+  background: linear-gradient(145deg, rgba(184,50,50,0.18), rgba(212,175,55,0.10));
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent-l);
+  flex-shrink: 0;
+}
+.dl-card-title {
+  font-family: 'Cinzel', serif; font-size: 19px; font-weight: 600;
+  color: var(--text-l); letter-spacing: 0.04em;
+}
+.dl-card-pitch {
+  margin-top: 14px; font-size: 14px; line-height: 1.65;
+  color: var(--text-m);
+}
+.dl-card-features {
+  list-style: none; padding: 0; margin: 16px 0 22px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.dl-card-features li {
+  display: flex; gap: 10px; align-items: flex-start;
+  font-size: 13px; line-height: 1.55; color: var(--text-m);
+}
+.dl-card-features li svg { flex-shrink: 0; margin-top: 3px; color: var(--accent-l); }
+.dl-card-cta {
+  margin-top: auto;
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 13px 22px;
+  background: linear-gradient(145deg, var(--accent-d), var(--accent));
+  border-radius: 9px; font-family: 'Cinzel', serif;
+  font-size: 13px; font-weight: 600; letter-spacing: 0.06em; color: #fff;
+  box-shadow: 0 3px 22px rgba(184,50,50,0.35);
+  transition: transform 0.22s, box-shadow 0.22s;
+}
+.dl-card-cta:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(184,50,50,0.5); }
+.dl-card-foot {
+  margin-top: 12px; font-size: 11px; color: var(--text-d); text-align: center;
+  letter-spacing: 0.04em; line-height: 1.5;
+}
+.dl-helper {
+  background: rgba(212, 175, 55, 0.05);
+  border: 1px solid rgba(212, 175, 55, 0.18);
+  border-radius: 10px; padding: 18px 22px;
+  margin: 0 0 28px;
+  text-align: left;
+  font-size: 13px; line-height: 1.65; color: var(--text-m);
+}
+.dl-helper-title {
+  font-family: 'Cinzel', serif; font-size: 12px; font-weight: 600;
+  letter-spacing: 0.10em; text-transform: uppercase;
+  color: var(--accent-l); margin-bottom: 6px;
+}
+.dl-helper p { margin: 0; }
+.dl-helper p + p { margin-top: 8px; }
+.dl-helper strong { color: var(--text-l); }
 
 /* ════════════════════════════════════════════════
    ALSO FROM
@@ -1445,24 +1525,100 @@ sudo systemctl enable --now avahi-daemon</div>
       <img src="/img/icon-192.png" alt="TableTop Forge" class="dl-icon" />
       <h2 class="dl-title">Download TableTop Forge</h2>
       <p class="dl-desc">Free, self-hosted, and open for your table. No accounts, no subscriptions, no data leaving your network.</p>
-      <a href="releases/dnd-vtt-v1.9.16.zip" class="dl-btn" download>
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v9M4 8l4 5 4-5M2 13h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Download v1.9.16 (.zip)
-      </a>
+      <!-- Two equally-weighted distribution channels. Same server
+           software in both — same features, same plugin contract,
+           same multi-device LAN access. Difference is how the
+           database + runtime get bundled. The "Which one should I
+           pick?" helper card immediately under the grid keeps the
+           choice from feeling like homework. -->
+      <div class="dl-options">
 
-      <!-- Self-contained macOS build. Bundles Node + PGlite (Postgres
-           via WASM) inside a Tauri shell so the user gets a single
-           double-clickable .app with no Docker / Postgres install
-           step. Apple Silicon only for now; Intel and Windows builds
-           land later. Same server software as the Docker zip — same
-           features, same plugin contract, same multi-device LAN
-           access — just packaged differently. -->
-      <div style="margin-top:18px;display:flex;flex-direction:column;align-items:center;gap:6px;">
-        <a href="releases/TableTopForge-v1.9.16-macos-arm64.dmg" class="dl-btn" download style="background:rgba(255,255,255,0.06);border-color:rgba(244,210,138,0.45);color:var(--accent-l);">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-          macOS .dmg (Apple Silicon)
-        </a>
-        <span style="font-size:12px;color:var(--text-m);">No Docker required — database is bundled inside the app.</span>
+        <!-- Docker stack — cross-platform, requires Docker Desktop -->
+        <div class="dl-card">
+          <div class="dl-card-head">
+            <div class="dl-card-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="4" height="4"/><rect x="8" y="9" width="4" height="4"/><rect x="13" y="9" width="4" height="4"/><rect x="8" y="4" width="4" height="4"/><path d="M21 12c0 4-3 5-7 5H4.5c-1 0-1.5-.5-1.5-1v-3"/><path d="M19 8c0-1 1 0 1 0"/></svg>
+            </div>
+            <div class="dl-card-title">Docker Stack</div>
+          </div>
+          <p class="dl-card-pitch">The full stack — frontend, backend, real Postgres 16 — running in containers. One zip, every desktop OS. Best when you want to host the server on a separate machine, run alongside other Docker apps, or pop the hood and tweak the compose file.</p>
+          <ul class="dl-card-features">
+            <li>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 6.5 11.5 13 4"/></svg>
+              <span>Runs on Windows, macOS, and Linux</span>
+            </li>
+            <li>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 6.5 11.5 13 4"/></svg>
+              <span>Full Postgres 16 — same engine the live demo uses</span>
+            </li>
+            <li>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 6.5 11.5 13 4"/></svg>
+              <span>Plugin folder + uploads on the host filesystem — easy to back up</span>
+            </li>
+            <li>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 6.5 11.5 13 4"/></svg>
+              <span>Hostable behind a reverse proxy + domain</span>
+            </li>
+            <li>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3M8 11h.01"/></svg>
+              <span style="color:var(--text-d);">Requires <a href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noopener" style="color:var(--accent-l);">Docker Desktop</a> (free) on Win/Mac</span>
+            </li>
+          </ul>
+          <a href="releases/dnd-vtt-v1.9.16.zip" class="dl-card-cta" download>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v9M4 8l4 5 4-5M2 13h12"/></svg>
+            Download v1.9.16 (.zip)
+          </a>
+          <div class="dl-card-foot">≈ 50 MB · Windows 10/11 · macOS 12+ · Any modern Linux</div>
+        </div>
+
+        <!-- Self-contained macOS .app — Tauri shell + Node + PGlite WASM -->
+        <div class="dl-card">
+          <div class="dl-card-head">
+            <div class="dl-card-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+            </div>
+            <div class="dl-card-title">macOS App</div>
+          </div>
+          <p class="dl-card-pitch">A single double-click. The full stack — frontend, backend, a Postgres-compatible database — bundled inside one signed <code style="background:rgba(212,175,55,0.08);padding:1px 5px;border-radius:3px;font-size:12px;">.app</code>. Best for a GM running the server on the same Mac they sit at, with no Docker, no terminal, and no install steps beyond drag-to-Applications.</p>
+          <ul class="dl-card-features">
+            <li>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 6.5 11.5 13 4"/></svg>
+              <span>No Docker, no Postgres install, no Terminal</span>
+            </li>
+            <li>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 6.5 11.5 13 4"/></svg>
+              <span>Database bundled (PGlite — Postgres-compatible, in-process)</span>
+            </li>
+            <li>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 6.5 11.5 13 4"/></svg>
+              <span>Auto-detects the LAN — players reach it via <code style="background:rgba(212,175,55,0.08);padding:1px 5px;border-radius:3px;font-size:12px;">.local</code></span>
+            </li>
+            <li>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 6.5 11.5 13 4"/></svg>
+              <span>Drag-to-Applications install, just like every other Mac app</span>
+            </li>
+            <li>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3M8 11h.01"/></svg>
+              <span style="color:var(--text-d);">Apple Silicon only for now (Intel + Windows builds in progress)</span>
+            </li>
+          </ul>
+          <a href="releases/TableTopForge-v1.9.16-macos-arm64.dmg" class="dl-card-cta" download>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v9M4 8l4 5 4-5M2 13h12"/></svg>
+            Download v1.9.16 (.dmg)
+          </a>
+          <div class="dl-card-foot">≈ 53 MB · macOS 12+ · Apple Silicon (M1 / M2 / M3 / M4)</div>
+        </div>
+
+      </div>
+
+      <!-- "Which one?" helper. Short, plainly written, no jargon — the
+           goal is a 15-second read that lets the user click confidently
+           without having to compare the two feature lists by eye. -->
+      <div class="dl-helper">
+        <div class="dl-helper-title">Not sure which one?</div>
+        <p>Both ship the <strong>same TableTop Forge server software</strong>, the same plugin contract, the same multi-device LAN access. They differ only in how the database and runtime get packaged.</p>
+        <p>If you're on a <strong>Mac at the table</strong> and want it to "just work" — pick the <strong>.app</strong>. Drag it to Applications, double-click, you're done.</p>
+        <p>If you want to <strong>host the server on a separate machine</strong> (a home server, a NUC, a Linux box, a desktop PC sitting in another room), or you already use Docker for other things — pick the <strong>Docker stack</strong>. It's also the only option for Windows or Linux right now.</p>
       </div>
 
       <div style="margin-top:14px;">
@@ -1471,8 +1627,6 @@ sudo systemctl enable --now avahi-daemon</div>
           View source on GitHub
         </a>
       </div>
-      <div class="dl-note">.zip download requires Docker Desktop (Windows &amp; macOS) or Docker Engine (Linux). The .dmg ships everything it needs — Apple Silicon Macs only for now.</div>
-      <div class="dl-req">Windows 10/11 · macOS 12+ · Any modern Linux with Docker support</div>
 
       <!-- Player apps: companion mobile clients that connect to a
            running TableTop Forge server. Android is sideloaded as a

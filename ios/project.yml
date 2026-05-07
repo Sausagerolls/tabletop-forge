@@ -33,6 +33,24 @@ targets:
     dependencies:
       - package: SocketIO
         product: SocketIO
+    # Code-signing entitlements — XcodeGen generates the .entitlements
+    # file from the dict below and wires CODE_SIGN_ENTITLEMENTS in
+    # the build settings automatically. Two keys, both required for
+    # Mac App Store submission (Apple Connect rejects the upload
+    # without `app-sandbox = true`); harmless on iOS, which runs in
+    # its own sandbox regardless of the file.
+    #
+    #   app-sandbox    — Mac App Store mandate. Defaults to deny on
+    #                    everything outside the app's container.
+    #   network.client — Outbound TCP / UDP. Needed for the Socket.IO
+    #                    + REST traffic to the user-supplied server,
+    #                    and for the Bonjour / mDNS .local lookup
+    #                    that resolves the GM's server on the LAN.
+    entitlements:
+      path: TableTopForge/TableTopForge.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
     info:
       path: TableTopForge/Info.plist
       properties:
@@ -79,6 +97,14 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         # Display name on the home screen.
         CFBundleDisplayName: TT Forge
+        # Mac App Store mandate. Apple Connect rejects the upload
+        # without this — `LSApplicationCategoryType` slots the app
+        # into the Mac App Store's primary category dropdown. UTI
+        # values are documented at
+        # https://developer.apple.com/documentation/bundleresources/information_property_list/lsapplicationcategorytype
+        # `entertainment` matches the App Store listing's primary
+        # category we picked in app-store/listing.md.
+        LSApplicationCategoryType: public.app-category.entertainment
         # App Store Connect's encryption-export questionnaire pops up
         # at every TestFlight / App Store upload unless we set this
         # explicitly. We use only HTTPS (URLSession + Socket.IO over
@@ -91,8 +117,8 @@ targets:
         # uploads where these don't match the value the GM puts in
         # App Store Connect — keeping them here means a fresh
         # xcodegen run preserves whatever the latest release is.
-        CFBundleShortVersionString: "1.9.2"
-        CFBundleVersion: "2"
+        CFBundleShortVersionString: "1.9.17"
+        CFBundleVersion: "3"
     settings:
       base:
         # DEVELOPMENT_TEAM is intentionally NOT set here — xcodegen
@@ -118,5 +144,5 @@ targets:
         # The "macCatalyst" / "scaled" choice can also be toggled
         # per-build in Xcode → Signing & Capabilities → Mac Catalyst
         # row if you ever want to compare both looks.
-        MARKETING_VERSION: "1.9.2"
-        CURRENT_PROJECT_VERSION: "2"
+        MARKETING_VERSION: "1.9.17"
+        CURRENT_PROJECT_VERSION: "3"

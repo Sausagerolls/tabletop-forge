@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Mac App Store entitlements for TableTop Forge.
+
+    Mac App Store submission requires the App Sandbox to be on. Each
+    capability the app actually needs gets opted-in via one of the
+    keys below; everything else is default-deny. Reviewers read this
+    file directly, so each entitlement is annotated with WHY we need it.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Mandatory for any Mac App Store submission. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Outbound TCP / UDP. Needed because the bundled Node backend
+         talks to Open5e's API on first launch (one-time SRD spell +
+         monster import) and to the user's chosen AI provider
+         (Anthropic / OpenAI / SwarmUI / LM Studio / Ollama) when the
+         GM enables AI features. Also needed for the mDNS publish
+         (UDP 5353 multicast). -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Inbound TCP. The app IS a server — it listens on port 3001
+         (or the next free port up to 3010) so the GM's player phones,
+         iPads, and the GM's own browser can connect. This is the
+         core reason the app exists; reviewer questions about it
+         answered in the App Store description's "Self-hosted VTT
+         server" section. -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+
+    <!-- V8 / Node uses JIT for JavaScript execution. PGlite (Postgres
+         compiled to WebAssembly) likewise needs runtime-allocated
+         executable memory pages. Every Electron-style app declares
+         this; we're no different. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- The Tauri Rust shell spawns the bundled Node binary as a
+         sidecar. The sidecar lives inside the .app's Resources/ and
+         is signed with our team identity at bundle time, so the
+         "allow-unsigned-executable-memory" entitlement is NOT
+         needed; this one allows execution of Mach-O loaded from the
+         bundle, which is the supported path. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Required when an app spawns child processes (the Node sidecar)
+         and the children inherit the parent's sandbox. Without this,
+         spawn() fails inside a sandboxed app. -->
+    <key>com.apple.security.inherit</key>
+    <false/>
+</dict>
+</plist>

@@ -1,6 +1,6 @@
 # TableTop Forge
 
-**A self-hosted virtual tabletop for D&D 5e.**  
+**A self-hosted virtual tabletop for 5e tabletop RPGs (5e SRD compatible).**  
 Per-player instanced fog of war, AI-powered token generation, PDF spell library import, full combat tracking, an extensible plugin system, and complete GM control — running entirely on your own machine.
 
 ---
@@ -14,6 +14,7 @@ Per-player instanced fog of war, AI-powered token generation, PDF spell library 
   - [macOS](#macos)
   - [Linux](#linux)
 - [Configuration](#configuration)
+- [How players connect](#how-players-connect)
 - [AI Setup](#ai-setup)
   - [LM Studio](#lm-studio)
   - [Ollama](#ollama)
@@ -135,6 +136,49 @@ PORT=8080
 ```
 
 If no `.env` file is present the app starts with safe defaults (`DM_MASTER_PASSWORD=dungeonmaster`). **Change this before sharing with players.**
+
+---
+
+## How players connect
+
+Players' phones and iPads typically can't reach the GM's machine by raw LAN IP — both the iOS App Store and the Android Play Store restrict cleartext (HTTP) traffic to "known-private" destinations, and a bare `192.168.x.y` isn't one. A `.local` hostname (mDNS / Bonjour) is. TableTop Forge tries to publish itself as `tabletopforge.local` automatically; the GM panel's **Player Join Link** block surfaces whichever `.local` URL is reachable so you can read it out at the table.
+
+What "automatically" means depends on the platform:
+
+### macOS host (Docker Desktop or the standalone .dmg)
+
+Works out of the box. macOS already runs `mDNSResponder` and advertises the host as `<computer-name>.local` (System Settings → General → Sharing → Local hostname). The container forwards its port to `localhost:<port>` on the Mac, so players on Wi-Fi reach the server at `http://<computer-name>.local:<port>/`.
+
+The standalone `.dmg` build also publishes the cleaner `tabletopforge.local` directly because the Node sidecar runs on the host with full multicast access. Either URL works.
+
+To rename the host's `.local` (e.g. to a friendlier `tabletopforge`):
+```bash
+sudo scutil --set LocalHostName tabletopforge
+```
+
+### Windows host (Docker Desktop)
+
+Windows 10/11 can **resolve** `*.local` hostnames out of the box but doesn't **advertise** itself by default. Install **Apple Bonjour Print Services for Windows** (free, official Apple download, ~4 MB):
+
+> [https://support.apple.com/kb/DL999](https://support.apple.com/kb/DL999)
+
+After install, the PC advertises `<COMPUTERNAME>.local` permanently as a Windows service. Players reach the server at `http://<COMPUTERNAME>.local:<port>/`. No further config needed.
+
+If you'd rather not install Bonjour, players can still use the LAN IP, but iOS / Android players running the App Store / Play Store builds will hit a Network Security Config block. Bonjour, a Cloudflare Tunnel, or Tailscale solve that.
+
+### Linux host (Docker)
+
+Install Avahi (most desktop distros already have it):
+```bash
+sudo apt install avahi-daemon   # Ubuntu / Debian
+sudo systemctl enable --now avahi-daemon
+```
+
+For the cleanest experience also uncomment `network_mode: host` under the `backend:` service in `docker-compose.yml`. With that, the container's own `bonjour-service` publish reaches the LAN and players resolve the canonical `tabletopforge.local`. Without it, players use `<hostname>.local` from the host machine itself.
+
+### Outside the LAN (remote players)
+
+Anything beyond the local network needs HTTPS. Front the server with a tunnel that handles TLS termination — Cloudflare Tunnel, Tailscale Funnel, ngrok, or your own reverse-proxied domain (see [Reverse Proxy Setup](#reverse-proxy-setup-server-hosting) below). The mobile apps connect to HTTPS hosts unconditionally.
 
 ---
 

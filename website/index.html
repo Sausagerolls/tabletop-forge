@@ -865,6 +865,13 @@ footer {
           <div class="step">
             <div class="step-num">5</div>
             <div class="step-body">
+              <div class="step-title">Share the URL with your players</div>
+              <div class="step-desc">Players on the same Wi-Fi connect at <code>http://&lt;your-Mac-name&gt;.local</code>. The Mac advertises that automatically — find your name in <strong>System Settings → General → Sharing → Local hostname</strong>. Mobile-app players (iOS / Android) need this <code>.local</code> form rather than a raw IP, because the App Store and Play Store sandboxes restrict cleartext to known-private destinations. The GM panel's Player Join Link box prints the right URL for you to read aloud.</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">6</div>
+            <div class="step-body">
               <div class="step-title">Stopping and restarting</div>
               <div class="step-desc">To stop the app: <code>docker compose down</code>. To start it again later: <code>docker compose up -d</code>. Your session data is preserved automatically.</div>
             </div>
@@ -908,6 +915,13 @@ footer {
           </div>
           <div class="step">
             <div class="step-num">5</div>
+            <div class="step-body">
+              <div class="step-title">Install Bonjour for Windows (one time, for phone players)</div>
+              <div class="step-desc">For player phones to use a friendly <code>.local</code> URL instead of a raw IP, install Apple's free <a href="https://support.apple.com/kb/DL999" target="_blank" rel="noopener">Bonjour Print Services for Windows</a> (4 MB MSI). After install, your PC permanently advertises <code>&lt;COMPUTERNAME&gt;.local</code> — that's the URL the GM panel prints in the Player Join Link box. iOS / Android Play Store apps require this <code>.local</code> form because they refuse cleartext to raw LAN IPs by policy. If you skip Bonjour, browser-based players can still connect via the IP, but the App Store / Play Store mobile apps will refuse.</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">6</div>
             <div class="step-body">
               <div class="step-title">Stopping and restarting</div>
               <div class="step-desc">To stop: <code>docker compose down</code>. To restart: <code>docker compose up -d</code>. Your data is stored in Docker volumes and persists between restarts.</div>
@@ -953,8 +967,19 @@ cd TabletopForge</div>
           <div class="step">
             <div class="step-num">4</div>
             <div class="step-body">
-              <div class="step-title">Accessing from other devices on your network</div>
-              <div class="step-desc">Other players on the same local network can connect using your machine's local IP address — e.g. <code>http://192.168.1.x</code>. Find your IP with <code>ip a</code> or <code>hostname -I</code>.</div>
+              <div class="step-title">Install Avahi for phone players (one time)</div>
+              <div class="step-desc">For player phones to connect via a clean <code>.local</code> URL (required by the iOS App Store and Android Play Store sandboxes), make sure Avahi is running. Most desktop distros already ship it; if not:
+                <div class="code-block">sudo apt install avahi-daemon
+sudo systemctl enable --now avahi-daemon</div>
+              For the cleanest UX, also uncomment <code>network_mode: host</code> under the <code>backend:</code> service in <code>docker-compose.yml</code> — that lets the container's own mDNS publish reach the LAN as <code>tabletopforge.local</code>.
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <div class="step-title">Sharing the URL with players</div>
+              <div class="step-desc">The GM panel's Player Join Link box prints a <code>.local</code> URL (e.g. <code>http://yourbox.local</code>) once Avahi + Bonjour publish are running. Browser-based players can also use the LAN IP <code>http://192.168.x.x</code>; mobile App Store / Play Store builds need the <code>.local</code> form.</div>
             </div>
           </div>
         </div>

@@ -28,8 +28,8 @@ android {
         applicationId = "com.tabletopforge"
         minSdk = 26
         targetSdk = 34
-        versionCode = 9
-        versionName = "1.9.13"
+        versionCode = 10
+        versionName = "1.9.17"
     }
 
     signingConfigs {

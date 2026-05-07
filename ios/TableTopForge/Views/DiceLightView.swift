@@ -28,6 +28,13 @@ struct DiceLightView: View {
     @State private var showCharacterEditor: Bool = false
     @State private var showSessionSwitcher: Bool = false
     @State private var serverVersion: String = "—"
+    /// `.local` hostname the server reported via /api/version. Comes
+    /// from the backend's bonjour-service publish on Linux + native
+    /// macOS, or from the host machine's own `<host>.local` on
+    /// Mac/Win Docker. nil when the server is older than v1.9.16
+    /// (no mDNS field in the response) — UI hides the row in that
+    /// case rather than show an empty value.
+    @State private var serverMdnsHost: String? = nil
     // Easter-egg state — three taps on the version row within ~2s
     // launches the Brotato-style minigame. Tap counter resets on
     // any inactivity gap so accidental double-taps don't drift in.
@@ -204,6 +211,31 @@ struct DiceLightView: View {
                 .font(.system(.body, design: .monospaced))
             LabeledContent("Player",   value: store.playerName)
             LabeledContent("Status",   value: statusLabel)
+            // Surface the server's `.local` URL — the GM reads this
+            // off the panel; we mirror it here so a player who's
+            // joined and wants to share the URL with another player
+            // doesn't have to ask. Tap the row to copy the full URL
+            // to the clipboard.
+            if let host = serverMdnsHost {
+                Button {
+                    UIPasteboard.general.string = "http://\(host)/"
+                } label: {
+                    HStack {
+                        Text("Reachable as")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(host)
+                                .font(.system(.subheadline, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Text("Tap to copy")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -237,17 +269,28 @@ struct DiceLightView: View {
     }
 
     private func refreshServerVersion() async {
-        guard let base = store.baseURL else { serverVersion = "—"; return }
+        guard let base = store.baseURL else {
+            serverVersion = "—"; serverMdnsHost = nil; return
+        }
         do {
             let (data, _) = try await URLSession.shared.data(
                 from: base.appendingPathComponent("api/version"))
-            if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let v = obj["version"] as? String {
-                serverVersion = v
+            if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let v = obj["version"] as? String { serverVersion = v }
+                // Prefer the explicit canonical name the backend
+                // advertises (`tabletopforge.local`), fall back to the
+                // host's own `.local` if that's all the server can
+                // resolve (Mac/Win Docker case where multicast is
+                // trapped in the VM but the host OS publishes
+                // <hostname>.local). nil-safe both directions.
+                let preferred = (obj["mdnsName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                let fallback  = (obj["mdnsHost"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                serverMdnsHost = preferred ?? fallback
                 return
             }
         } catch { /* offline — fall through */ }
         serverVersion = "—"
+        serverMdnsHost = nil
     }
 
     private var statusLabel: String {

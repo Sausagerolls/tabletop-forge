@@ -212,7 +212,7 @@ async function callOllamaVision(baseUrl, model, prompt, imageB64) {
   return data.message?.content || '';
 }
 
-const SPELL_PROMPT = `You are extracting D&D 5e spells from a page of a rulebook or homebrew PDF.
+const SPELL_PROMPT = `You are extracting 5e SRD-format spells from a page of a rulebook or homebrew PDF.
 
 Look at the page and return a JSON array of every distinct spell it shows. Return ONLY the JSON array — no markdown, no commentary. If the page has no spells, return [].
 
@@ -236,7 +236,7 @@ Each spell object MUST match this exact schema:
     "damage_entries": [{ "damage": "string e.g. '8d6'", "damage_type": "Fire | Cold | etc." }],
     "extra_effects": "string — optional extra effects beyond core damage",
     "description": "string — full spell description",
-    "allowed_classes": ["string — D&D class names that can prepare/learn this spell"]
+    "allowed_classes": ["string — 5e class names that can prepare/learn this spell"]
   }
 ]
 
@@ -635,7 +635,7 @@ function findSpellHeadersInText(pageText) {
   return out;
 }
 
-const FIELD_PROMPT_TEMPLATE = (name, body) => `Extract structured fields for the D&D 5e spell named "${name}" from the text below. Return ONLY a JSON object — no markdown, no commentary, no explanation.
+const FIELD_PROMPT_TEMPLATE = (name, body) => `Extract structured fields for the 5e spell named "${name}" from the text below. Return ONLY a JSON object — no markdown, no commentary, no explanation.
 
 Schema:
 {

@@ -271,7 +271,7 @@ const SECTIONS = {
         },
         {
           heading: 'Actions Reference',
-          body: `Click the "📖 Actions" button in the top-right toolbar to open a quick reference for D&D 5e Movement, Actions, Bonus Actions, and Reactions.`,
+          body: `Click the "📖 Actions" button in the top-right toolbar to open a quick reference for 5e Movement, Actions, Bonus Actions, and Reactions.`,
         },
       ],
     },
@@ -410,7 +410,7 @@ const SECTIONS = {
       content: [
         {
           heading: 'Opening the Reference',
-          body: `Click the "📖 Actions" button in the bottom-left of your screen to open the D&D 5e Actions Reference panel.`,
+          body: `Click the "📖 Actions" button in the bottom-left of your screen to open the 5e Actions Reference panel.`,
         },
         {
           heading: 'What Is Covered',

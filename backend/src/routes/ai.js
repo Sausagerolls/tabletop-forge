@@ -27,7 +27,7 @@ async function fetchLanguageNames() {
 
 function buildSystemPrompt(languageNames) {
   const langList = languageNames.join(', ');
-  return `You are a D&D 5e monster designer. Generate a complete, balanced D&D 5e stat block in JSON format.
+  return `You are a 5e SRD-compatible monster designer. Generate a complete, balanced 5e SRD stat block in JSON format.
 
 Return ONLY valid JSON — no markdown, no explanation, no code fences. The JSON must match this exact schema:
 
@@ -99,7 +99,7 @@ Rules:
 - Save throws: MUST be null for saves the creature isn't proficient in. Most creatures have 0–2 proficient saves; never assign every save. Common patterns: a fighter-type might be proficient in STR + CON; a mage in INT + WIS; a rogue in DEX + INT. Set every other save_* field to null. Assigning all six saves is WRONG and forbidden.
 - Skills: MUST be null for skills the creature isn't trained in. A typical creature has only 1–4 skill proficiencies — never assign every skill. Pick skills that fit the creature's flavor (e.g. wolves: Perception + Stealth; sages: Arcana + History; brutes: Athletics + Intimidation). Set every other skill_* field to null.
 - Legendary actions: by default a creature has NONE. Set legendary_actions to [] and legendary_action_count to 0 unless explicitly told this is a legendary creature. Only iconic boss-tier monsters (ancient dragons, liches, archdevils, etc.) should have legendary actions, and only when the user requests them.
-- XP must match the standard D&D 5e CR table: CR0=0, CR1/8=25, CR1/4=50, CR1/2=100, CR1=200, CR2=450, CR3=700, CR4=1100, CR5=1800, CR6=2300, CR7=2900, CR8=3900, CR9=5000, CR10=5900, etc.
+- XP must match the standard 5e SRD CR table: CR0=0, CR1/8=25, CR1/4=50, CR1/2=100, CR1=200, CR2=450, CR3=700, CR4=1100, CR5=1800, CR6=2300, CR7=2900, CR8=3900, CR9=5000, CR10=5900, etc.
 - Proficiency bonus: CR0-4=+2, CR5-8=+3, CR9-12=+4, CR13-16=+5, CR17-20=+6, CR21-24=+7, CR25-28=+8, CR29-30=+9.
 - Include at least one action.
 - loot: 2–5 items appropriate to the creature. chance is 0–100 (integer percent). Include coin, equipment, and thematic drops. Common items 75–100%, rare items 10–30%.
@@ -129,7 +129,7 @@ function buildUserPrompt(promptData) {
   } else {
     lines.push('NOT a legendary creature: legendary_actions MUST be [] and legendary_action_count MUST be 0.');
   }
-  return `Generate a complete D&D 5e stat block for the following creature. Return only JSON.\n\n${lines.join('\n')}`;
+  return `Generate a complete 5e SRD stat block for the following creature. Return only JSON.\n\n${lines.join('\n')}`;
 }
 
 // Normalise a baseUrl that the user typed (e.g. add scheme if missing) and

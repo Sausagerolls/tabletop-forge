@@ -7,9 +7,11 @@
     "clean:frontend":     "rm -rf frontend/dist frontend/node_modules/.vite",
     "build:frontend":     "npm run clean:frontend && npm --prefix frontend run build",
     "fetch:node-binaries": "bash src-tauri/binaries/fetch.sh",
-    "tauri":              "tauri",
-    "tauri:dev":          "npm run fetch:node-binaries && npm run build:frontend && tauri dev",
-    "tauri:build":        "npm run fetch:node-binaries && npm run build:frontend && tauri build"
+    "tauri":                "tauri",
+    "tauri:dev":            "npm run fetch:node-binaries && npm run build:frontend && tauri dev",
+    "tauri:build":          "npm run fetch:node-binaries && npm run build:frontend && tauri build",
+    "tauri:build:signed":   "npm run fetch:node-binaries && npm run build:frontend && bash scripts/build-signed.sh",
+    "tauri:build:appstore": "npm run fetch:node-binaries && npm run build:frontend && bash scripts/build-signed.sh appstore"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"

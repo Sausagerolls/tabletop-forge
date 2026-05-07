@@ -1,0 +1,41 @@
+# Apple signing + notarization credentials.
+#
+# Copy to `.signing-env` (gitignored), fill in the values for your
+# own developer account, then run `npm run tauri:build:signed`
+# from native-fork/ — the wrapper script (scripts/build-signed.sh)
+# loads this file, exports the env vars, and runs the bundler.
+#
+# Each value lives in a different place in your developer account:
+#
+#   APPLE_TEAM_ID
+#     ─ developer.apple.com → Account → Membership Details → Team ID
+#       Looks like J4UJD4Z33J. Same team for direct-dist + App Store.
+#
+#   APPLE_ID
+#     ─ The email you sign in to developer.apple.com with.
+#
+#   APPLE_PASSWORD
+#     ─ App-specific password from appleid.apple.com → Sign-In and
+#       Security → App-Specific Passwords. NOT your Apple ID password.
+#       Format: abcd-efgh-ijkl-mnop.
+#
+#   APPLE_SIGNING_IDENTITY
+#     ─ The CN of your Developer ID Application certificate, exactly
+#       as it appears in `security find-identity -p codesigning -v`.
+#       Looks like:
+#         Developer ID Application: Jake Watts (J4UJD4Z33J)
+#       For App Store builds, swap this to the matching Apple
+#       Distribution cert when you're ready to submit:
+#         Apple Distribution: Jake Watts (J4UJD4Z33J)
+#       (We use one env var; flip it depending on which path you're
+#       building.)
+#
+# Lose any of these? Apple lets you regenerate them all from the
+# developer portal — but it's quicker to back the cert .p12 up to
+# iCloud + Nextcloud the same way you did for the Android keystore.
+# See native-fork/src-tauri/macos/SIGNING.md.
+
+APPLE_TEAM_ID=J4UJD4Z33J
+APPLE_ID=jakewatts809@googlemail.com
+APPLE_PASSWORD=
+APPLE_SIGNING_IDENTITY=Developer ID Application: Jake Watts (J4UJD4Z33J)

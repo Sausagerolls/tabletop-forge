@@ -29,6 +29,11 @@ native-fork/src-tauri/gen/
 # native-fork/src-tauri/binaries/fetch.sh, too big to commit.
 native-fork/src-tauri/binaries/node-*
 
+# Apple signing creds — APPLE_PASSWORD is an app-specific password
+# from appleid.apple.com, never commit. .signing-env.example is the
+# template that's tracked.
+native-fork/.signing-env
+
 # Backend runtime data — user uploads, generated assets
 backend/uploads/
 generated-images/

@@ -2,8 +2,8 @@
 // race-data/ and re-run `python3 race-data/build_races_js.py`.
 
 export const RACE_EDITIONS = [
-  { id: 'srd2024', label: 'D&D 2024 SRD' },
-  { id: 'srd2014', label: 'D&D 5e (2014 SRD)' },
+  { id: 'srd2024', label: '5e SRD (2024)' },
+  { id: 'srd2014', label: '5e SRD (2014)' },
 ];
 
 export const RACE_CATALOG = [

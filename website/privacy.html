@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Privacy Policy — TableTop Forge</title>
-<meta name="description" content="Privacy Policy for TableTop Forge — a self-hosted virtual tabletop for D&D 5e.">
+<meta name="description" content="Privacy Policy for TableTop Forge — a self-hosted virtual tabletop for 5e tabletop RPGs.">
 <meta name="theme-color" content="#060404">
 <link rel="icon" type="image/png" sizes="32x32"  href="/img/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16"  href="/img/icon-16.png">
@@ -68,7 +68,7 @@
 
 <main>
   <h1>Privacy Policy</h1>
-  <p class="meta">Last updated 5 May 2026.</p>
+  <p class="meta">Last updated 7 May 2026.</p>
 
   <div class="callout">
     <p>
@@ -137,7 +137,40 @@
     Logging out wipes those keys. Nothing is uploaded to any server we run.
   </p>
 
-  <h2>4. The mobile apps' Privacy Manifest (iOS)</h2>
+  <h2>4. What the mobile apps DO NOT do</h2>
+  <p>
+    Independent restatement of the above for clarity, because Play
+    Store and App Store data-safety questionnaires are explicit about
+    these categories:
+  </p>
+  <ul>
+    <li><strong>No analytics SDKs.</strong> No Firebase, no Crashlytics, no Mixpanel, no Amplitude — nothing.</li>
+    <li><strong>No advertising SDKs.</strong> No AdMob, no Meta Audience Network, no IronSource, no in-app advertising of any kind.</li>
+    <li><strong>No data sold or shared</strong> with third parties for advertising, analytics, or any other commercial purpose.</li>
+    <li><strong>No personal information collected</strong> beyond what you type into the login screen — and that data only travels to the server you point the app at.</li>
+    <li><strong>No background location, contacts, microphone, camera, or photo-library access.</strong> The apps don't request any of those permissions.</li>
+    <li><strong>No account creation</strong> with us. The "session code" + "player name" pairing is decided per-game by the GM running the server; we never see it.</li>
+  </ul>
+
+  <h2>5. Network access — what each app talks to</h2>
+  <p>
+    On Android, the app uses the standard <code>INTERNET</code>
+    permission to reach the server URL you type in. On iOS / iPadOS / macOS,
+    the app additionally requests local-network access at first launch
+    — that's the iOS-specific permission needed to talk to a server
+    on your home Wi-Fi by IP address or mDNS hostname.
+  </p>
+  <p>
+    Cleartext (HTTP) traffic is permitted only for loopback addresses,
+    the Android emulator's host loopback (<code>10.0.2.2</code>), and
+    mDNS <code>.local</code> hostnames. Public-internet HTTP is
+    rejected at the platform level. Reaching a server over the open
+    internet requires HTTPS — set that up via Cloudflare Tunnel,
+    Tailscale, ngrok, or a self-hosted reverse proxy with a
+    LetsEncrypt certificate.
+  </p>
+
+  <h2>6. The mobile apps' Privacy Manifest (iOS)</h2>
   <p>
     The iOS / macOS build ships a
     <code>PrivacyInfo.xcprivacy</code> manifest declaring two
@@ -147,21 +180,21 @@
     every category on the App Store privacy nutrition label.
   </p>
 
-  <h2>5. Children</h2>
+  <h2>7. Children</h2>
   <p>
     The application has no age-gating or COPPA-relevant data flow because
     it doesn't collect data. Whether the people at your table are
     children is your call as the GM running the campaign.
   </p>
 
-  <h2>6. Changes</h2>
+  <h2>8. Changes</h2>
   <p>
     If a future version of TableTop Forge adds an opt-in feature that
     transmits data anywhere new (e.g. a hosted dice-broadcast service),
     it'll be off by default and described here before it ships.
   </p>
 
-  <h2>7. Contact</h2>
+  <h2>9. Contact</h2>
   <p>
     Questions about how the app handles your data:
     <a href="mailto:jakewatts809@googlemail.com">jakewatts809@googlemail.com</a>.

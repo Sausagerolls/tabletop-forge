@@ -256,7 +256,7 @@ export default function Landing() {
         <div className="text-center mb-8">
           <div className="mb-3 flex justify-center"><ForgeIcon /></div>
           <h1 className="text-3xl font-bold text-dnd-gold font-serif">TableTop Forge</h1>
-          <p className="text-gray-400 mt-1 text-sm">Dungeons & Dragons 5.5e Virtual Table Top</p>
+          <p className="text-gray-400 mt-1 text-sm">Self-hosted virtual tabletop for 5e TTRPGs</p>
         </div>
 
         <div className="bg-dnd-panel rounded-xl overflow-hidden shadow-2xl border border-gray-700">

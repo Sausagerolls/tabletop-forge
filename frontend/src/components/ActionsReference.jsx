@@ -91,7 +91,7 @@ export default function ActionsReference({ onClose }) {
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 shrink-0">
-          <h3 className="text-dnd-gold font-semibold">D&D 5e Actions Reference</h3>
+          <h3 className="text-dnd-gold font-semibold">5e Actions Reference</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-white p-1"><XIcon /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-2">

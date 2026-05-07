@@ -35,58 +35,65 @@ Live character sheets for 5e tabletop RPGs. Sheets, dice, spells, inventory.
 ## Full description
 
 ```
-TableTop Forge is the player companion app for self-hosted virtual tabletop sessions, built for the 5e SRD ruleset (CC-BY 4.0). Connect from your phone or tablet to the GM's TableTop Forge server, then run your character sheet, manage spells and inventory, roll dice, and stay in sync with the table — without crowding the GM's laptop or tying up the projector.
+TableTop Forge is the player companion for self-hosted tabletop RPG sessions. Open it on your phone, tap your character, and you've got the whole sheet — stats, spells, dice, inventory, conditions — in your hand instead of crammed onto the GM's laptop screen.
 
-REQUIRES A TABLETOP FORGE SERVER
+Built for 5e tabletop RPGs (5e SRD compatible). No accounts, no subscriptions, no data leaving your network. Free, forever, open source.
 
-This app needs a TableTop Forge server to connect to. The server is a free, open-source, self-hosted bundle that you (or your GM) run on a laptop, desktop, or home server. Download it from forge.giantmushroom.studio — there's a Docker-based release that runs on Windows, macOS, and Linux, and a self-contained macOS .dmg that ships everything inside one app. The server is what holds the campaign — characters, maps, plugins, history. The app is just the player's window into it.
+⚙ HOW IT WORKS
 
-WHAT YOU GET PER TAB
+The app is a window into a TableTop Forge server. The GM (or you, if you're hosting) runs the server — a free open-source bundle from forge.giantmushroom.studio. Install it with Docker on Windows, macOS, or Linux, or grab the single double-clickable .app on macOS. Type the server's address into the app's login screen and you're in.
 
-• Stats — HP, hit dice, AC, abilities, saves, every non-zero movement speed, equipped weapons with computed attack bonuses, conditions, GM whispers.
-• Skills — full skill bonus table with proficiency / expertise marked.
-• Spells — slot tracker (tap to spend / restore), per-spell quick-cast, full description in a sheet.
-• Inventory — items, currency (cp / sp / gp), light-source toggles, equip / unequip with stat updates.
-• Dice & Settings — d4 / d6 / d8 / d10 / d12 / d20 / d100 with modifiers, roll log, theme picker, server connection details.
+Everything that happens in the campaign — character sheets, dice rolls, GM whispers, plugin data, AI-generated tokens — lives on that server. Nothing routes through us. Nothing is sold. No third-party SDKs, no telemetry, no ads.
 
-WHY SELF-HOSTED
+📋 ONE TAB PER THING YOU NEED
 
-Your characters, dice rolls, plugin data, AI-generated tokens, and chat all live on the server you run. Nothing is sent to us. Nothing is sold. There is no account, no subscription, no telemetry, and no third-party SDK in the app.
+• Stats — HP, hit dice, AC, abilities, saves, every non-zero movement speed, equipped weapons with computed attack bonuses, active conditions, GM whispers, death saves when you're down.
 
-LAN / INTERNET
+• Skills — every skill in alphabetical order with proficiency, expertise, and Reliable Talent markers.
 
-The app talks only to the server URL you type in. Typical setups:
-  • Pure LAN — everyone on the same Wi-Fi, GM's IP address.
-  • mDNS — `forgeserver.local` from any device on the LAN.
-  • Tunnel — Cloudflare, Tailscale, or ngrok if you want remote players.
+• Spells — slot tracker (tap to spend, tap again to restore), per-spell quick-cast, full description sheet, prepared / always-prepared markers, Bardic Inspiration die spending.
 
-The app uses your device's local-network access to reach the GM's server on Wi-Fi. Cleartext (HTTP) is permitted only for loopback, mDNS .local hostnames, and the Android emulator's host loopback. Reaching a server over the open internet requires HTTPS.
+• Inventory — items, currency in copper / silver / gold / platinum, equipped state that auto-updates your AC and attack rolls, light-source toggles for torches and lanterns.
 
-PERMISSIONS WE ASK FOR
+• Dice & Settings — d4 / d6 / d8 / d10 / d12 / d20 / d100 with modifiers, recent-roll log, theme picker, and the exact .local URL the GM should hand to other players.
 
-• Internet — to talk to the GM's server.
+🔄 SESSION SWITCHER
+
+Every session you've joined gets remembered. Open the app on a new game night and it auto-rejoins the last campaign you were in; tap "Switch Session" in Settings to jump between two ongoing campaigns without retyping anything. The character you played last time, the server URL, the session code — all there, one tap to rejoin.
+
+📡 LAN, INTERNET, OR ANYWHERE IN BETWEEN
+
+The app talks only to the server URL you give it. Typical setups:
+
+• Wi-Fi at the table — connect via the .local hostname the GM's panel prints automatically. No IP-typing.
+• Internet over HTTPS — for remote players, point the app at the tunnel the GM has set up (Cloudflare, Tailscale, ngrok, your own reverse proxy).
+• Air-gapped game night — the server runs on the GM's laptop and never needs internet at all.
+
+The app follows Play Store cleartext rules: plain HTTP is permitted only to known-private destinations (.local hostnames, loopback, the Android emulator's host loopback). Public-internet servers must use HTTPS.
+
+🔒 PERMISSIONS WE ASK FOR
+
+• Internet — to reach the GM's server.
 • Notifications — for GM whispers and "your turn" alerts when the app is in the background.
 
-NO PERMISSIONS WE DON'T NEED
+We don't ask for storage, contacts, location, microphone, camera, or anything else the app doesn't actively use.
 
-We don't ask for storage, contacts, location, microphone, camera, or any other capability the app doesn't actively use.
-
-SUPPORTED DEVICES
+📱 SUPPORTED DEVICES
 
 • Phones and tablets running Android 8.0 (API 26) or newer.
-• Companion iOS / iPadOS / macOS app available separately.
-• Web client at any browser — players who don't want to install anything use that.
+• A companion app for iPhone, iPad, and Mac is on the App Store.
+• Any modern browser also works — the web client ships with every TableTop Forge server.
 
-SOURCE & ISSUES
+🐛 SOURCE & ISSUES
 
-Open source on GitHub at github.com/Sausagerolls/tabletop-forge. Bug reports and feature requests welcome.
+Open source on GitHub at github.com/Sausagerolls/tabletop-forge. Bug reports and feature requests welcome — that's how every release of this app has been built so far.
 
 NOT AFFILIATED
 
-TableTop Forge is an independent fan project. It is not affiliated with, endorsed by, or sponsored by Wizards of the Coast or Hasbro. The 5e SRD content the app references is licensed under Creative Commons Attribution 4.0 (CC-BY 4.0); everything else (UI, code, plugin system, server) is the work of Giant Mushroom Studio.
+TableTop Forge is an independent fan project from Giant Mushroom Studio. It is not affiliated with, endorsed by, or sponsored by Wizards of the Coast or Hasbro. The 5e SRD content the app references is licensed under Creative Commons Attribution 4.0 (CC-BY 4.0); everything else — the UI, the code, the plugin system, the server — is the work of one independent developer in Britain.
 ```
 
-(approx. 2700 / 4000)
+(approx. 3050 / 4000)
 
 ---
 

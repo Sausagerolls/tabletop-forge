@@ -9,6 +9,7 @@ const { imageSize } = require('image-size');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const db = require('./db');
+const mdns = require('./mdns');
 
 const mapsRouter = require('./routes/maps');
 const terrainRouter = require('./routes/terrain');
@@ -60,8 +61,13 @@ const SERVER_VERSION = (() => {
   try { return require('../package.json').version || 'unknown'; }
   catch { return 'unknown'; }
 })();
+// /api/discovery — what host names the server thinks it's reachable
+// at, surfaced to the GM Connection panel so it can render a player-
+// friendly `.local` URL alongside the LAN IP. Updated by mdns.js
+// after server.listen() — until that fires the response shows the
+// fallback host name based on os.hostname().
 app.get('/api/version', (_req, res) => {
-  res.json({ version: SERVER_VERSION });
+  res.json({ version: SERVER_VERSION, ...mdns.status() });
 });
 app.get('/api/sounds', (_req, res) => {
   try {
@@ -2730,6 +2736,13 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, async () => {
   console.log(`VTT backend running on :${PORT}`);
+  // Advertise via mDNS so player phones / iPads on the LAN can reach
+  // the server via tabletopforge.local instead of the GM having to
+  // dictate a numeric IP. Best-effort — see mdns.js for the failure
+  // modes (Docker Desktop on Mac/Win drops multicast, etc.). The
+  // advertised name shows up in /api/version so the GM panel can
+  // render it alongside the LAN IP.
+  mdns.startAdvertise(Number(PORT));
   try {
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS grid_color VARCHAR(50) DEFAULT 'rgba(0,0,0,0.35)'`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS grid_thickness FLOAT DEFAULT 0.7`);

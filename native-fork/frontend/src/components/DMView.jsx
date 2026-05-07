@@ -1801,12 +1801,22 @@ export default function DMView() {
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
   const [appVersion, setAppVersion] = useState(null);
+  // Discovery info — what the server thinks its `.local` host
+  // names are. mdnsName is the one the backend itself broadcasts
+  // (`tabletopforge.local`); mdnsHost is the host machine's own
+  // hostname (`<computer>.local`) which Mac/Windows users get via
+  // their OS even when the container's mDNS can't escape the VM.
+  // Surfaced in the Player Join Link block as a `.local` fallback
+  // alongside the IP-based URL.
+  const [mdnsInfo, setMdnsInfo] = useState({ mdnsName: null, mdnsHost: null });
   // Lightweight one-shot fetch — version doesn't change without a
   // server restart so we don't need to re-poll. Failure is silent so
   // the Session Info section just hides the version row.
   useEffect(() => {
     fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d && d.version) setAppVersion(d.version);
+      if (!d) return;
+      if (d.version) setAppVersion(d.version);
+      setMdnsInfo({ mdnsName: d.mdnsName || null, mdnsHost: d.mdnsHost || null });
     }).catch(() => {});
   }, []);
 
@@ -3330,6 +3340,17 @@ export default function DMView() {
   const mapUrl = session.map_image ? `/uploads/${session.map_image}` : null;
   const playerLink    = `${window.location.origin}/play?code=${code}`;
   const spectatorLink = `${window.location.origin}/spectate?code=${code}`;
+  // Build a `.local` variant of the player join link when the server
+  // reported one. Prefer the explicit mDNS-advertised name
+  // (`tabletopforge.local`) since it stays stable across host names;
+  // fall back to the host machine's own `.local` (Mac/Win Docker
+  // case where multicast is trapped in the VM but the host OS is
+  // already advertising itself). null when neither is available —
+  // the panel quietly hides the row in that case.
+  const localHostname = mdnsInfo.mdnsName || mdnsInfo.mdnsHost;
+  const playerLinkLocal = localHostname
+    ? `${window.location.protocol}//${localHostname}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '80')}/play?code=${code}`
+    : null;
   const visibleTokens = tokens;
 
   const combatSorted = [...tokens]
@@ -5330,6 +5351,29 @@ export default function DMView() {
                           Copy
                         </button>
                       </div>
+                      {/* `.local` variant — only when the server detected
+                          a usable mDNS name. The Android player app's
+                          Network Security Config blocks cleartext to
+                          arbitrary LAN IPs but allows it for `.local`
+                          hostnames, so this is the URL phone players
+                          should actually paste. Hidden when neither
+                          tabletopforge.local (advertised by the
+                          backend itself) nor the host's own .local
+                          (advertised by macOS / Bonjour-on-Windows /
+                          Avahi-on-Linux) is reachable — falls back
+                          silently to the IP-based link above. */}
+                      {playerLinkLocal && (
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="text-[10px] text-yellow-300/80 shrink-0 w-16">Phones:</div>
+                          <span className="text-xs text-gray-300 break-all flex-1 bg-gray-900 rounded p-2">{playerLinkLocal}</span>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(playerLinkLocal)}
+                            className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-gray-300 shrink-0"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Spectator / TV view — read-only window the GM

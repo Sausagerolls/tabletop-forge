@@ -24,6 +24,15 @@ services:
       DATABASE_URL: postgres://vtt:${DB_PASSWORD:-vttpassword}@db:5432/dndvtt
       PORT: 3001
       DM_MASTER_PASSWORD: ${DM_MASTER_PASSWORD:-dungeonmaster}
+      # Host-side `.local` hostname surfaced to the GM panel so phones
+      # on the LAN can connect via mDNS (Android NSC requires .local
+      # for cleartext). start.sh fills this in via `scutil` on macOS,
+      # `${COMPUTERNAME}.local` on Windows when Bonjour is installed,
+      # `hostname` + `.local` on Linux when Avahi is running. Empty
+      # by default — the backend's own bonjour-service publish handles
+      # the `tabletopforge.local` advertisement when multicast can
+      # escape the container (Linux + network_mode: host below).
+      EXTERNAL_LOCAL_HOST: ${EXTERNAL_LOCAL_HOST:-}
     volumes:
       - uploads:/app/uploads
       - ./sounds:/app/sounds
@@ -37,6 +46,14 @@ services:
         condition: service_healthy
     expose:
       - "3001"
+    # Linux-only opt-in: uncomment to share the host's network stack
+    # with the backend so the bonjour-service advertise actually
+    # reaches the LAN. Without this, the container's UDP 5353
+    # multicast stays inside the bridge network and players have to
+    # use the host's own `.local` name (set via EXTERNAL_LOCAL_HOST).
+    # No-op on Docker Desktop for Mac/Windows — the Linux VM still
+    # blocks multicast egress regardless of network_mode.
+    # network_mode: host
 
   frontend:
     build: ./frontend

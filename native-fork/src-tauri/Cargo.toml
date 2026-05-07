@@ -1,6 +1,6 @@
 [package]
 name = "tabletopforge"
-version = "1.9.16"
+version = "1.9.17"
 description = "TableTop Forge — native desktop wrapper"
 authors = ["Giant Mushroom Studio"]
 edition = "2021"

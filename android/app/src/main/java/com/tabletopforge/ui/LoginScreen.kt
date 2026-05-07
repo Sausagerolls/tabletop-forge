@@ -149,12 +149,28 @@ fun LoginScreen(store: SessionStore, socketHolder: SocketHolder) {
             ) {
                 FieldRow(
                     icon = Icons.Filled.Public,
-                    placeholder = "https://your-server",
+                    placeholder = "tabletopforge.local",
                     value = serverUrl,
                     onValueChange = { serverUrl = it },
                     keyboardType = KeyboardType.Uri,
                     capitalization = KeyboardCapitalization.None,
                     imeAction = ImeAction.Next,
+                )
+                // Tip: spell out the LAN-private URL formats the
+                // app's network-security-config actually accepts.
+                // Play Store NSC blocks cleartext to raw LAN IP
+                // literals (192.168.x.y) but allows .local mDNS,
+                // localhost, and HTTPS. The GM panel prints the
+                // exact URL — surface it here so the player has a
+                // pointer when they're staring at the field.
+                Text(
+                    "Server URL — read it from the GM's panel. " +
+                        "Use the .local form (e.g. tabletopforge.local) " +
+                        "or HTTPS for off-LAN.",
+                    color = Color.White.copy(alpha = 0.45f),
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp),
                 )
                 FieldRow(
                     icon = Icons.Filled.Key,
@@ -286,7 +302,24 @@ fun LoginScreen(store: SessionStore, socketHolder: SocketHolder) {
         LaunchedEffect(errNow) {
             if (!errNow.isNullOrBlank()) {
                 store.connecting.value = false
-                store.lastError.value = errNow
+                // Decorate the raw error with a hint when the user
+                // typed a LAN IP literal (192.168.x.y / 10.x.y.z /
+                // 172.16-31.x.y) — Play Store NSC blocks cleartext
+                // to those, so the connection bounces with a
+                // non-obvious "no route to host" / "trust anchor"
+                // / "cleartext not permitted" error. Pointing them
+                // at the .local form is the difference between a
+                // returning user giving up and them looking at the
+                // GM's panel for the right URL.
+                val typed = serverUrl.trim()
+                val looksLikeLanIp = Regex(
+                    "^(https?://)?(10\\.\\d|172\\.(1[6-9]|2\\d|3[01])\\.|192\\.168\\.).*"
+                ).matches(typed)
+                store.lastError.value = if (looksLikeLanIp) {
+                    "$errNow\n\nTip: this build of the app blocks plain HTTP to LAN " +
+                    "IP literals. Try the .local URL the GM panel prints (e.g. " +
+                    "tabletopforge.local) or an HTTPS endpoint."
+                } else errNow
             }
         }
     }

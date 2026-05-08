@@ -88,6 +88,16 @@ jobs:
         working-directory: native-fork/frontend
         run: npm install
 
+      # Tauri's resources glob bundles `../backend/node_modules/**/*`
+      # so the standalone .app/.exe/.AppImage ships its Express +
+      # Socket.IO + plugin runtime deps without expecting the user
+      # to have Node installed. The build fails fast with
+      # `glob pattern path not found` if this dir is missing, so
+      # install before invoking tauri build.
+      - name: Install native-fork backend dependencies
+        working-directory: native-fork/backend
+        run: npm install --omit=dev
+
       # The existing tauri:build script does the right thing on
       # every host: fetch.sh grabs the host's Node sidecar by
       # default, the frontend builds into native-fork/frontend/dist,

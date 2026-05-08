@@ -1,0 +1,125 @@
+name: Native build (Windows + Linux)
+
+# Runs on every tag push that looks like a release (v1.x.y), and is
+# also manually triggerable from the Actions tab so you can dry-run
+# without cutting a tag. macOS is built locally on the maintainer's
+# Apple Silicon machine and is intentionally NOT in this matrix —
+# add a row here if/when CI starts owning the Mac build too.
+#
+# What each runner produces (all uploaded as workflow artifacts):
+#   windows-latest → bundle/{nsis,msi}/*.{exe,msi}
+#   ubuntu-22.04   → bundle/{appimage,deb,rpm}/*.{AppImage,deb,rpm}
+#
+# These artifacts are the inputs to the Steam depot upload step
+# (steamcmd run_app_build, set up separately) — Steam wants the
+# unpacked application files, but the .AppImage and Windows .msi
+# also work as standalone direct-distribution downloads.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    strategy:
+      # Don't cancel the other platform's build if one fails —
+      # debugging is easier when both logs are available.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+          - os: ubuntu-22.04
+            label: linux-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri 2.x requires Rust stable. The runner's host triple is
+      # already the one we want (x86_64-pc-windows-msvc /
+      # x86_64-unknown-linux-gnu) so no `targets:` needed.
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The native-fork's package.json scripts use POSIX shell syntax
+      # (`rm -rf`, `&&` chains, bash one-liners). On Windows runners
+      # npm defaults to invoking scripts through cmd.exe, which chokes
+      # on `rm -rf`. Pointing npm at Git Bash (pre-installed on every
+      # windows-latest runner) lets the existing scripts run unchanged.
+      - name: Use bash for npm scripts on Windows
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: npm config set script-shell "$(which bash)"
+
+      # Linux-only system deps for the Tauri webview + bundling.
+      # webkit2gtk-4.1 is the version Tauri 2 ships against;
+      # patchelf is needed to set the rpath on the bundled binary,
+      # appindicator + rsvg power the system tray + SVG icon paths.
+      - name: Install Linux Tauri dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential
+
+      # Cache Cargo's target/ + ~/.cargo/registry between runs.
+      # First run is ~12 min cold; subsequent runs land at ~3 min.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'native-fork/src-tauri -> target'
+
+      - name: Install native-fork dependencies
+        working-directory: native-fork
+        run: npm install
+
+      - name: Install native-fork frontend dependencies
+        working-directory: native-fork/frontend
+        run: npm install
+
+      # The existing tauri:build script does the right thing on
+      # every host: fetch.sh grabs the host's Node sidecar by
+      # default, the frontend builds into native-fork/frontend/dist,
+      # then `tauri build` produces the host's native bundle.
+      - name: Build (Node sidecar fetch + frontend dist + Tauri bundle)
+        working-directory: native-fork
+        run: npm run tauri:build
+
+      # Collect every bundle Tauri produced into one flat directory
+      # so the upload step can grab them as a single artifact.
+      # Different targets land in different bundle/ subfolders:
+      #   Windows: bundle/nsis/*.exe + bundle/msi/*.msi
+      #   Linux:   bundle/appimage/*.AppImage + bundle/deb/*.deb
+      #            (+ rpm/ if the runner has rpmbuild — usually not)
+      - name: Collect bundle artifacts
+        shell: bash
+        run: |
+          set -e
+          mkdir -p dist-out
+          find native-fork/src-tauri/target/release/bundle -type f \( \
+            -name '*.msi' -o \
+            -name '*.exe' -o \
+            -name '*.AppImage' -o \
+            -name '*.deb' -o \
+            -name '*.rpm' \
+          \) -print -exec cp {} dist-out/ \;
+          echo "--- collected ---"
+          ls -la dist-out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tabletopforge-${{ matrix.label }}
+          path: dist-out/
+          if-no-files-found: error
+          retention-days: 30

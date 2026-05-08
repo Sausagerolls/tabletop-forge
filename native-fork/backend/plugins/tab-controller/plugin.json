@@ -6,5 +6,6 @@
   "author": "TableTop Forge",
   "requires": [],
   "frontend_entry": "client.js",
-  "extension_points": ["panel_tab_extension", "panel_tab_hidden", "session_section_hidden"]
+  "extension_points": ["panel_tab_extension", "panel_tab_hidden", "session_section_hidden"],
+  "builtin": true
 }

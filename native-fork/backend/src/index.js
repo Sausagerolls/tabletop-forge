@@ -432,12 +432,14 @@ db.query(`
 const sessionUsers = {}; // sessionCode -> Map<socketId, {name, role}>
 const sessionTemplates = {}; // sessionCode -> Array<{ id, type, points, color, label }> — GM-only
 const sessionUserColors = {}; // sessionCode -> { name: color }
-// Per-session, per-map ambient state. When the GM starts an ambient
-// loop on a map, we remember the latest filename/volume here so a
-// player who later switches to that map (Send-to, auto-follow, GM map
-// change) can be auto-synced — see set_player_active_map_id below.
+// Per-session, per-map ambient state. The GM can layer multiple
+// ambient loops on a map ("Forest" + "Bird Song" + "Wind Blowing")
+// to build a scene; each map keeps an array of currently-playing
+// tracks with their own volume. A player who later switches to that
+// map (Send-to, auto-follow, GM map change) gets every track
+// auto-replayed in sync — see set_player_active_map_id below.
 // Stop clears every map for the session (a "stop everything" button).
-const sessionAmbients = {}; // sessionCode -> { [mapId]: { filename, volume } }
+const sessionAmbients = {}; // sessionCode -> { [mapId]: Array<{ filename, volume }> }
 
 // Pick a random tile inside a spawn area, avoiding tiles already
 // occupied by existing tokens. The area is either a polygon (when
@@ -2260,22 +2262,47 @@ io.on('connection', (socket) => {
       if (s?.data?.role === 'dm') s.emit('session_ambients_changed', state);
     }
   }
+  // Additive: starts a track if not already playing on the current
+  // map, OR live-updates the volume of a track already in the layer.
+  // Multiple tracks coexist on the same map.
   socket.on('play_ambient', async ({ filename, volume }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
-    if (!sessionCode) return;
+    if (!sessionCode || !filename) return;
     const mapId = await dmCurrentMapId();
-    const vol = volume ?? 0.5;
+    const vol = Math.max(0, Math.min(1, Number(volume ?? 0.5)));
     if (mapId != null) {
       if (!sessionAmbients[sessionCode]) sessionAmbients[sessionCode] = {};
-      sessionAmbients[sessionCode][mapId] = { filename, volume: vol };
+      const list = sessionAmbients[sessionCode][mapId] || [];
+      const existing = list.find(t => t.filename === filename);
+      if (existing) existing.volume = vol;
+      else list.push({ filename, volume: vol });
+      sessionAmbients[sessionCode][mapId] = list;
     }
     emitToMap(sessionCode, mapId, 'play_ambient', { filename, volume: vol });
     broadcastAmbientState(sessionCode);
   });
 
-  // Stop ambient on a specific map (GM only). The targeted map's
-  // audience hears the stop; other maps' loops keep playing.
+  // Stop ONE specific ambient track on the GM's current map. Other
+  // tracks in the same layer keep playing.
+  socket.on('stop_ambient_track', async ({ filename }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode || !filename) return;
+    const mapId = await dmCurrentMapId();
+    if (mapId == null) return;
+    const list = sessionAmbients[sessionCode]?.[mapId];
+    if (!list) return;
+    const filtered = list.filter(t => t.filename !== filename);
+    if (filtered.length === 0) delete sessionAmbients[sessionCode][mapId];
+    else sessionAmbients[sessionCode][mapId] = filtered;
+    emitToMap(sessionCode, mapId, 'stop_ambient_track', { filename });
+    broadcastAmbientState(sessionCode);
+  });
+
+  // Stop every ambient track on a specific map (GM only). The
+  // targeted map's audience hears the stop; other maps' layers keep
+  // playing.
   socket.on('stop_ambient_on_map', ({ mapId }) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
@@ -2290,7 +2317,7 @@ io.on('connection', (socket) => {
     if (socket.data.role !== 'dm') return;
     const sessionCode = socket.data.sessionCode;
     if (!sessionCode) return;
-    // Stop everything across the session.
+    // Stop everything across the session — every map, every track.
     delete sessionAmbients[sessionCode];
     io.to(sessionCode).emit('stop_ambient');
     broadcastAmbientState(sessionCode);
@@ -2306,14 +2333,15 @@ io.on('connection', (socket) => {
     const id = mapId == null ? null : Number(mapId);
     if (socket.data.activeMapId === id) return;
     socket.data.activeMapId = id;
-    // Always stop any locally-playing ambient — if the client wasn't
-    // playing anything the handler is a no-op. Then start the stored
-    // ambient for the new map (if any) so a player joining mid-loop
-    // picks up where the rest of that map's audience already is.
+    // Always stop any locally-playing ambients first — if the client
+    // wasn't playing anything the handler is a no-op. Then start every
+    // stored track on the new map (in original layer order) so a player
+    // joining mid-loop picks up the full scene the rest of the map's
+    // audience already has running.
     socket.emit('stop_ambient');
-    const target = id != null ? sessionAmbients[sessionCode]?.[id] : null;
-    if (target) {
-      socket.emit('play_ambient', { filename: target.filename, volume: target.volume, mapId: id });
+    const tracks = id != null ? (sessionAmbients[sessionCode]?.[id] || []) : [];
+    for (const t of tracks) {
+      socket.emit('play_ambient', { filename: t.filename, volume: t.volume, mapId: id });
     }
   });
 

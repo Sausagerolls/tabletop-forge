@@ -2903,7 +2903,7 @@ dependencies = [
 
 [[package]]
 name = "tabletopforge"
-version = "1.9.13"
+version = "1.9.17"
 dependencies = [
  "serde",
  "serde_json",

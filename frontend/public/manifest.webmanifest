@@ -1,6 +1,6 @@
 {
   "name": "TableTop Forge",
-  "short_name": "Forge",
+  "short_name": "TableTop Forge",
   "description": "D&D 5e VTT — maps, tokens, fog of war, spell library, plugins.",
   "start_url": "/",
   "scope": "/",

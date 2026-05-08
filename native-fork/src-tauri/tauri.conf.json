@@ -41,7 +41,10 @@
       "icons/icon.png"
     ],
     "resources": [
-      "../backend/**/*",
+      "../backend/src/**/*",
+      "../backend/node_modules/**/*",
+      "../backend/package.json",
+      "../backend/plugins/elemental-templates/**/*",
       "../frontend/dist/**/*",
       "../init.sql",
       "../sounds/**/*",

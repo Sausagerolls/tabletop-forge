@@ -1,4 +1,4 @@
-# App Store listing copy — TableTop Forge (companion app)
+# App Store listing copy — TableTop Forge Companion
 
 Paste these blocks straight into App Store Connect → 1.9.17 →
 **Edit Localization** → English (U.K.). Field-by-field, top to
@@ -22,10 +22,10 @@ Pre-checked against:
 ## App Name *(public, on the listing)*
 
 ```
-TableTop Forge
+TableTop Forge Companion
 ```
 
-(14 / 30)
+(24 / 30)
 
 ## Subtitle *(below the name on the listing)*
 
@@ -63,7 +63,7 @@ are discovery hints, not display copy.
 ## Description *(≤ 4000 chars)*
 
 ```
-TableTop Forge is the player companion for self-hosted virtual tabletop sessions, built around the 5e SRD ruleset (CC-BY 4.0). Connect from your iPhone, iPad, or Mac to the GM's TableTop Forge server, then run your character sheet, manage spells and inventory, roll dice, and stay in sync with the table — without crowding the GM's laptop or hogging the projector.
+TableTop Forge Companion is the player-facing app for self-hosted TableTop Forge virtual tabletop sessions, built around the 5e SRD ruleset (CC-BY 4.0). Connect from your iPhone, iPad, or Mac to the GM's TableTop Forge server, then run your character sheet, manage spells and inventory, roll dice, and stay in sync with the table — without crowding the GM's laptop or hogging the projector.
 
 REQUIRES A TABLETOP FORGE SERVER
 
@@ -115,7 +115,7 @@ Open source on GitHub at github.com/Sausagerolls/tabletop-forge. Bug reports and
 
 NOT AFFILIATED
 
-TableTop Forge is an independent fan project. It is not affiliated with, endorsed by, or sponsored by Wizards of the Coast or Hasbro. The 5e SRD content the app references is licensed under Creative Commons Attribution 4.0 (CC-BY 4.0); everything else (UI, code, plugin system, server) is the work of Giant Mushroom Studio.
+TableTop Forge Companion and the TableTop Forge server it connects to are an independent fan project by Giant Mushroom Studio. They are not affiliated with, endorsed by, or sponsored by Wizards of the Coast, Hasbro, or any other tabletop or virtual-tabletop publisher. The 5e SRD content the app references is licensed under Creative Commons Attribution 4.0 (CC-BY 4.0); everything else (UI, code, plugin system, server) is the work of Giant Mushroom Studio.
 ```
 
 (approx. 2900 / 4000)
@@ -159,7 +159,7 @@ this in App Store Connect → Version → App Review Information →
 Notes:
 
 ```
-TableTop Forge is a self-hosted virtual tabletop. The user voluntarily runs a TableTop Forge server on their own machine (laptop, desktop, home server) — that server is a separate free download from forge.giantmushroom.studio. This iOS / iPadOS / Mac Catalyst app is the player's companion: it connects to that server URL the user types into the login screen and runs the character sheet UI.
+TableTop Forge Companion is the player-facing iOS / iPadOS / Mac Catalyst app for the TableTop Forge self-hosted virtual tabletop. The user voluntarily runs a TableTop Forge server on their own machine (laptop, desktop, home server) — that server is a separate free download from forge.giantmushroom.studio. This app connects to that server URL the user types into the login screen and runs the character sheet UI.
 
 The app uses the local-network permission to find the GM's server on the same Wi-Fi (typical setup at a tabletop game). It can also reach a server over the public internet via HTTPS if the GM has set up a tunnel. No data is sent anywhere except to the server URL the user has provided.
 
@@ -183,7 +183,7 @@ trying to fit credentials into the form fields.
       Replace the `App Store (iOS / macOS) — Coming Soon` pill with
       a real link. The URL is at App Store Connect → Distribution →
       "View on App Store" — looks like
-      `https://apps.apple.com/gb/app/tabletop-forge/id<numeric-id>`.
+      `https://apps.apple.com/gb/app/tabletop-forge-companion/id<numeric-id>`.
 - [ ] Update `website/privacy.html` to reference the live App Store
       listing in section 3.
 - [ ] Tell players. Each one already has the

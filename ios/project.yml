@@ -1,6 +1,6 @@
 name: TableTopForge
 options:
-  bundleIdPrefix: com.jakewatts
+  bundleIdPrefix: com.giantmushroom
   createIntermediateGroups: true
   deploymentTarget:
     iOS: "17.0"
@@ -70,7 +70,7 @@ targets:
         # iOS 14+ requires a privacy string the moment an app touches
         # the LAN. The system shows this verbatim in the permission
         # alert, so phrase it from the user's perspective.
-        NSLocalNetworkUsageDescription: "TableTop Forge needs local-network access to talk to your VTT server (the laptop running the game) so your character sheet and dice rolls stay in sync with the table."
+        NSLocalNetworkUsageDescription: "TableTop Forge Companion needs local-network access to talk to your TableTop Forge server (the laptop running the game) so your character sheet and dice rolls stay in sync with the table."
         # An empty UILaunchScreen dict opts the app into modern
         # full-screen rendering on every iPhone/iPad frame size.
         # Without this iOS falls back to legacy letterboxing — what the
@@ -96,7 +96,13 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         # Display name on the home screen.
-        CFBundleDisplayName: TT Forge
+        # iOS Springboard truncates icon labels at ~11–12 chars, so
+        # the full "TableTop Forge Companion" gets cut to "TableTop
+        # Fo…" under the icon. The App Store Connect listing name
+        # ("TableTop Forge Companion") drives search + discovery and
+        # stays untouched — CFBundleDisplayName is the on-device
+        # label only and can diverge.
+        CFBundleDisplayName: TT Companion
         # Mac App Store mandate. Apple Connect rejects the upload
         # without this — `LSApplicationCategoryType` slots the app
         # into the Mac App Store's primary category dropdown. UTI
@@ -118,7 +124,7 @@ targets:
         # App Store Connect — keeping them here means a fresh
         # xcodegen run preserves whatever the latest release is.
         CFBundleShortVersionString: "1.9.17"
-        CFBundleVersion: "3"
+        CFBundleVersion: "4"
     settings:
       base:
         # DEVELOPMENT_TEAM is intentionally NOT set here — xcodegen
@@ -127,7 +133,7 @@ targets:
         # the team once in Xcode and it'll stick (it lives in your
         # xcuserdata for Personal Team signing).
         CODE_SIGN_STYLE: Automatic
-        PRODUCT_BUNDLE_IDENTIFIER: com.jakewatts.tabletopforge
+        PRODUCT_BUNDLE_IDENTIFIER: com.giantmushroom.tabletopforgecomp
         TARGETED_DEVICE_FAMILY: "1,2"  # iPhone + iPad
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
@@ -145,4 +151,4 @@ targets:
         # per-build in Xcode → Signing & Capabilities → Mac Catalyst
         # row if you ever want to compare both looks.
         MARKETING_VERSION: "1.9.17"
-        CURRENT_PROJECT_VERSION: "3"
+        CURRENT_PROJECT_VERSION: "4"

@@ -120,7 +120,7 @@ struct LoginView: View {
                         .stroke(Color.yellow.opacity(0.45), lineWidth: 1.2)
                 )
                 .shadow(color: Color.yellow.opacity(0.18), radius: 18, y: 4)
-            Text("TableTop Forge")
+            Text("TableTop Forge Companion")
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)

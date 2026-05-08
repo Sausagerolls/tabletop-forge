@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>TT Forge</string>
+	<string>TT Companion</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -21,7 +21,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.9.17</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>4</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSApplicationCategoryType</key>
@@ -32,7 +32,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>TableTop Forge needs local-network access to talk to your VTT server (the laptop running the game) so your character sheet and dice rolls stay in sync with the table.</string>
+	<string>TableTop Forge Companion needs local-network access to talk to your TableTop Forge server (the laptop running the game) so your character sheet and dice rolls stay in sync with the table.</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

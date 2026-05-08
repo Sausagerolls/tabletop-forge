@@ -5,7 +5,7 @@ bundle id, provisioning profile, and App Store Connect record:
 
 | Product | Bundle ID | Source | Apple platform |
 | --- | --- | --- | --- |
-| **TableTop Forge** (player companion) | `com.jakewatts.tabletopforge` | `ios/` | iPhone + iPad + Mac Catalyst |
+| **TableTop Forge Companion** (player app) | `com.giantmushroom.tabletopforgecomp` | `ios/` | iPhone + iPad + Mac Catalyst |
 | **TableTop Forge Server** (standalone) | `studio.giantmushroom.tabletopforge` | `native-fork/` | Mac (Catalyst-free) — direct `.dmg` and Mac App Store |
 
 Team ID for both: `J4UJD4Z33J` (paid Developer Program).
@@ -110,10 +110,11 @@ to paste it.
 Both apps need an App Store Connect record. Create them from
 <https://appstoreconnect.apple.com/apps> → `+` → New App.
 
-### TableTop Forge (player companion)
+### TableTop Forge Companion (player app)
 - **Platforms**: iOS + macOS (Mac Catalyst)
-- **Bundle ID**: `com.jakewatts.tabletopforge` (already registered
-  on Developer → Identifiers; pick it from the dropdown)
+- **Bundle ID**: `com.giantmushroom.tabletopforgecomp` (register on
+  Developer → Identifiers first if it's not there, then pick it
+  from the dropdown)
 - **SKU**: `tabletopforge-companion`
 - **Primary language**: English (U.K.)
 

@@ -311,7 +311,7 @@
 				CODE_SIGN_ENTITLEMENTS = TableTopForge/TableTopForge.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				INFOPLIST_FILE = TableTopForge/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -320,7 +320,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.9.17;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jakewatts.tabletopforge;
+				PRODUCT_BUNDLE_IDENTIFIER = com.giantmushroom.tabletopforgecomp;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -393,7 +393,7 @@
 				CODE_SIGN_ENTITLEMENTS = TableTopForge/TableTopForge.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				INFOPLIST_FILE = TableTopForge/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -402,7 +402,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.9.17;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jakewatts.tabletopforge;
+				PRODUCT_BUNDLE_IDENTIFIER = com.giantmushroom.tabletopforgecomp;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;

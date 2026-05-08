@@ -26,7 +26,7 @@ struct TableTopForgeApp: App {
 ///
 /// Two reasons:
 ///
-/// 1. The bundle display name ("TT Forge") was rendering as the
+/// 1. The bundle display name ("TT Companion") was rendering as the
 ///    Mac window title. The in-app tab bar already names every
 ///    screen — the window-level title is redundant chrome that
 ///    just clutters the top of the window.

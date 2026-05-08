@@ -1,7 +1,7 @@
-# TableTop Forge — iOS / iPadOS / Mac Catalyst submission checklist
+# TableTop Forge Companion — iOS / iPadOS / Mac Catalyst submission checklist
 
-Bundle ID: `com.jakewatts.tabletopforge`  ·  Team ID: `J4UJD4Z33J`
-App Store record name: `TableTop Forge`
+Bundle ID: `com.giantmushroom.tabletopforgecomp`  ·  Team ID: `J4UJD4Z33J`
+App Store record name: `TableTop Forge Companion`
 
 This is the single-app companion. The standalone Tauri server
 (`studio.giantmushroom.tabletopforge`) is a separate submission
@@ -34,7 +34,7 @@ Tick each box as you go.
   - <https://developer.apple.com/account/resources/identifiers> → `+`.
   - Pick **App IDs** → Continue → **App** → Continue.
   - Description: `TableTop Forge Companion`.
-  - Bundle ID: **Explicit** → `com.jakewatts.tabletopforge`.
+  - Bundle ID: **Explicit** → `com.giantmushroom.tabletopforgecomp`.
   - Capabilities: leave everything off (we don't use Push, iCloud,
     HealthKit, etc.).
   - Continue → Register.
@@ -43,10 +43,10 @@ Tick each box as you go.
   - <https://appstoreconnect.apple.com/apps> → `+` → New App.
   - Platforms: tick **iOS** AND **macOS** (the Mac Catalyst build
     rides on the iOS record — single submission, three platforms).
-  - Name: `TableTop Forge`.
+  - Name: `TableTop Forge Companion`.
   - Primary Language: `English (U.K.)`.
-  - Bundle ID: pick `com.jakewatts.tabletopforge` from the dropdown
-    (it appears once you finished the previous step).
+  - Bundle ID: pick `com.giantmushroom.tabletopforgecomp` from the
+    dropdown (it appears once you finished the previous step).
   - SKU: `tabletopforge-companion`.
   - User Access: Full Access.
   - Create.

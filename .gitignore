@@ -43,6 +43,15 @@ generated-images/
 # and IS tracked.
 /releases/
 
+# .dmg builds of the native fork are NOT committed to git — they're
+# 75+ MB and bump the repo past GitHub's recommended 50 MB / 100 MB
+# hard file limit. They still ship via the rsync step of
+# deploy_release.sh (which copies website/ wholesale to the marketing
+# host) and are downloaded directly from forge.giantmushroom.studio.
+# GitHub Releases attach only the .zip; the .dmg link on the website
+# points at the rsync'd copy on the host.
+website/releases/*.dmg
+
 # Claude / agent local state
 .claude/
 

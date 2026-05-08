@@ -1951,13 +1951,18 @@ export default function DMView() {
   const [soundFiles, setSoundFiles] = useState([]);
   const [soundVolume, setSoundVolume] = useState(1.0);
   const [ambientFiles, setAmbientFiles] = useState([]);
-  // Server-mirrored snapshot of which ambient is playing on which map
-  // across the whole session. Keyed by mapId → { filename, volume }.
-  // Lets the GM see and control loops that are running on maps they
-  // aren't currently viewing.
+  // Server-mirrored snapshot of which ambient tracks are layered on
+  // which map across the whole session. Keyed by mapId →
+  // Array<{ filename, volume }>. Multiple tracks coexist per map so
+  // the GM can build scenes by stacking loops (Forest + Bird Song +
+  // Wind Blowing). The GM panel reads from this to render running
+  // tracks + per-track volume sliders even for maps the GM isn't
+  // currently viewing.
   const [runningAmbients, setRunningAmbients] = useState({});
+  // Default starting volume for newly-added tracks. After a track is
+  // playing, its own per-track slider in the Currently Playing list
+  // takes over — this is just the initial level for the next "+ play".
   const [ambientVolume, setAmbientVolume] = useState(0.5);
-  const [currentAmbient, setCurrentAmbient] = useState(null);
   const [soundUploading, setSoundUploading] = useState(false);
   const [uploadMainType, setUploadMainType] = useState('oneshot');
   const [uploadSubcat, setUploadSubcat] = useState('combat');
@@ -2107,8 +2112,13 @@ export default function DMView() {
   const rollIdRef = useRef(0);
   const activeSoundsRef = useRef([]);
   const audioCtxRef    = useRef(null);
-  const ambientSrcRef  = useRef(null);
-  const ambientGainRef = useRef(null);
+  // Layered ambient playback. Same model as the player view — a Map
+  // keyed by filename of currently-playing AudioBufferSourceNode +
+  // GainNode pairs, plus a "wanted" set so a stop issued during the
+  // async fetch→decode pipeline aborts the start. See PlayerView.jsx
+  // for the canonical comments on the design.
+  const ambientTracksRef  = useRef(new Map());
+  const wantedAmbientsRef = useRef(new Set());
 
   const [statBlockCreature, setStatBlockCreature] = useState(null);
   const [statBlockTab, setStatBlockTab] = useState('stats');
@@ -2683,34 +2693,37 @@ export default function DMView() {
 
     socket.on('play_ambient', ({ filename, volume }) => {
       const ctx = audioCtxRef.current;
-      if (!ctx) return;
-      const vol  = Math.max(0, Math.min(1, volume ?? 0.5));
-      const FADE = 2;
-      if (ambientSrcRef.current && ambientGainRef.current) {
-        const oldGain = ambientGainRef.current;
-        const oldSrc  = ambientSrcRef.current;
-        ambientSrcRef.current  = null;
-        ambientGainRef.current = null;
-        oldGain.gain.setValueAtTime(oldGain.gain.value, ctx.currentTime);
-        oldGain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
-        oldSrc.stop(ctx.currentTime + FADE);
+      if (!ctx || !filename) return;
+      const vol = Math.max(0, Math.min(1, volume ?? 0.5));
+
+      const existing = ambientTracksRef.current.get(filename);
+      if (existing) {
+        const now = ctx.currentTime;
+        existing.gain.gain.cancelScheduledValues(now);
+        existing.gain.gain.setValueAtTime(existing.gain.gain.value, now);
+        existing.gain.gain.linearRampToValueAtTime(vol, now + 0.2);
+        return;
       }
+
+      wantedAmbientsRef.current.add(filename);
+
       ctx.resume()
         .then(() => fetch(`/sounds/ambient/${encodeURIComponent(filename)}`))
-        .then(r => r.arrayBuffer())
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
         .then(buf => ctx.decodeAudioData(buf))
         .then(decoded => {
+          if (!wantedAmbientsRef.current.has(filename)) return;
+          if (ambientTracksRef.current.has(filename)) return;
           const src  = ctx.createBufferSource();
           const gain = ctx.createGain();
           src.buffer = decoded;
           src.loop   = true;
           gain.gain.setValueAtTime(0, ctx.currentTime);
-          gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + FADE);
+          gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 2);
           src.connect(gain);
           gain.connect(ctx.destination);
           src.start(0);
-          ambientSrcRef.current  = src;
-          ambientGainRef.current = gain;
+          ambientTracksRef.current.set(filename, { src, gain });
         })
         .catch(console.error);
     });
@@ -2719,17 +2732,33 @@ export default function DMView() {
       setRunningAmbients(state || {});
     });
 
+    socket.on('stop_ambient_track', ({ filename }) => {
+      const ctx = audioCtxRef.current;
+      if (!ctx || !filename) return;
+      wantedAmbientsRef.current.delete(filename);
+      const track = ambientTracksRef.current.get(filename);
+      if (!track) return;
+      ambientTracksRef.current.delete(filename);
+      const FADE = 2;
+      track.gain.gain.cancelScheduledValues(ctx.currentTime);
+      track.gain.gain.setValueAtTime(track.gain.gain.value, ctx.currentTime);
+      track.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
+      try { track.src.stop(ctx.currentTime + FADE); } catch (_) {}
+    });
+
     socket.on('stop_ambient', () => {
       const ctx = audioCtxRef.current;
-      if (!ctx || !ambientSrcRef.current) return;
+      wantedAmbientsRef.current.clear();
+      if (!ctx) { ambientTracksRef.current.clear(); return; }
       const FADE = 2;
-      const gain = ambientGainRef.current;
-      const src  = ambientSrcRef.current;
-      ambientSrcRef.current  = null;
-      ambientGainRef.current = null;
-      gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
-      src.stop(ctx.currentTime + FADE);
+      const tracks = Array.from(ambientTracksRef.current.values());
+      ambientTracksRef.current.clear();
+      for (const t of tracks) {
+        t.gain.gain.cancelScheduledValues(ctx.currentTime);
+        t.gain.gain.setValueAtTime(t.gain.gain.value, ctx.currentTime);
+        t.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
+        try { t.src.stop(ctx.currentTime + FADE); } catch (_) {}
+      }
     });
 
     socket.on('fow_changed',           ({ enabled })            => setFowEnabled(enabled));
@@ -2963,21 +2992,27 @@ export default function DMView() {
     socket.emit('stop_sounds');
   }
 
+  // Toggle a single ambient track in the layer on the GM's current
+  // map. Reads the live server snapshot (runningAmbients) so the
+  // toggle reflects whatever's actually playing — staying correct
+  // even after a map switch auto-resyncs us into a different scene.
   function handlePlayAmbient(filename) {
-    // Derive "currently playing on my map" from the server snapshot
-    // so the play list highlights the right row even after a map
-    // switch picks up a different track via auto-resync.
-    const onThisMap = runningAmbients[session?.map_id]?.filename;
-    if (onThisMap === filename) {
-      handleStopAmbient();
+    const tracksOnThisMap = runningAmbients[session?.map_id] || [];
+    if (tracksOnThisMap.some(t => t.filename === filename)) {
+      socket.emit('stop_ambient_track', { filename });
       return;
     }
-    setCurrentAmbient(filename);
     socket.emit('play_ambient', { filename, volume: ambientVolume });
   }
 
+  // Live volume drag for one track in the current map's layer.
+  // Server treats play_ambient as upsert (filename already in the
+  // layer = volume update, with a short ramp to avoid clicks).
+  function handleSetAmbientTrackVolume(filename, volume) {
+    socket.emit('play_ambient', { filename, volume });
+  }
+
   function handleStopAmbient() {
-    setCurrentAmbient(null);
     socket.emit('stop_ambient');
   }
 
@@ -3022,7 +3057,11 @@ export default function DMView() {
     if (isAmbient) {
       const fname = relpath.split('/').pop();
       setAmbientFiles(prev => prev.filter(f => f !== fname));
-      if (currentAmbient === fname) handleStopAmbient();
+      // If this track was layered anywhere in the running scene, pull
+      // it out so we're not trying to play a file we just deleted.
+      const playingAnywhere = Object.values(runningAmbients || {})
+        .some(list => Array.isArray(list) && list.some(t => t.filename === fname));
+      if (playingAnywhere) socket.emit('stop_ambient_track', { filename: fname });
     } else {
       setSoundFiles(prev => prev.filter(f => f !== relpath));
     }
@@ -3910,17 +3949,28 @@ export default function DMView() {
                     )}
                   </>
                 ) : (() => {
-                  const playingOnThisMap = runningAmbients[session?.map_id]?.filename || null;
-                  const runningEntries = Object.entries(runningAmbients || {})
-                    .filter(([, v]) => v && v.filename);
+                  // Build per-map lookups for the currently-playing list
+                  // and the picker's "is this layered here?" check.
+                  const tracksOnThisMap = runningAmbients[session?.map_id] || [];
+                  const playingFilenamesOnThisMap = new Set(tracksOnThisMap.map(t => t.filename));
+                  // Flatten { mapId: tracks[] } into one row per track
+                  // so each layer in every map gets its own slider.
+                  const runningRows = Object.entries(runningAmbients || {})
+                    .flatMap(([mapIdStr, list]) =>
+                      Array.isArray(list)
+                        ? list.map(t => ({ mapIdStr, mid: Number(mapIdStr), filename: t.filename, volume: t.volume }))
+                        : []
+                    );
+                  const totalLayers = runningRows.length;
                   return (
                   <>
                     <div className="flex items-center gap-2 mb-3">
-                      <span className="text-xs text-gray-400 w-14 shrink-0">Volume</span>
+                      <span className="text-xs text-gray-400 w-14 shrink-0">New track</span>
                       <input
                         type="range" min={0} max={1} step={0.05} value={ambientVolume}
                         onChange={e => setAmbientVolume(Number(e.target.value))}
                         className="flex-1 accent-purple-500"
+                        title="Default starting volume for the next track you add to the scene"
                       />
                       <span className="text-xs text-gray-300 w-8 text-right font-mono">
                         {Math.round(ambientVolume * 100)}%
@@ -3934,32 +3984,48 @@ export default function DMView() {
                       ⏹ Stop All Ambience
                     </button>
 
-                    {runningEntries.length > 0 && (
+                    {runningRows.length > 0 && (
                       <div className="mb-3">
-                        <div className="text-[11px] uppercase tracking-wider text-gray-500 mb-1.5 px-1">
-                          Currently Playing ({runningEntries.length})
+                        <div className="flex items-center justify-between mb-1.5 px-1">
+                          <div className="text-[11px] uppercase tracking-wider text-gray-500">
+                            Currently Playing ({totalLayers})
+                          </div>
                         </div>
                         <div className="flex flex-col gap-1">
-                          {runningEntries.map(([mapIdStr, info]) => {
-                            const mid = Number(mapIdStr);
+                          {runningRows.map(({ mapIdStr, mid, filename, volume }) => {
                             const m = maps.find(mm => mm.id === mid);
                             const mapLabel = m?.name || `Map #${mid}`;
                             const onThisMap = mid === session?.map_id;
                             return (
                               <div
-                                key={mapIdStr}
-                                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border ${onThisMap ? 'bg-purple-900/40 border-purple-600' : 'bg-gray-800 border-gray-700'}`}
+                                key={`${mapIdStr}::${filename}`}
+                                className={`flex flex-col gap-1.5 px-2 py-1.5 rounded-lg border ${onThisMap ? 'bg-purple-900/40 border-purple-600' : 'bg-gray-800 border-gray-700'}`}
                               >
-                                <span className="text-xs text-purple-300">▶</span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-xs text-gray-200 truncate">{formatName(info.filename)}</div>
-                                  <div className="text-[10px] text-gray-500 truncate">{mapLabel}{onThisMap ? ' · here' : ''}</div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-purple-300">▶</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-xs text-gray-200 truncate">{formatName(filename)}</div>
+                                    <div className="text-[10px] text-gray-500 truncate">{mapLabel}{onThisMap ? ' · here' : ''}</div>
+                                  </div>
+                                  <button
+                                    onClick={() => onThisMap ? socket.emit('stop_ambient_track', { filename }) : handleStopAmbientOnMap(mid)}
+                                    className="text-gray-500 hover:text-red-400 text-xs px-1.5 py-0.5 rounded transition-colors"
+                                    title={onThisMap ? `Stop "${formatName(filename)}"` : `Stop all ambience on ${mapLabel}`}
+                                  >⏹</button>
                                 </div>
-                                <button
-                                  onClick={() => handleStopAmbientOnMap(mid)}
-                                  className="text-gray-500 hover:text-red-400 text-xs px-1.5 py-0.5 rounded transition-colors"
-                                  title={`Stop ambience on ${mapLabel}`}
-                                >⏹</button>
+                                {onThisMap && (
+                                  <div className="flex items-center gap-2 pl-4">
+                                    <input
+                                      type="range" min={0} max={1} step={0.02} value={volume}
+                                      onChange={e => handleSetAmbientTrackVolume(filename, Number(e.target.value))}
+                                      className="flex-1 accent-purple-500"
+                                      title="Track volume"
+                                    />
+                                    <span className="text-[10px] text-gray-400 w-8 text-right font-mono">
+                                      {Math.round(volume * 100)}%
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -3973,13 +4039,16 @@ export default function DMView() {
                       </div>
                     ) : (
                       <div className="flex flex-col gap-0.5 max-h-72 overflow-y-auto pr-1">
-                        {ambientFiles.map(f => (
+                        {ambientFiles.map(f => {
+                          const layered = playingFilenamesOnThisMap.has(f);
+                          return (
                           <div key={f} className="flex items-center gap-1">
                             <button
                               onClick={() => handlePlayAmbient(f)}
-                              className={`flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 border rounded-lg text-left transition-colors ${playingOnThisMap === f ? 'bg-purple-900/60 border-purple-600 text-purple-200' : 'bg-gray-800 hover:bg-purple-900/30 border-gray-700 hover:border-purple-600 text-gray-200'}`}
+                              className={`flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 border rounded-lg text-left transition-colors ${layered ? 'bg-purple-900/60 border-purple-600 text-purple-200' : 'bg-gray-800 hover:bg-purple-900/30 border-gray-700 hover:border-purple-600 text-gray-200'}`}
+                              title={layered ? 'Click to remove from scene' : 'Click to layer into the scene'}
                             >
-                              <span className="text-xs shrink-0">{playingOnThisMap === f ? '▶' : '○'}</span>
+                              <span className="text-xs shrink-0">{layered ? '▶' : '+'}</span>
                               <span className="text-xs truncate">{formatName(f)}</span>
                             </button>
                             <button
@@ -3988,7 +4057,8 @@ export default function DMView() {
                               title="Delete"
                             ><XIcon /></button>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </>

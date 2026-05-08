@@ -125,5 +125,5 @@ https://forge.giantmushroom.studio/privacy.html
 ## Contact email
 
 ```
-jakewatts809@googlemail.com
+contact@giantmushroom.studio
 ```

@@ -937,8 +937,15 @@ export default function PlayerView() {
   const playerTokenCreated = useRef(false);
   const activeSoundsRef = useRef([]); // array of AudioBufferSourceNode
   const audioCtxRef = useRef(null);
-  const ambientSrcRef  = useRef(null);
-  const ambientGainRef = useRef(null);
+  // Layered ambient playback. The GM can stack multiple ambient
+  // loops on a map ("Forest" + "Bird Song" + "Wind Blowing") to build
+  // a scene; each track has its own AudioBufferSourceNode + GainNode.
+  // wantedAmbientsRef tracks which filenames the user/GM still wants
+  // playing — checked inside the async fetch→decode pipeline so a
+  // stop issued mid-load doesn't accidentally start the track once
+  // the buffer arrives.
+  const ambientTracksRef  = useRef(new Map()); // filename -> { src, gain }
+  const wantedAmbientsRef = useRef(new Set()); // filename set
   const [centerOnMapPoint, setCenterOnMapPoint] = useState(null);
   const hasCenteredRef = useRef(false);
   const [treasureNotif, setTreasureNotif] = useState(null);
@@ -1401,56 +1408,77 @@ export default function PlayerView() {
       activeSoundsRef.current = [];
     });
 
+    // play_ambient is additive: a brand-new filename starts as a fresh
+    // layer with a fade-in; an existing filename gets a live volume
+    // ramp (so dragging a per-track slider on the GM side is smooth).
     socket.on('play_ambient', ({ filename, volume }) => {
       const ctx = audioCtxRef.current;
-      if (!ctx) return;
+      if (!ctx || !filename) return;
       const vol = Math.max(0, Math.min(1, volume ?? 0.5));
-      const FADE = 2;
 
-      function startAmbient(decoded) {
-        const src  = ctx.createBufferSource();
-        const gain = ctx.createGain();
-        src.buffer = decoded;
-        src.loop   = true;
-        gain.gain.setValueAtTime(0, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + FADE);
-        src.connect(gain);
-        gain.connect(ctx.destination);
-        src.start(0);
-        ambientSrcRef.current  = src;
-        ambientGainRef.current = gain;
+      const existing = ambientTracksRef.current.get(filename);
+      if (existing) {
+        // Live volume update on a track already in the layer.
+        const now = ctx.currentTime;
+        existing.gain.gain.cancelScheduledValues(now);
+        existing.gain.gain.setValueAtTime(existing.gain.gain.value, now);
+        existing.gain.gain.linearRampToValueAtTime(vol, now + 0.2);
+        return;
       }
 
-      // Fade out any existing ambient then start new track
-      if (ambientSrcRef.current && ambientGainRef.current) {
-        const oldGain = ambientGainRef.current;
-        const oldSrc  = ambientSrcRef.current;
-        ambientSrcRef.current  = null;
-        ambientGainRef.current = null;
-        oldGain.gain.setValueAtTime(oldGain.gain.value, ctx.currentTime);
-        oldGain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
-        oldSrc.stop(ctx.currentTime + FADE);
-      }
+      wantedAmbientsRef.current.add(filename);
 
       ctx.resume()
         .then(() => fetch(`/sounds/ambient/${encodeURIComponent(filename)}`))
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
         .then(buf => ctx.decodeAudioData(buf))
-        .then(startAmbient)
+        .then(decoded => {
+          // Cancelled while loading, or another start raced us — drop.
+          if (!wantedAmbientsRef.current.has(filename)) return;
+          if (ambientTracksRef.current.has(filename)) return;
+          const src  = ctx.createBufferSource();
+          const gain = ctx.createGain();
+          src.buffer = decoded;
+          src.loop   = true;
+          gain.gain.setValueAtTime(0, ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 2);
+          src.connect(gain);
+          gain.connect(ctx.destination);
+          src.start(0);
+          ambientTracksRef.current.set(filename, { src, gain });
+        })
         .catch(console.error);
     });
 
+    // Remove a single track from the layer; the rest keep playing.
+    socket.on('stop_ambient_track', ({ filename }) => {
+      const ctx = audioCtxRef.current;
+      if (!ctx || !filename) return;
+      wantedAmbientsRef.current.delete(filename);
+      const track = ambientTracksRef.current.get(filename);
+      if (!track) return;
+      ambientTracksRef.current.delete(filename);
+      const FADE = 2;
+      track.gain.gain.cancelScheduledValues(ctx.currentTime);
+      track.gain.gain.setValueAtTime(track.gain.gain.value, ctx.currentTime);
+      track.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
+      try { track.src.stop(ctx.currentTime + FADE); } catch (_) {}
+    });
+
+    // Stop every layer (session-wide stop, or local stop on map switch).
     socket.on('stop_ambient', () => {
       const ctx = audioCtxRef.current;
-      if (!ctx || !ambientSrcRef.current) return;
+      wantedAmbientsRef.current.clear();
+      if (!ctx) { ambientTracksRef.current.clear(); return; }
       const FADE = 2;
-      const gain = ambientGainRef.current;
-      const src  = ambientSrcRef.current;
-      ambientSrcRef.current  = null;
-      ambientGainRef.current = null;
-      gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
-      src.stop(ctx.currentTime + FADE);
+      const tracks = Array.from(ambientTracksRef.current.values());
+      ambientTracksRef.current.clear();
+      for (const t of tracks) {
+        t.gain.gain.cancelScheduledValues(ctx.currentTime);
+        t.gain.gain.setValueAtTime(t.gain.gain.value, ctx.currentTime);
+        t.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
+        try { t.src.stop(ctx.currentTime + FADE); } catch (_) {}
+      }
     });
 
     socket.on('fow_changed',           ({ enabled })      => setFowEnabled(enabled));

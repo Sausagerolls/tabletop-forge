@@ -77,7 +77,14 @@ struct DiceLightView: View {
                     store.clearActive()
                 }
             }
-            .sheet(isPresented: $showCharacterEditor) {
+            // fullScreenCover, not .sheet, on purpose. On iPad a
+            // .sheet is a form-sheet card; when WebKit presents the
+            // <input type=file> photo/camera picker from inside that
+            // card, the system collapses the card itself — the Edit
+            // Stat Block editor vanishes mid-edit. A full-screen
+            // cover is a stable presentation host: the picker stacks
+            // on top and dismisses back to the editor intact.
+            .fullScreenCover(isPresented: $showCharacterEditor) {
                 if let url = characterEditorURL {
                     NavigationStack {
                         // The character-editor route writes a
@@ -417,31 +424,42 @@ private struct LastRollRow: View {
 }
 
 // Re-declared here so the character-editor sheet works without
-// adding a separate WebView.swift to the Xcode project. The
-// SettingsSheet copy is plain (no onDone) — this one watches the
+// adding a separate WebView.swift to the Xcode project. Watches the
 // URL fragment via a Coordinator + WKNavigationDelegate so the
-// in-form Cancel + Update buttons can dismiss the host sheet.
-fileprivate struct WebView: UIViewRepresentable {
+// in-form Cancel / Update buttons can dismiss the host sheet.
+//
+// This is a UIViewControllerRepresentable — NOT a plain
+// UIViewRepresentable — on purpose. The stat block editor exposes an
+// <input type=file> for the character portrait; tapping it makes
+// WebKit present a photo-library / camera picker. WebKit presents
+// that picker from the nearest UIViewController in the web view's
+// responder chain. If the bare WKWebView is handed straight to a
+// UIViewRepresentable, that nearest controller is the SwiftUI
+// sheet's own UIHostingController — so dismissing the picker tears
+// the whole Edit Stat Block sheet down with it, discarding every
+// unsaved edit. Hosting the web view inside a dedicated
+// WebViewController gives the picker its own stable presentation
+// context: cancelling the picker now returns to the editor intact.
+fileprivate struct WebView: UIViewControllerRepresentable {
     let url: URL
     let onDone: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onDone: onDone) }
 
-    func makeUIView(context: Context) -> WKWebView {
-        let view = WKWebView(frame: .zero)
-        view.allowsBackForwardNavigationGestures = true
-        view.navigationDelegate = context.coordinator
-        view.load(URLRequest(url: url))
-        return view
+    func makeUIViewController(context: Context) -> WebViewController {
+        let controller = WebViewController()
+        controller.webView.navigationDelegate = context.coordinator
+        controller.webView.load(URLRequest(url: url))
+        return controller
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {
+    func updateUIViewController(_ controller: WebViewController, context: Context) {
         // Only reload when the host hands us a different URL —
         // hash-only mutations (the dismiss sentinel) shouldn't
         // bounce us back to the start of the editor.
-        if (uiView.url?.absoluteString.split(separator: "#").first ?? "")
+        if (controller.webView.url?.absoluteString.split(separator: "#").first ?? "")
            != (url.absoluteString.split(separator: "#").first ?? "") {
-            uiView.load(URLRequest(url: url))
+            controller.webView.load(URLRequest(url: url))
         }
     }
 
@@ -463,5 +481,20 @@ fileprivate struct WebView: UIViewRepresentable {
             }
             decisionHandler(.allow)
         }
+    }
+}
+
+// Plain UIKit controller whose root view *is* the WKWebView. Exists
+// solely to be the presentation context for WebKit's file-upload
+// picker — see the note on `WebView` above for why that matters.
+fileprivate final class WebViewController: UIViewController {
+    let webView: WKWebView = {
+        let webView = WKWebView(frame: .zero)
+        webView.allowsBackForwardNavigationGestures = true
+        return webView
+    }()
+
+    override func loadView() {
+        view = webView
     }
 }

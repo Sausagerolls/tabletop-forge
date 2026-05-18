@@ -35,22 +35,32 @@ targets:
         product: SocketIO
     # Code-signing entitlements — XcodeGen generates the .entitlements
     # file from the dict below and wires CODE_SIGN_ENTITLEMENTS in
-    # the build settings automatically. Two keys, both required for
-    # Mac App Store submission (Apple Connect rejects the upload
+    # the build settings automatically. The sandbox keys are required
+    # for Mac App Store submission (Apple Connect rejects the upload
     # without `app-sandbox = true`); harmless on iOS, which runs in
     # its own sandbox regardless of the file.
     #
-    #   app-sandbox    — Mac App Store mandate. Defaults to deny on
-    #                    everything outside the app's container.
-    #   network.client — Outbound TCP / UDP. Needed for the Socket.IO
-    #                    + REST traffic to the user-supplied server,
-    #                    and for the Bonjour / mDNS .local lookup
-    #                    that resolves the GM's server on the LAN.
+    #   app-sandbox       — Mac App Store mandate. Defaults to deny on
+    #                       everything outside the app's container.
+    #   network.client    — Outbound TCP / UDP. Needed for the Socket.IO
+    #                       + REST traffic to the user-supplied server,
+    #                       and for the Bonjour / mDNS .local lookup
+    #                       that resolves the GM's server on the LAN.
+    #   device.camera     — Camera access for the stat block editor's
+    #                       portrait photo capture (Mac Catalyst sandbox).
+    #   device.microphone — Mic access, only used if a video is recorded
+    #                       while picking a portrait (Mac Catalyst sandbox).
     entitlements:
       path: TableTopForge/TableTopForge.entitlements
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+        # Mac Catalyst sandbox: the stat block editor web view's
+        # portrait <input type=file> can invoke the camera / video
+        # capture. A sandboxed Mac app silently fails the request
+        # without these — the iOS variant ignores them.
+        com.apple.security.device.camera: true
+        com.apple.security.device.microphone: true
     info:
       path: TableTopForge/Info.plist
       properties:
@@ -71,6 +81,14 @@ targets:
         # the LAN. The system shows this verbatim in the permission
         # alert, so phrase it from the user's perspective.
         NSLocalNetworkUsageDescription: "TableTop Forge Companion needs local-network access to talk to your TableTop Forge server (the laptop running the game) so your character sheet and dice rolls stay in sync with the table."
+        # The stat block editor (a web view) exposes an <input type=file>
+        # for the character portrait. Tapping it lets iOS offer Camera /
+        # Photo Library / video capture. iOS SIGABRTs the app the instant
+        # any of those is chosen if the matching usage string is absent —
+        # this is exactly the App Review crash on the "Take Photo" button.
+        NSCameraUsageDescription: "TableTop Forge Companion uses the camera so you can take a photo for your character's portrait in the stat block editor."
+        NSPhotoLibraryUsageDescription: "TableTop Forge Companion uses your photo library so you can pick an image for your character's portrait in the stat block editor."
+        NSMicrophoneUsageDescription: "TableTop Forge Companion needs microphone access only if you record a video while choosing a character portrait."
         # An empty UILaunchScreen dict opts the app into modern
         # full-screen rendering on every iPhone/iPad frame size.
         # Without this iOS falls back to legacy letterboxing — what the
@@ -124,7 +142,7 @@ targets:
         # App Store Connect — keeping them here means a fresh
         # xcodegen run preserves whatever the latest release is.
         CFBundleShortVersionString: "1.9.17"
-        CFBundleVersion: "4"
+        CFBundleVersion: "5"
     settings:
       base:
         # DEVELOPMENT_TEAM is intentionally NOT set here — xcodegen
@@ -151,4 +169,4 @@ targets:
         # per-build in Xcode → Signing & Capabilities → Mac Catalyst
         # row if you ever want to compare both looks.
         MARKETING_VERSION: "1.9.17"
-        CURRENT_PROJECT_VERSION: "4"
+        CURRENT_PROJECT_VERSION: "5"

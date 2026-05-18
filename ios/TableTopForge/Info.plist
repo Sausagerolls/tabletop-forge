@@ -21,7 +21,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.9.17</string>
 	<key>CFBundleVersion</key>
-	<string>4</string>
+	<string>5</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSApplicationCategoryType</key>
@@ -31,8 +31,14 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>TableTop Forge Companion uses the camera so you can take a photo for your character's portrait in the stat block editor.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>TableTop Forge Companion needs local-network access to talk to your TableTop Forge server (the laptop running the game) so your character sheet and dice rolls stay in sync with the table.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TableTop Forge Companion needs microphone access only if you record a video while choosing a character portrait.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TableTop Forge Companion uses your photo library so you can pick an image for your character's portrait in the stat block editor.</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

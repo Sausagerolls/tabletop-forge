@@ -19,3 +19,11 @@ serde_json = "1"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+# Opt-in: bundle + spawn the Apple Intelligence (FoundationModels) sidecar.
+# Enabled by build-signed.sh --apple-intelligence, which also compiles the
+# Swift binary and merges tauri.apple.conf.json so the externalBin is shipped.
+apple-intelligence = []
+# Mac App Store hardening. Sets TTF_APP_STORE=1 for the backend so it disables
+# runtime plugin upload + the NSFW toggle (App Store guidelines 2.5.2 / 1.1.4).
+# Enabled by build-signed.sh for the `appstore` target.
+app-store = []

@@ -7,7 +7,11 @@
 // equipment options). Adds two homebrew-only fields on top:
 //   * features  — per-level entries the GM lists out, optionally
 //                 scoped to a subclass; surface in Class Features
-//                 once the character reaches that level.
+//                 once the character reaches that level. The scope
+//                 dropdown offers this record's own subclasses plus
+//                 every other subclass registered under the same
+//                 class name — the Custom Classes plugin's list and,
+//                 when the record shadows a stock class, the SRD set.
 //   * resources — per-class counters (Bardic Inspiration / Ki /
 //                 etc.) that can be SPENT or GRANTED to another
 //                 player. Spend just rolls + decrements; grant
@@ -15,6 +19,8 @@
 
 import React, { useState } from 'react';
 import LanguagePicker from './LanguagePicker.jsx';
+import { useAllSubclasses } from '../utils/classes.js';
+import { CLASS_BUILD } from '../data/class_build.js';
 
 const INPUT = 'w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white';
 const SMALL = 'bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white';
@@ -66,6 +72,21 @@ export default function CustomClassEditor({ initial, onClose, onSaved }) {
   function patch(p)        { setData((d) => ({ ...d, ...p })); }
   function patchAt(key, p) { setData((d) => ({ ...d, [key]: { ...(d[key] || {}), ...p } })); }
 
+  // Subclasses that exist for a class of this name but aren't chips on
+  // this record: the Custom Classes plugin's per-class list, and the
+  // SRD set when the GM is authoring features for a stock class. This
+  // record's own chips round-trip through the same registry, so filter
+  // them out to keep the two dropdown groups disjoint.
+  const className = String(data.name ?? initial?.name ?? '').trim();
+  const registrySubclasses = useAllSubclasses(className);
+  const ownSubclasses = Array.isArray(data.subclasses) ? data.subclasses : [];
+  const ownLc = new Set(ownSubclasses.map((s) => String(s).toLowerCase()));
+  const inheritedSubclasses = registrySubclasses.filter((s) => !ownLc.has(String(s).toLowerCase()));
+  // A record whose name matches an SRD class doesn't override that
+  // class's kit — getClassBuild() checks the static table first. Say so
+  // rather than letting the GM think the fields below took effect.
+  const shadowsStockClass = !!CLASS_BUILD[className];
+
   async function save() {
     const name = (data.name || initial?.name || '').trim();
     if (!name) { setError('Name required'); return; }
@@ -109,6 +130,15 @@ export default function CustomClassEditor({ initial, onClose, onSaved }) {
             <input className={INPUT} value={data.name || initial?.name || ''}
               onChange={(e) => patch({ name: e.target.value })} />
           </Field>
+
+          {shadowsStockClass && (
+            <p className="text-[11px] text-amber-300 bg-amber-950/30 border border-amber-800/50 rounded px-2 py-1.5">
+              <strong>{className}</strong> is a stock class. Its hit die, saves, proficiencies,
+              starting equipment and multiclass rules come from the SRD and are <em>not</em> taken
+              from this record — the Core Traits, Starting Equipment and Multiclass sections below
+              are ignored. Subclasses, Class Features by Level and Custom Resources still apply.
+            </p>
+          )}
 
           <Field label="Description">
             <textarea className={INPUT} rows={2} value={data.description || ''}
@@ -242,12 +272,30 @@ export default function CustomClassEditor({ initial, onClose, onSaved }) {
           <FreeChips selected={data.subclasses}
             onChange={(arr) => patch({ subclasses: arr })}
             placeholder="Subclass name (e.g. Path of the Storm)" />
+          {inheritedSubclasses.length > 0 && (
+            <div>
+              <p className="text-[11px] text-gray-500 mb-1">
+                Already registered for {className} elsewhere — the Custom Classes plugin
+                {shadowsStockClass ? ' and the SRD list' : ''}. Not editable here, but you can scope
+                features to them below.
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {inheritedSubclasses.map((s) => (
+                  <span key={s}
+                    className="text-xs bg-gray-900 border border-gray-700 text-gray-400 rounded px-2 py-0.5">
+                    {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <Section>Class Features by Level</Section>
           <p className="text-[11px] text-gray-500 -mt-2">
             Listed per level + optional subclass scope. Surface in the Class Features stat block when the player reaches the level on that class.
           </p>
-          <FeatureList features={data.features} subclasses={data.subclasses}
+          <FeatureList features={data.features} subclasses={ownSubclasses}
+            inherited={inheritedSubclasses}
             onChange={(arr) => patch({ features: arr })} />
 
           <Section>Custom Resources</Section>
@@ -397,8 +445,16 @@ function ItemList({ items, onChange }) {
   );
 }
 
-function FeatureList({ features, subclasses, onChange }) {
+// `subclasses` are this record's own chips; `inherited` are the ones
+// registered under the same class name by the Custom Classes plugin or
+// the SRD table. Both are valid scopes — getClassChoicesMerged() matches
+// a feature's `subclass` against the character's selection by name, not
+// by where the name was defined.
+function FeatureList({ features, subclasses, inherited, onChange }) {
   const list = features || [];
+  const own = subclasses || [];
+  const extra = inherited || [];
+  const knownLc = new Set([...own, ...extra].map((s) => String(s).toLowerCase()));
   function setIdx(i, p) {
     onChange(list.map((r, j) => (j === i ? { ...r, ...p } : r)));
   }
@@ -420,7 +476,22 @@ function FeatureList({ features, subclasses, onChange }) {
                 value={f.subclass || ''}
                 onChange={(e) => setIdx(i, { subclass: e.target.value })}>
                 <option value="">All (base class)</option>
-                {(subclasses || []).map((s) => <option key={s} value={s}>{s}</option>)}
+                {own.length > 0 && (
+                  <optgroup label="This class">
+                    {own.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </optgroup>
+                )}
+                {extra.length > 0 && (
+                  <optgroup label="Plugin / SRD subclasses">
+                    {extra.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </optgroup>
+                )}
+                {/* A scope whose subclass has since been renamed or
+                    removed would otherwise silently reset to "All" on
+                    the next save. Keep it selectable and flagged. */}
+                {f.subclass && !knownLc.has(String(f.subclass).toLowerCase()) && (
+                  <option value={f.subclass}>{f.subclass} (no longer defined)</option>
+                )}
               </select>
             </Field>
             <Field label=" ">

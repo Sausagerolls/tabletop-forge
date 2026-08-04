@@ -223,6 +223,18 @@ async function callOllama(baseUrl, model, messages, opts = {}) {
 
 async function callLLM(provider, baseUrl, apiKey, model, messages, opts) {
   if (provider === 'ollama') return callOllama(baseUrl, model, messages, opts);
+  // Apple Intelligence runs as a local sidecar (FoundationModels bridge) that
+  // speaks the OpenAI Chat Completions protocol, so it reuses the same client.
+  // The baseUrl is the sidecar's loopback URL, injected by the native shell as
+  // $APPLE_AI_URL and surfaced to the frontend via GET /api/ai/native.
+  if (provider === 'apple') {
+    // The sidecar binds a fresh random port each app launch, so the live
+    // $APPLE_AI_URL is authoritative — a baseUrl the client persisted from an
+    // earlier run would point at a dead port. Fall back to the client value
+    // only when the env isn't set (shouldn't happen in the native build).
+    const url = process.env.APPLE_AI_URL || baseUrl;
+    return callOpenAICompat(url, null, model || 'apple-on-device', messages, opts);
+  }
   return callOpenAICompat(baseUrl, apiKey, model, messages, opts);
 }
 
@@ -312,6 +324,46 @@ function canonicaliseLanguages(text, languageNames) {
   }
   return out.join(', ');
 }
+
+// GET /api/ai/native  — report whether on-device providers are available in
+// this build. Currently just Apple Intelligence: present only in the native
+// macOS app when built with --apple-intelligence, which sets $APPLE_AI_URL to
+// the sidecar's loopback URL. We probe the sidecar's /health so the frontend
+// only offers the provider when the model is actually usable on this Mac
+// (eligible hardware + Apple Intelligence enabled), and can show the reason
+// when it isn't.
+router.get('/native', async (req, res) => {
+  const url = process.env.APPLE_AI_URL;
+  if (!url) return res.json({ appleIntelligence: { present: false } });
+
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2000);
+    const r = await fetch(`${url.replace(/\/$/, '')}/health`, { signal: ctrl.signal });
+    clearTimeout(t);
+    const health = await r.json();
+    res.json({
+      appleIntelligence: {
+        present: true,
+        url,
+        available: !!health.available,
+        reason: health.reason || null,
+      },
+    });
+  } catch (err) {
+    // Sidecar set but unreachable (e.g. crashed, or built for a newer macOS
+    // than this machine runs). Report present-but-unavailable so the UI can
+    // explain rather than silently hide it.
+    res.json({
+      appleIntelligence: {
+        present: true,
+        url,
+        available: false,
+        reason: 'The Apple Intelligence helper is not responding.',
+      },
+    });
+  }
+});
 
 // POST /api/ai/test  — verify the AI connection works
 router.post('/test', async (req, res) => {
@@ -950,6 +1002,10 @@ router.post('/generate-image', async (req, res) => {
     width, height, steps, cfgScale, seed,
   } = req.body;
 
+  // App Store build forces the SFW safety prompt regardless of what the
+  // client sends — the toggle is hidden in that build (guideline 1.1.4).
+  const effAllowNsfw = process.env.TTF_APP_STORE === '1' ? false : allowNsfw;
+
   const adapter = IMAGE_PROVIDERS[provider];
   if (!adapter) {
     return res.status(400).json({ error: `Unknown image provider: ${provider}` });
@@ -976,7 +1032,7 @@ router.post('/generate-image', async (req, res) => {
   // drop it; the safety guarantee shifts to the upstream policy filter.
   let finalNeg = '';
   if (adapter.supportsNegativePrompt) {
-    finalNeg = allowNsfw
+    finalNeg = effAllowNsfw
       ? (negativePrompt || DEFAULT_NEG_NSFW)
       : `${negativePrompt ? negativePrompt + ', ' : ''}${DEFAULT_NEG_SFW}`;
   }
@@ -1043,7 +1099,9 @@ router.post('/player-generate-image', async (req, res) => {
     const prompt = buildImagePrompt(cfg.imagePromptTemplate || '', name || '', appearance || '');
     let finalNeg = '';
     if (adapter.supportsNegativePrompt) {
-      finalNeg = cfg.imageAllowNsfw
+      // App Store build always keeps the SFW safety prompt (guideline 1.1.4).
+      const allowNsfw = process.env.TTF_APP_STORE === '1' ? false : cfg.imageAllowNsfw;
+      finalNeg = allowNsfw
         ? (cfg.imageNegativePrompt || DEFAULT_NEG_NSFW)
         : `${cfg.imageNegativePrompt ? cfg.imageNegativePrompt + ', ' : ''}${DEFAULT_NEG_SFW}`;
     }

@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TableTop Forge",
-  "version": "1.9.20",
+  "version": "1.9.21",
   "identifier": "studio.giantmushroom.tabletopforge",
   "build": {
     "frontendDist": "../frontend/dist",
-    "beforeDevCommand":   "npm --prefix ../frontend run build"
+    "beforeDevCommand": "npm --prefix ../frontend run build"
   },
   "app": {
     "withGlobalTauri": false,
@@ -31,9 +31,9 @@
   "bundle": {
     "active": true,
     "category": "Entertainment",
-    "copyright": "© 2026 Giant Mushroom Studio",
+    "copyright": "\u00a9 2026 Giant Mushroom Studio",
     "shortDescription": "Self-hosted virtual tabletop for 5e tabletop RPGs",
-    "longDescription": "TableTop Forge — a self-contained desktop build of the VTT. Bundles its own Postgres-compatible database (PGlite) and runs entirely offline; no Docker, no external server, no network round-trip for the basics.",
+    "longDescription": "TableTop Forge \u2014 a self-contained desktop build of the VTT. Bundles its own Postgres-compatible database (PGlite) and runs entirely offline; no Docker, no external server, no network round-trip for the basics.",
     "targets": "all",
     "icon": [
       "icons/icon.icns",
@@ -56,7 +56,7 @@
     ],
     "macOS": {
       "minimumSystemVersion": "12.0",
-      "entitlements": "macos/Entitlements.DeveloperID.plist",
+      "entitlements": "macos/Entitlements.AppStore.plist",
       "exceptionDomain": "",
       "providerShortName": null,
       "signingIdentity": null

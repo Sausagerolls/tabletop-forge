@@ -1,7 +1,14 @@
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import Konva from 'konva';
 import { Stage, Layer, Line, Image as KonvaImage, Group, Circle, Rect, Text, Wedge } from 'react-konva';
+
+// Cap layer-canvas pixel density. On retina (dpr=2) every Konva layer canvas
+// carries 4x the pixels of a 1x screen; long sessions on big monitors were
+// hitting browser tab memory limits. 1.5 keeps text/token edges crisp while
+// nearly halving total canvas memory.
+Konva.pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
 import useImage from 'use-image';
-import { wallToSegments, wallsToSegments, doorsToSegments, computeVisibilityPolygon, ledgeData, ledgeFarSidePolygon } from '../utils/los.js';
+import { wallToSegments, wallsToSegments, doorsToSegments, computeVisibilityPolygon, ledgeData, ledgeFarSidePolygon, fogBlocksToSegments } from '../utils/los.js';
 import { registries as pluginRegistries, useRegistryVersion } from '../plugins/pluginRegistry.js';
 
 export const TOKEN_SIZES = {
@@ -59,6 +66,159 @@ function clipToWedge(ctx, cx, cy, r, dirDeg, spreadDeg) {
   ctx.closePath();
   ctx.clip();
 }
+function pointInPolygon(px, py, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+    if (((yi > py) !== (yj > py)) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+// Point-in-polygon for a FLAT [x0,y0,x1,y1,…] array (the LOS polygon format).
+function pointInFlatPoly(px, py, pts) {
+  let inside = false;
+  const n = pts.length / 2;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = pts[i * 2], yi = pts[i * 2 + 1], xj = pts[j * 2], yj = pts[j * 2 + 1];
+    if (((yi > py) !== (yj > py)) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+// The footprint quad(s) a door's sprite actually covers, in its committed
+// (non-animated) pose — used to clear fog over thick door art so the sprite
+// isn't half-buried in shadow. Returns an array of flat quads [x0,y0,…,x3,y3].
+function doorSpriteQuads(door, img) {
+  const pts = door.points;
+  if (!pts || pts.length < 4) return [];
+  const [x1, y1, x2, y2] = pts;
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  if (len < 2) return [];
+  const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+  const dir = door.open_dir === -1 ? -1 : 1;
+  const px = -uy * dir, py = ux * dir;
+  const aspect = (img && img.width && img.height) ? img.height / img.width : 0.25;
+  const t = len * aspect;              // sprite thickness
+  const hx = px * t / 2, hy = py * t / 2; // half-thickness offset vector
+
+  // Rectangle spanning [a..b] along the leaf axis, centred on the line ±t/2.
+  const rect = (ax, ay, bx, by) => [
+    ax - hx, ay - hy, bx - hx, by - hy, bx + hx, by + hy, ax + hx, ay + hy,
+  ];
+
+  const motion = (door.sprite_motion === 'slide' || door.sprite_motion === 'double')
+    ? door.sprite_motion : 'swing';
+
+  if (!door.is_open) {
+    return [rect(x1, y1, x2, y2)];
+  }
+  if (motion === 'slide') {
+    // Slid into the wall alongside the opening.
+    return [rect(x1 + ux * len, y1 + uy * len, x2 + ux * len, y2 + uy * len)];
+  }
+  if (motion === 'double') {
+    const half = len / 2;
+    return [
+      rect(x1, y1, x1 + px * half, y1 + py * half),
+      rect(x2, y2, x2 + px * half, y2 + py * half),
+    ];
+  }
+  // Swing: single leaf perpendicular from the hinge.
+  return [rect(x1, y1, x1 + px * len, y1 + py * len)];
+}
+function hexToRgb(hex) {
+  const h = (hex || '#fbbf24').replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// Paint every light's warm radial gradient, clipped to its cone and its own LOS
+// polygon. Shared by the glow canvas and by the door-sprite overlay so a door's
+// art is lit by exactly the same math as the wall it sits in — otherwise the
+// overlay copy (which sits above the glow canvas) reads as a shadowed panel and
+// gives a secret door away.
+function paintLightGlow(ctx, glowLights, lightPolyFor, tNow) {
+  for (const { seed, x, y, brightR, dimR, color, dir, spread, flicker } of glowLights) {
+    // Lights with flicker disabled render as steady glows — useful
+    // for sun shafts, magical continual flame, daylight spell, etc.
+    const flickerR = flicker
+      ? 1
+        + Math.sin(tNow * 6.7  + seed)         * 0.05
+        + Math.sin(tNow * 3.1  + seed * 1.7)   * 0.035
+        + Math.sin(tNow * 11.3 + seed * 0.5)   * 0.02
+        + (Math.random() - 0.5)                * 0.015
+      : 1;
+    // Brightness modulates a touch more than radius — the rim shimmer
+    // comes from the radial gradient, but the perceived flame
+    // intensity comes from the alpha at the centre.
+    const flickerA = flicker
+      ? 1
+        + Math.sin(tNow * 8.9  + seed * 2.3)   * 0.10
+        + Math.sin(tNow * 4.2  + seed)         * 0.05
+        + (Math.random() - 0.5)                * 0.04
+      : 1;
+
+    const fBrightR = Math.max(0, brightR * flickerR);
+    const fDimR    = Math.max(0, dimR    * flickerR);
+    const outerR   = Math.max(fDimR, fBrightR);
+    if (outerR <= 0) continue;
+    // Defence-in-depth — even though the light list filters non-finite
+    // entries, a future contributor could feed NaN through brightR/dimR
+    // via a new code path. createRadialGradient throws "non-finite
+    // double" the moment one slips in and that tears the whole canvas
+    // down for every other light too, so skip the entry instead.
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(outerR)) continue;
+    const [r, g, b] = hexToRgb(color);
+    ctx.save();
+    clipToWedge(ctx, x, y, outerR, dir, spread);
+    const lp = lightPolyFor(x, y);
+    if (lp && lp.length >= 4) {
+      ctx.beginPath();
+      ctx.moveTo(lp[0], lp[1]);
+      for (let i = 2; i < lp.length; i += 2) ctx.lineTo(lp[i], lp[i + 1]);
+      ctx.closePath();
+      ctx.clip();
+    }
+    const a = Math.max(0.5, Math.min(1.4, flickerA));
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, outerR);
+    grad.addColorStop(0,                       `rgba(${r}, ${g}, ${b}, ${(0.40 * a).toFixed(3)})`);
+    grad.addColorStop(fBrightR / outerR * 0.6, `rgba(${r}, ${g}, ${b}, ${(0.24 * a).toFixed(3)})`);
+    grad.addColorStop(fBrightR / outerR,       `rgba(${r}, ${g}, ${b}, ${(0.12 * a).toFixed(3)})`);
+    grad.addColorStop(1,                       `rgba(${r}, ${g}, ${b}, 0.00)`);
+    ctx.beginPath();
+    ctx.arc(x, y, outerR, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// How much fog a vision pass has erased at (px,py) — 1 = fully revealed,
+// 0 = untouched fog. Mirrors the fog canvas's destination-out passes so an
+// overlay drawn ABOVE the fog can be dimmed to match its surroundings.
+function passLitAlphaAt(px, py, vp) {
+  let best = 0;
+  for (const pass of (vp.passes || [])) {
+    if (pass.kind === 'full') {
+      best = Math.max(best, pass.alpha);
+    } else if (pass.kind === 'range') {
+      if (Math.hypot(px - pass.ox, py - pass.oy) <= pass.r) best = Math.max(best, pass.alpha);
+    } else if (pass.kind === 'light') {
+      if (Math.hypot(px - pass.lx, py - pass.ly) > pass.lr) continue;
+      const spread = pass.lspread ?? 360;
+      if (spread < 360) {
+        const ang = Math.atan2(py - pass.ly, px - pass.lx);
+        let d = ang - (pass.ldir ?? 0) * (Math.PI / 180);
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        if (Math.abs(d) > (spread / 2) * (Math.PI / 180)) continue;
+      }
+      if (pass.lightPts && pass.lightPts.length >= 6 && !pointInFlatPoly(px, py, pass.lightPts)) continue;
+      best = Math.max(best, pass.alpha);
+    }
+  }
+  return Math.min(1, best);
+}
+
 const WALL_DRAW_TOOLS = new Set(['wall-line', 'wall-rect', 'wall-polygon', 'wall-circle', 'wall-ledge', 'wall-erase']);
 const TEMPLATE_TOOLS = new Set(['tpl-cone', 'tpl-circle', 'tpl-line', 'tpl-square']);
 const DOOR_DRAW_TOOLS = new Set(['door-std', 'door-heavy', 'door-port']);
@@ -771,7 +931,7 @@ const DOOR_COLORS = {
   portcullis:{ closed: '#6b7280', open: '#16a34a' },
 };
 
-function DoorShape({ door }) {
+function DoorShape({ door, spriteImg = null, progress = null, isPlayer = false }) {
   const pts = door.points;
   if (!pts || pts.length < 4) return null;
 
@@ -791,6 +951,97 @@ function DoorShape({ door }) {
   // Angles
   const doorAngle = Math.atan2(uy, ux);
   const perpAngle = Math.atan2(py, px);
+  const doorAngleDeg = doorAngle * 180 / Math.PI;
+
+  // ── Sprite overlay ──────────────────────────────────────────────────────
+  // When a sprite is assigned, it replaces the schematic panel and animates
+  // with `progress` (0 closed → 1 open). GM still gets a faint hinge + arc
+  // guide so the swing direction is readable while editing.
+  if (spriteImg) {
+    const prog = progress == null ? (isOpen ? 1 : 0) : progress;
+    // Preserve the art's aspect ratio; the width spans the opening.
+    const aspect = spriteImg.height && spriteImg.width ? spriteImg.height / spriteImg.width : 0.4;
+    const thickness = len * aspect;
+    const rawMotion = door.sprite_motion;
+    const motion = (rawMotion === 'slide' || rawMotion === 'double') ? rawMotion : 'swing';
+    const imgW = spriteImg.naturalWidth || spriteImg.width || 100;
+    const imgH = spriteImg.naturalHeight || spriteImg.height || 40;
+
+    // ── Double doors — split the sprite down the middle; each half swings
+    // from its own jamb so the leaves part at the centre. ──────────────────
+    if (motion === 'double') {
+      const half = len / 2;
+      const mx = x1 + ux * half, my = y1 + uy * half; // meeting point (centre)
+      return (
+        <Group>
+          {!isPlayer && (
+            <Line points={[x1, y1, x2, y2]} stroke="#37415188" strokeWidth={1} dash={[5, 4]} listening={false} />
+          )}
+          {/* Left leaf — hinge at (x1,y1), left half of the art, swings +dir */}
+          <KonvaImage
+            image={spriteImg}
+            x={x1} y={y1}
+            width={half} height={thickness}
+            offsetY={thickness / 2}
+            crop={{ x: 0, y: 0, width: imgW / 2, height: imgH }}
+            rotation={doorAngleDeg + prog * dir * 90}
+            listening={false}
+          />
+          {/* Right leaf — hinge at (x2,y2), right half of the art, swings -dir.
+              offsetX = half puts the pivot on the leaf's outer (jamb) edge so
+              the body extends back toward the centre when closed. */}
+          <KonvaImage
+            image={spriteImg}
+            x={x2} y={y2}
+            width={half} height={thickness}
+            offsetX={half} offsetY={thickness / 2}
+            crop={{ x: imgW / 2, y: 0, width: imgW / 2, height: imgH }}
+            rotation={doorAngleDeg - prog * dir * 90}
+            listening={false}
+          />
+        </Group>
+      );
+    }
+
+    let imgProps;
+    if (motion === 'slide') {
+      // Leaf slides along the door line into the adjacent wall.
+      imgProps = {
+        x: x1 + ux * prog * len,
+        y: y1 + uy * prog * len,
+        rotation: doorAngleDeg,
+      };
+    } else {
+      // Leaf swings around the hinge at (x1,y1) toward the swing side.
+      imgProps = {
+        x: x1,
+        y: y1,
+        rotation: doorAngleDeg + prog * dir * 90,
+      };
+    }
+    return (
+      <Group>
+        {!isPlayer && (
+          <>
+            <Line points={[x1, y1, x2, y2]} stroke="#37415188" strokeWidth={1} dash={[5, 4]} listening={false} />
+            {motion === 'swing' && (
+              <Line points={arcPts(x1, y1, len, doorAngle, perpAngle)} stroke={color + '44'} strokeWidth={1} listening={false} />
+            )}
+          </>
+        )}
+        <KonvaImage
+          image={spriteImg}
+          x={imgProps.x}
+          y={imgProps.y}
+          width={len}
+          height={thickness}
+          offsetY={thickness / 2}
+          rotation={imgProps.rotation}
+          listening={false}
+        />
+      </Group>
+    );
+  }
 
   // ── Portcullis ────────────────────────────────────────────────────────────
   if (style === 'portcullis') {
@@ -1427,6 +1678,10 @@ function MapImage({ src, onDims }) {
 
 export default function MapStage({
   mapUrl, mapWidth, mapHeight, gridSize,
+  // Id of the map currently on screen. Surfaced to plugins through the
+  // mapDecorations ctx so per-map plugin state (weather, ambience) can
+  // key off it. Null when the session has no map selected.
+  mapId = null,
   tokens, isPlayer, isSpectator = false,
   onTokenMove, selectedTokenId, onTokenSelect,
   onMapClick, placingToken,
@@ -1448,6 +1703,8 @@ export default function MapStage({
   onDoorDelete = null,
   onDoorToggle = null,
   onDoorFlip = null,
+  onDoorSpriteSet = null,
+  doorSprites = [],
   onLightAdd = null,
   onLightDelete = null,
   onLightSelect = null,
@@ -1502,6 +1759,13 @@ export default function MapStage({
   // the canvas to render resize handles around the selected piece.
   selectedTerrainId = null,
   onTerrainSelect = null,
+  pings = [],
+  onPingMap = null,
+  fogBlocks = [],
+  onFogBlockAdd = null,
+  onFogBlockDelete = null,
+  onFogBlockReveal = null,
+  onFogBlockHide = null,
 }) {
   const stageRef = useRef(null);
   const containerRef = useRef(null);
@@ -1509,6 +1773,31 @@ export default function MapStage({
   const aboveWaterTokensLayerRef = useRef(null);
   const onZoneFeatherChangeRef = useRef(onZoneFeatherChange);
   useEffect(() => { onZoneFeatherChangeRef.current = onZoneFeatherChange; }, [onZoneFeatherChange]);
+
+  const pingCanvasRef = useRef(null);
+  const pingsRef = useRef(pings);
+  useEffect(() => { pingsRef.current = pings; }, [pings]);
+  const onPingMapRef = useRef(onPingMap);
+  useEffect(() => { onPingMapRef.current = onPingMap; }, [onPingMap]);
+
+  const fogBlocksRef = useRef(fogBlocks);
+  useEffect(() => { fogBlocksRef.current = fogBlocks; }, [fogBlocks]);
+  const onFogBlockAddRef = useRef(onFogBlockAdd);
+  useEffect(() => { onFogBlockAddRef.current = onFogBlockAdd; }, [onFogBlockAdd]);
+  const onFogBlockDeleteRef = useRef(onFogBlockDelete);
+  useEffect(() => { onFogBlockDeleteRef.current = onFogBlockDelete; }, [onFogBlockDelete]);
+  const onFogBlockRevealRef = useRef(onFogBlockReveal);
+  useEffect(() => { onFogBlockRevealRef.current = onFogBlockReveal; }, [onFogBlockReveal]);
+  const onFogBlockHideRef = useRef(onFogBlockHide);
+  useEffect(() => { onFogBlockHideRef.current = onFogBlockHide; }, [onFogBlockHide]);
+  // Polygon fog block drawing: freeform {x,y} map-pixel points
+  const [fogPolyPoints, setFogPolyPoints] = useState([]);
+  const fogPolyRef = useRef([]);
+  const [fogCursorGrid, setFogCursorGrid] = useState(null); // {x,y} cursor in map space
+  const [fogBlockMenu, setFogBlockMenu] = useState(null); // { id, is_revealed, clientX, clientY }
+  const fogBlockMenuRef = useRef(null);
+  const [doorMenu, setDoorMenu] = useState(null); // { door, clientX, clientY }
+  const doorMenuRef = useRef(null);
 
   // Refs so the animation loop can read the latest LoS/FoW state each frame
   // without being restarted on every change.
@@ -1674,6 +1963,8 @@ export default function MapStage({
   const onDoorDeleteRef = useRef(onDoorDelete);
   const onDoorToggleRef = useRef(onDoorToggle);
   const onDoorFlipRef   = useRef(onDoorFlip);
+  const onDoorSpriteSetRef = useRef(onDoorSpriteSet);
+  useEffect(() => { onDoorSpriteSetRef.current = onDoorSpriteSet; }, [onDoorSpriteSet]);
   const onLightAddRef    = useRef(onLightAdd);
   const onLightDeleteRef = useRef(onLightDelete);
   const onLightSelectRef = useRef(onLightSelect);
@@ -1734,6 +2025,15 @@ export default function MapStage({
       darknessDrawRef.current = null;
       darkPolyDrawRef.current = null;
       setDarknessPreview(null);
+    }
+  }, [activeTool]);
+
+  // Cancel in-progress fog polygon when tool changes
+  useEffect(() => {
+    if (activeTool !== 'fog-block') {
+      setFogPolyPoints([]);
+      fogPolyRef.current = [];
+      setFogCursorGrid(null);
     }
   }, [activeTool]);
 
@@ -1848,12 +2148,117 @@ export default function MapStage({
     return pts;
   }
 
+  // Synthetic light sources emitted by fireplace-style doors. Positioned just
+  // in front of the door on the fire side and thrown as a wide wedge, so the
+  // light spills into the room and the door itself (a wall/door segment) blocks
+  // it from leaking behind. Shaped like a light_source so it drops straight
+  // into the visibility + glow pipelines.
+  const doorLights = useMemo(() => {
+    const pxPerFt = gridSize / FEET_PER_SQUARE;
+    const out = [];
+    for (const d of (doors || [])) {
+      const rFt = Number(d.light_radius) || 0;
+      if (rFt <= 0) continue;
+      const p = d.points;
+      if (!p || p.length < 4) continue;
+      const [x1, y1, x2, y2] = p;
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      if (len < 2) continue;
+      const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+      const openDir = d.open_dir === -1 ? -1 : 1;
+      const motion = (d.sprite_motion === 'slide' || d.sprite_motion === 'double') ? d.sprite_motion : 'swing';
+
+      // Follow the leaf to its committed pose so the fire (and its light) moves
+      // with the fireplace when the door is opened.
+      let ax = x1, ay = y1, bx = x2, by = y2;
+      if (d.is_open) {
+        if (motion === 'slide') {
+          ax = x1 + ux * len; ay = y1 + uy * len;
+          bx = x2 + ux * len; by = y2 + uy * len;
+        } else if (motion !== 'double') {
+          const px = -uy * openDir, py = ux * openDir; // swing perpendicular
+          ax = x1; ay = y1; bx = x1 + px * len; by = y1 + py * len;
+        }
+      }
+      // Leaf axis + fire-side normal (light_side is relative to the leaf, so it
+      // rotates with the leaf).
+      const lx = bx - ax, ly = by - ay;
+      const ll = Math.hypot(lx, ly) || 1;
+      const ldx = lx / ll, ldy = ly / ll;
+      const side = d.light_side === -1 ? -1 : 1;
+      const nx = -ldy * side, ny = ldx * side;
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      const brightR = rFt * pxPerFt;
+      out.push({
+        id: `door-${d.id}`,
+        x: mx + nx * 4, y: my + ny * 4,   // nudged onto the fire side, clear of the occluder
+        bright_radius: brightR,
+        dim_radius: brightR * 1.6,
+        color: d.light_color || '#ff7a2a',
+        direction: Math.atan2(ny, nx) * 180 / Math.PI,
+        spread_angle: 170,
+        flicker: true,
+      });
+    }
+    return out;
+  }, [doors, gridSize]);
+
+  // Door sprite images, cached by sprite_path. Declared above the LOS memos
+  // because a sprite's aspect ratio is what sets the door's occluder thickness.
+  const [doorSpriteImages, setDoorSpriteImages] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    for (const d of doors) {
+      const p = d.sprite_path;
+      if (!p || doorSpriteImages[p]) continue;
+      const img = new window.Image();
+      img.src = `/uploads/${p}`;
+      img.onload = () => { if (!cancelled) setDoorSpriteImages((prev) => ({ ...prev, [p]: img })); };
+    }
+    return () => { cancelled = true; };
+  }, [doors]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Ref mirror so the fog RAF loop can read loaded sprites without re-subscribing.
+  const doorSpriteImagesRef = useRef(doorSpriteImages);
+  useEffect(() => { doorSpriteImagesRef.current = doorSpriteImages; }, [doorSpriteImages]);
+
+  // Thickness of a door's art in map px. 0 for schematic doors (and for sprite
+  // doors whose art hasn't loaded yet), which occlude on their centreline as
+  // before; a loaded sprite occludes at the far edge of its own panel instead.
+  const doorThicknessOf = useCallback((door) => {
+    if (!door.sprite_path) return 0;
+    const img = doorSpriteImages[door.sprite_path];
+    if (!img || !img.width || !img.height) return 0;
+    const p = door.points;
+    if (!p || p.length < 4) return 0;
+    const len = Math.hypot(p[2] - p[0], p[3] - p[1]);
+    return len * (img.height / img.width);
+  }, [doorSpriteImages]);
+
+  // Shared cache-key fragment for doors. Includes occluder thickness so every
+  // cached LOS polygon is rebuilt once a sprite finishes loading.
+  const doorsKey = useMemo(
+    () => doors.map(d => `${d.id}:${d.is_open}:${d.open_dir}:${d.sprite_motion || ''}:${Math.round(doorThicknessOf(d))}:${(d.points || []).length}`).join(','),
+    [doors, doorThicknessOf],
+  );
+
+  // Cache key for LOS polygons — only walls, doors, and map dims affect LOS.
+  // Shared by every consumer so they all hit the same cache generation.
+  const losCacheKey = useMemo(
+    () => `${walls.length}#${walls.map(w => `${w.id || ''}:${(w.points || []).length}`).join(',')}#${doorsKey}#${mW}x${mH}`,
+    [walls, doorsKey, mW, mH],
+  );
+
+  // Door occluders are viewer-relative (see doorToSegments) so a door never
+  // shadows its own art — rebuilt per vision origin and per light.
+  const doorSegsFrom = useCallback(
+    (ox, oy) => doorsToSegments(doors, { ox, oy, thicknessOf: doorThicknessOf }),
+    [doors, doorThicknessOf],
+  );
+
   const visPolys = useMemo(() => {
     if (!fogOfWar || visOrigins.length === 0 || mW <= 0 || mH <= 0) return [];
-    const segs = [...wallsToSegments(walls), ...doorsToSegments(doors)];
+    const wallSegs = wallsToSegments(walls);
     const ledges = (walls || []).map(w => ledgeData(w)).filter(Boolean);
-    // Cache key for light LOS — only walls, doors, and map dims affect LOS.
-    const losCacheKey = `${walls.length}#${walls.map(w => `${w.id || ''}:${(w.points || []).length}`).join(',')}#${doors.map(d => `${d.id}:${d.is_open}:${(d.points || []).length}`).join(',')}#${mW}x${mH}`;
 
     // Approximate each obscuring zone circle as 32 line segments so the
     // ray-casting LOS algorithm can treat the zone perimeter as an opaque wall.
@@ -1886,12 +2291,12 @@ export default function MapStage({
     }
     const darknessSegs = zoneToSegs(darknessZones);
     // Fog zones are purely visual — they do NOT block LOS
-    const segsWithDarkness = darknessSegs.length > 0 ? [...segs, ...darknessSegs] : segs;
+    const offsetX = gridSize > 0 ? (mW % gridSize) / 2 : 0;
+    const offsetY = gridSize > 0 ? (mH % gridSize) / 2 : 0;
+    const fbSegs = fogBlocksToSegments(fogBlocks);
 
     // Build token-attached lights from tokens that have a light source equipped.
     // Positions mirror the token centre calculation used in visOrigins.
-    const offsetX = gridSize > 0 ? (mW % gridSize) / 2 : 0;
-    const offsetY = gridSize > 0 ? (mH % gridSize) / 2 : 0;
     const tokenLights = (tokens || []).flatMap(t => {
       const brightFt = Number(t.token_light_bright) || 0;
       const dimFt    = Number(t.token_light_dim)    || 0;
@@ -1905,10 +2310,10 @@ export default function MapStage({
 
     // Pre-compute each light source's own LOS polygon (walls/doors block light).
     // Reused across all player origins so we only compute it once per light.
-    const allLights = [...lights, ...tokenLights];
+    const allLights = [...lights, ...tokenLights, ...doorLights];
     const lightPolys = allLights.map(l => ({
       l,
-      pts: getCachedLightPoly(l.x, l.y, segs, losCacheKey),
+      pts: getCachedLightPoly(l.x, l.y, [...wallSegs, ...doorSegsFrom(l.x, l.y)], losCacheKey),
     }));
 
     return visOrigins.flatMap(origin => {
@@ -1924,7 +2329,8 @@ export default function MapStage({
 
       const canPierceDarkness = visionType === 'truesight' || visionType === 'blindsight';
 
-      const losSegs = canPierceDarkness ? segs : segsWithDarkness;
+      const baseSegs = [...wallSegs, ...doorSegsFrom(ox, oy)];
+      const losSegs = canPierceDarkness ? baseSegs : [...baseSegs, ...darknessSegs, ...fbSegs];
       const pts = computeVisibilityPolygon(ox, oy, losSegs, mW, mH);
 
       // Inside magical darkness with non-penetrating vision → completely blind.
@@ -2033,7 +2439,7 @@ export default function MapStage({
       }
       return [{ pts, passes, fogOrigin: null, visionType, ox, oy, visionRangePx, ledgeDimPolys }];
     });
-  }, [fogOfWar, visOrigins, walls, doors, mW, mH, ambientLight, lights, tokens, gridSize, magicalDarkness]);
+  }, [fogOfWar, visOrigins, walls, doors, mW, mH, ambientLight, lights, tokens, gridSize, magicalDarkness, fogBlocks, doorLights, doorSegsFrom, losCacheKey]);
   // Keep the ref in sync — declared here so visPolys is in scope
   useEffect(() => { visPolysRef.current = visPolys; }, [visPolys]);
 
@@ -2120,24 +2526,21 @@ export default function MapStage({
   // light source position, below the fog so walls/darkness occludes them.
   const glowCanvasRef = useRef(null);
 
-  useEffect(() => {
-    if (!fogOfWar) return;
-    const canvas = glowCanvasRef.current;
-    if (!canvas) return;
-
-    // Collect all light sources: static lights + token-attached lights.
-    // Hoisted out of the RAF loop so we don't re-build the array 60×/sec.
-    //
-    // Defensive: any light entry whose coords or radius would resolve to
-    // NaN gets dropped before it can reach createRadialGradient (which
-    // throws "non-finite double" and aborts the entire glow canvas).
-    // Spectator view triggers this whenever the party-union includes a
-    // player token that hasn't been placed yet (grid_col / grid_row
-    // null in the DB) — Number(null)*gridSize is NaN, propagates
-    // through cx/cy, then explodes here. Player view never tripped it
-    // because it only uses the player's own token's coords.
+  // Collect all light sources: static lights + token-attached lights.
+  // Memoised so neither the glow canvas nor the door overlay rebuilds the
+  // array 60×/sec, and so both paint from the identical light list.
+  //
+  // Defensive: any light entry whose coords or radius would resolve to
+  // NaN gets dropped before it can reach createRadialGradient (which
+  // throws "non-finite double" and aborts the entire glow canvas).
+  // Spectator view triggers this whenever the party-union includes a
+  // player token that hasn't been placed yet (grid_col / grid_row
+  // null in the DB) — Number(null)*gridSize is NaN, propagates
+  // through cx/cy, then explodes here. Player view never tripped it
+  // because it only uses the player's own token's coords.
+  const glowLights = useMemo(() => {
     const isFiniteNum = (n) => typeof n === 'number' && Number.isFinite(n);
-    const allGlowLights = [
+    return [
       ...lights.map(l => ({
         // Stable per-light seed for the flicker phase. Two lights with the
         // same coords would otherwise pulse in lockstep, so we mix the id
@@ -2178,27 +2581,57 @@ export default function MapStage({
           flicker: t.token_light_flicker !== false,
         }];
       }),
+      ...doorLights.map(l => ({
+        seed: ((l.x * 13 + l.y * 31) * 0.1731) % (Math.PI * 2),
+        x: l.x, y: l.y,
+        brightR: l.bright_radius, dimR: l.dim_radius,
+        color: l.color, dir: l.direction, spread: l.spread_angle,
+        flicker: l.flicker,
+      })),
     ].filter(g => isFiniteNum(g.x) && isFiniteNum(g.y)
                   && isFiniteNum(g.brightR) && isFiniteNum(g.dimR));
+  }, [lights, tokens, doorLights, gridSize, mW, mH]);
 
-    function hexToRgb(hex) {
-      const h = hex.replace('#', '');
-      const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
-      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  // Walls and closed doors block light. Compute each light's LOS polygon so
+  // the glow can be clipped to the area the light actually reaches. The
+  // polygon is keyed by (x,y) and walls — flickering the radius doesn't
+  // invalidate it, so the per-frame work stays cheap (just gradient draws).
+  // Doors are added per light so each one's occluder sits at the far edge of
+  // its own art relative to THAT light — a door lit from a room is lit across
+  // its whole panel instead of being half-shadowed by itself.
+  const glowStaticSegs = useMemo(
+    () => [...wallsToSegments(walls), ...fogBlocksToSegments(fogBlocks)],
+    [walls, fogBlocks],
+  );
+  const glowLightPolys = useMemo(() => {
+    const polys = new Map();
+    if (!fogOfWar || mW <= 0 || mH <= 0) return polys;
+    for (const l of glowLights) {
+      const k = `${Math.round(l.x)}|${Math.round(l.y)}`;
+      if (polys.has(k)) continue;
+      polys.set(k, getCachedLightPoly(l.x, l.y, [...glowStaticSegs, ...doorSegsFrom(l.x, l.y)], losCacheKey));
     }
+    return polys;
+  }, [fogOfWar, glowLights, glowStaticSegs, doorSegsFrom, losCacheKey, mW, mH]); // eslint-disable-line react-hooks/exhaustive-deps
+  const glowPolyFor = useCallback(
+    (lx, ly) => glowLightPolys.get(`${Math.round(lx)}|${Math.round(ly)}`) || null,
+    [glowLightPolys],
+  );
 
-    // Walls and closed doors block light. Compute each light's LOS polygon so
-    // the glow can be clipped to the area the light actually reaches. The
-    // polygon is keyed by (x,y) and walls — flickering the radius doesn't
-    // invalidate it, so the per-frame work stays cheap (just gradient draws).
-    const glowWallSegs = [...wallsToSegments(walls), ...doorsToSegments(doors)];
-    const glowCacheKey = `${walls.length}#${walls.map(w => `${w.id || ''}:${(w.points || []).length}`).join(',')}#${doors.map(d => `${d.id}:${d.is_open}:${(d.points || []).length}`).join(',')}#${mW}x${mH}`;
+  useEffect(() => {
+    if (!fogOfWar) return;
+    const canvas = glowCanvasRef.current;
+    if (!canvas) return;
 
     let raf = null;
     let running = true;
 
     function draw() {
       if (!running) return;
+      // Read live transform from refs — keeping pos/scale out of the effect
+      // deps means panning/zooming no longer tears down and rebuilds this
+      // whole effect (and its light-poly cache) on every frame.
+      const pos = posRef.current, scale = scaleRef.current;
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.save();
@@ -2212,60 +2645,7 @@ export default function MapStage({
       // light's own seed so adjacent torches don't pulse in unison.
       const t = performance.now() / 1000;
 
-      for (const { seed, x, y, brightR, dimR, color, dir, spread, flicker } of allGlowLights) {
-        // Lights with flicker disabled render as steady glows — useful
-        // for sun shafts, magical continual flame, daylight spell, etc.
-        const flickerR = flicker
-          ? 1
-            + Math.sin(t * 6.7  + seed)         * 0.05
-            + Math.sin(t * 3.1  + seed * 1.7)   * 0.035
-            + Math.sin(t * 11.3 + seed * 0.5)   * 0.02
-            + (Math.random() - 0.5)             * 0.015
-          : 1;
-        // Brightness modulates a touch more than radius — the rim shimmer
-        // comes from the radial gradient, but the perceived flame
-        // intensity comes from the alpha at the centre.
-        const flickerA = flicker
-          ? 1
-            + Math.sin(t * 8.9  + seed * 2.3)   * 0.10
-            + Math.sin(t * 4.2  + seed)         * 0.05
-            + (Math.random() - 0.5)             * 0.04
-          : 1;
-
-        const fBrightR = Math.max(0, brightR * flickerR);
-        const fDimR    = Math.max(0, dimR    * flickerR);
-        const outerR   = Math.max(fDimR, fBrightR);
-        if (outerR <= 0) continue;
-        // Defence-in-depth — even though allGlowLights filters
-        // non-finite entries above, a future contributor could feed
-        // NaN through brightR/dimR via a new code path. createRadialGradient
-        // throws "non-finite double" the moment one slips in and that
-        // tears the whole glow canvas down for every other light too,
-        // so skip the entry instead of letting it propagate.
-        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(outerR)) continue;
-        const [r, g, b] = hexToRgb(color || '#fbbf24');
-        ctx.save();
-        clipToWedge(ctx, x, y, outerR, dir, spread);
-        const lp = getCachedLightPoly(x, y, glowWallSegs, glowCacheKey);
-        if (lp && lp.length >= 4) {
-          ctx.beginPath();
-          ctx.moveTo(lp[0], lp[1]);
-          for (let i = 2; i < lp.length; i += 2) ctx.lineTo(lp[i], lp[i + 1]);
-          ctx.closePath();
-          ctx.clip();
-        }
-        const a = Math.max(0.5, Math.min(1.4, flickerA));
-        const grad = ctx.createRadialGradient(x, y, 0, x, y, outerR);
-        grad.addColorStop(0,                            `rgba(${r}, ${g}, ${b}, ${(0.40 * a).toFixed(3)})`);
-        grad.addColorStop(fBrightR / outerR * 0.6,      `rgba(${r}, ${g}, ${b}, ${(0.24 * a).toFixed(3)})`);
-        grad.addColorStop(fBrightR / outerR,            `rgba(${r}, ${g}, ${b}, ${(0.12 * a).toFixed(3)})`);
-        grad.addColorStop(1,                            `rgba(${r}, ${g}, ${b}, 0.00)`);
-        ctx.beginPath();
-        ctx.arc(x, y, outerR, 0, Math.PI * 2);
-        ctx.fillStyle = grad;
-        ctx.fill();
-        ctx.restore();
-      }
+      paintLightGlow(ctx, glowLights, glowPolyFor, t);
 
       ctx.restore();
       raf = requestAnimationFrame(draw);
@@ -2273,7 +2653,7 @@ export default function MapStage({
 
     draw();
     return () => { running = false; if (raf) cancelAnimationFrame(raf); };
-  }, [fogOfWar, lights, tokens, pos, scale, mW, mH, stageSize, gridSize, visibilityTick, walls, doors]);
+  }, [fogOfWar, glowLights, glowPolyFor, mW, mH, stageSize, visibilityTick]);
 
   // Cache per-fog-zone LOS polygons — expensive to compute so only done when
   // zones / walls change, not on every animation frame.
@@ -2281,20 +2661,30 @@ export default function MapStage({
     if (!fogOfWar || mW <= 0 || mH <= 0) return {};
     const fzs = (magicalDarkness || []).filter(dz => dz.zone_type === 'heavy-fog');
     if (fzs.length === 0) return {};
-    const allSegs = [...wallsToSegments(walls), ...doorsToSegments(doors)];
+    const fzOffX = gridSize > 0 ? (mW % gridSize) / 2 : 0;
+    const fzOffY = gridSize > 0 ? (mH % gridSize) / 2 : 0;
+    const staticSegs = [...wallsToSegments(walls), ...fogBlocksToSegments(fogBlocks)];
     const cache = {};
     for (const fz of fzs) {
       const { x: cx, y: cy } = zoneCentroid(fz);
-      cache[fz.id] = computeVisibilityPolygon(cx, cy, allSegs, mW, mH);
+      cache[fz.id] = computeVisibilityPolygon(cx, cy, [...staticSegs, ...doorSegsFrom(cx, cy)], mW, mH);
     }
     return cache;
-  }, [fogOfWar, walls, doors, magicalDarkness, mW, mH]);
+  }, [fogOfWar, walls, doors, magicalDarkness, mW, mH, fogBlocks, gridSize, doorSegsFrom]);
 
   // HTML canvas overlay for fog of war — bypasses Konva entirely so
   // destination-out compositing works reliably on all browsers.
   // Runs as a RAF loop so the animated fog gradients update every frame without
   // going through React's re-render cycle.
   const fogCanvasRef = useRef(null);
+  // Door sprites are redrawn on THIS canvas, which sits above the fog, so a
+  // seen door's art shows crisply on top of fog instead of being half-buried
+  // in shadow at the thin occluder line (the fog's blur would eat a punched
+  // hole). Only used on fogged views; the GM sees the Konva sprite directly.
+  const doorOverlayRef = useRef(null);
+  // Scratch canvas holding the door art's alpha, so the glow re-painted on the
+  // overlay can be masked back to the sprite silhouette.
+  const maskCanvasRef = useRef(null);
 
   useEffect(() => {
     if (!fogOfWar) return;
@@ -2306,12 +2696,16 @@ export default function MapStage({
 
     function draw() {
       if (!running) return;
+      // Live transform from refs — pos/scale removed from deps so pan/zoom
+      // doesn't rebuild the effect every frame (the RAF redraws anyway).
+      const pos = posRef.current, scale = scaleRef.current;
 
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
-    // Shift by fowBlur*scale to account for oversized canvas offset (Safari-safe blur approach).
-    // Scaling the blur by the current zoom keeps the softness visually constant regardless of zoom level.
+    // Shift by fowBlur*scale to account for the oversized canvas offset — the
+    // element is blurred by a smooth CSS filter (see its style) and padded so
+    // the blur never clips at the viewport edge.
     ctx.translate(pos.x + fowBlur * scale, pos.y + fowBlur * scale);
     ctx.scale(scale, scale);
     // Fill entire map with fully-opaque fog. Colour is configurable
@@ -2693,7 +3087,150 @@ export default function MapStage({
       running = false;
       cancelAnimationFrame(raf);
     };
-  }, [fogOfWar, visPolys, fowBlur, fowColor, pos, scale, mW, mH, stageSize, ambientLight, visibilityTick, fogZoneLOS, magicalDarkness, visOrigins, gridSize, walls, doors]);
+  }, [fogOfWar, visPolys, fowBlur, fowColor, mW, mH, stageSize, ambientLight, visibilityTick, fogZoneLOS, magicalDarkness, visOrigins, gridSize, walls, doors]);
+
+  // Door-sprite overlay — redraws each SEEN door's sprite on a canvas above the
+  // fog so the art reads crisply on top of shadow. Mirrors DoorShape geometry
+  // (swing / slide / double) and the live open/close animation. Runs only on
+  // fogged views; the GM's un-fogged Konva sprite is already fully visible.
+  useEffect(() => {
+    if (!fogOfWar) return;
+    const canvas = doorOverlayRef.current;
+    if (!canvas) return;
+    let raf = null, running = true;
+
+    function draw() {
+      if (!running) return;
+      const pos = posRef.current, scale = scaleRef.current;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+      ctx.translate(pos.x, pos.y);
+      ctx.scale(scale, scale);
+
+      const vps = visPolysRef.current || [];
+      const painted = []; // { leaves, t, lit } — used by the lighting passes below
+      for (const door of (doorsRef.current || [])) {
+        if (!door.sprite_path) continue;
+        const img = doorSpriteImagesRef.current[door.sprite_path];
+        if (!img) continue;
+        const p = door.points;
+        if (!p || p.length < 4) continue;
+        const [x1, y1, x2, y2] = p;
+        const len = Math.hypot(x2 - x1, y2 - y1);
+        if (len < 2) continue;
+
+        // Seen test — a point just off the doorway toward a viewer is inside
+        // that viewer's LOS polygon. Keeps hidden doors hidden. The same point
+        // gives the light level the wall face next to the door is rendered at,
+        // so the art can be dimmed to match instead of sitting at full bright.
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        const ndx = -(y2 - y1) / len, ndy = (x2 - x1) / len; // door normal
+        let seen = false, lit = 0;
+        for (const vp of vps) {
+          if (!vp.pts || vp.pts.length < 6 || vp.ox == null) continue;
+          let nx = ndx, ny = ndy;
+          if ((vp.ox - mx) * nx + (vp.oy - my) * ny < 0) { nx = -nx; ny = -ny; }
+          const sx = mx + nx * 4, sy = my + ny * 4;
+          if (!pointInFlatPoly(sx, sy, vp.pts)) continue;
+          seen = true;
+          lit = Math.max(lit, passLitAlphaAt(sx, sy, vp));
+        }
+        if (!seen) continue;
+
+        const prog = doorAnimRef.current[door.id] ?? (door.is_open ? 1 : 0);
+        const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+        const dir = door.open_dir === -1 ? -1 : 1;
+        const doorAngle = Math.atan2(uy, ux);
+        const imgW = img.naturalWidth || img.width || 100;
+        const imgH = img.naturalHeight || img.height || 40;
+        const aspect = imgH / imgW;
+        const t = len * aspect;
+        const motion = (door.sprite_motion === 'slide' || door.sprite_motion === 'double')
+          ? door.sprite_motion : 'swing';
+
+        // Each leaf in its own rotated frame: pivot (x,y), rotation, offset
+        // along the leaf axis, width, and the source crop (double doors only).
+        let leaves;
+        if (motion === 'double') {
+          const half = len / 2;
+          leaves = [
+            { x: x1, y: y1, rot: doorAngle + prog * dir * (Math.PI / 2), ox: 0,     w: half, crop: [0, 0, imgW / 2, imgH] },
+            { x: x2, y: y2, rot: doorAngle - prog * dir * (Math.PI / 2), ox: -half, w: half, crop: [imgW / 2, 0, imgW / 2, imgH] },
+          ];
+        } else if (motion === 'slide') {
+          leaves = [{ x: x1 + ux * prog * len, y: y1 + uy * prog * len, rot: doorAngle, ox: 0, w: len, crop: null }];
+        } else {
+          leaves = [{ x: x1, y: y1, rot: doorAngle + prog * dir * (Math.PI / 2), ox: 0, w: len, crop: null }];
+        }
+
+        for (const lf of leaves) {
+          ctx.save();
+          ctx.translate(lf.x, lf.y);
+          ctx.rotate(lf.rot);
+          if (lf.crop) ctx.drawImage(img, lf.crop[0], lf.crop[1], lf.crop[2], lf.crop[3], lf.ox, -t / 2, lf.w, t);
+          else ctx.drawImage(img, lf.ox, -t / 2, lf.w, t);
+          ctx.restore();
+        }
+        painted.push({ leaves, t, lit });
+      }
+
+      // ── Light the art the same way the map under it is lit ────────────────
+      // This canvas sits ABOVE the glow canvas, so a sprite drawn raw is the
+      // one unlit patch in an otherwise lit wall — which is what was giving
+      // secret doors away (the door's own shadow reading as a panel outline).
+      // Re-paint the glow gradients here with the same math and the same
+      // `screen` blend, then mask them back to the art's own alpha.
+      if (painted.length > 0 && glowLights.length > 0) {
+        const mask = maskCanvasRef.current || (maskCanvasRef.current = document.createElement('canvas'));
+        if (mask.width !== canvas.width || mask.height !== canvas.height) {
+          mask.width = canvas.width;
+          mask.height = canvas.height;
+        }
+        const mctx = mask.getContext('2d');
+        mctx.setTransform(1, 0, 0, 1, 0, 0);
+        mctx.clearRect(0, 0, mask.width, mask.height);
+        mctx.drawImage(canvas, 0, 0);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        paintLightGlow(ctx, glowLights, glowPolyFor, performance.now() / 1000);
+        ctx.restore();
+
+        // Clip the glow back to the sprite art so it can't show as a warm
+        // rectangle over the sprite's transparent corners.
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.drawImage(mask, 0, 0);
+        ctx.restore();
+      }
+
+      // Residual fog — a door in a dim or unlit spot must be dimmed by the
+      // same amount the fog dims everything around it, or the sprite becomes
+      // the brightest thing on the map and gives the door away that way.
+      for (const { leaves, t, lit } of painted) {
+        if (lit >= 0.999) continue;
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-atop';
+        ctx.globalAlpha = 1 - lit;
+        ctx.fillStyle = fowColor;
+        for (const lf of leaves) {
+          ctx.save();
+          ctx.translate(lf.x, lf.y);
+          ctx.rotate(lf.rot);
+          ctx.fillRect(lf.ox, -t / 2, lf.w, t);
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      ctx.restore();
+      raf = requestAnimationFrame(draw);
+    }
+    raf = requestAnimationFrame(draw);
+    return () => { running = false; if (raf) cancelAnimationFrame(raf); };
+  }, [fogOfWar, stageSize, glowLights, glowPolyFor, fowColor]);
 
   // Water/illusion effect canvas — sits above the Konva stage, below the FoW.
   // Reads pixels from the Konva map layer and replays them with sinusoidal
@@ -2797,11 +3334,15 @@ export default function MapStage({
 
     function draw() {
       if (!running) return;
+      const pos = posRef.current, scale = scaleRef.current;
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const t = performance.now() / 1000;
-      const dpr = window.devicePixelRatio || 1;
+      // Konva layer canvases render at Konva.pixelRatio (capped below the
+      // device ratio for memory) — sampling coords must match that, not
+      // window.devicePixelRatio.
+      const dpr = Konva.pixelRatio || window.devicePixelRatio || 1;
 
       let konvaCanvas = null;
       try {
@@ -3004,7 +3545,7 @@ export default function MapStage({
 
     raf = requestAnimationFrame(draw);
     return () => { running = false; cancelAnimationFrame(raf); offscreen = null; };
-  }, [magicalDarkness, pluginWaterZones, pos, scale, mW, mH, stageSize, gridSize]);
+  }, [magicalDarkness, pluginWaterZones, mW, mH, stageSize, gridSize]);
 
   // Tremorsense blip canvas — sits above the fog canvas, no blur.
   // Draws sonar-ring indicators for grounded tokens detected by tremorsense
@@ -3031,6 +3572,7 @@ export default function MapStage({
 
     function draw() {
       if (!running) return;
+      const pos = posRef.current, scale = scaleRef.current;
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -3082,8 +3624,67 @@ export default function MapStage({
       running = false;
       cancelAnimationFrame(raf);
     };
-  }, [fogOfWar, tremorsenseBlips, pos, scale, stageSize, gridSize]);
+  }, [fogOfWar, tremorsenseBlips, stageSize, gridSize]);
 
+
+  // Ping canvas — draws expanding ring animations for DM map pings.
+  // Reads pingsRef each frame so adding/removing pings never restarts the loop.
+  useEffect(() => {
+    const canvas = pingCanvasRef.current;
+    if (!canvas) return;
+    let raf = null;
+    let running = true;
+    const DURATION = 3500;
+    const MAX_RADIUS_PX = 70;
+    const N_RINGS = 3;
+
+    function draw() {
+      if (!running) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const now = Date.now();
+      const sc = scaleRef.current;
+      const px = posRef.current.x;
+      const py = posRef.current.y;
+      const currentPings = pingsRef.current;
+
+      for (const ping of currentPings) {
+        const elapsed = now - ping.ts;
+        if (elapsed >= DURATION) continue;
+        const progress = elapsed / DURATION;
+        const cx = ping.x * sc + px;
+        const cy = ping.y * sc + py;
+
+        for (let i = 0; i < N_RINGS; i++) {
+          const p = (progress + i / N_RINGS) % 1;
+          const radius = p * MAX_RADIUS_PX;
+          const alpha = (1 - p) * 0.85;
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(239,68,68,${alpha.toFixed(3)})`;
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+        }
+
+        // Solid centre dot
+        const dotAlpha = Math.max(0, 1 - progress * 2);
+        ctx.beginPath();
+        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(239,68,68,${dotAlpha.toFixed(3)})`;
+        ctx.fill();
+      }
+
+      raf = requestAnimationFrame(draw);
+    }
+
+    raf = requestAnimationFrame(draw);
+    return () => {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      const c = pingCanvasRef.current;
+      if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    };
+  }, []); // permanent loop; reads pingsRef each frame
 
   // Refs to always-current props (avoid stale closures in DOM event handlers)
   const onTokenMoveRef   = useRef(onTokenMove);
@@ -3149,6 +3750,60 @@ export default function MapStage({
     }
     return () => { cancelled = true; };
   }, [terrain, pendingTerrain]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Animated open/closed progress per door (0 = closed, 1 = open). Sprites
+  // interpolate between the two poses; a short RAF eases the value on toggle
+  // so the sprite swings/slides instead of snapping.
+  const [doorAnim, setDoorAnim] = useState({}); // doorId -> progress 0..1
+  const doorAnimRef = useRef({});   // live values read inside RAF
+  const doorTargetRef = useRef({}); // desired end value per door
+  const doorRafRef = useRef(null);
+  useEffect(() => {
+    let changed = false;
+    for (const d of doors) {
+      const target = d.is_open ? 1 : 0;
+      if (doorTargetRef.current[d.id] !== target) {
+        doorTargetRef.current[d.id] = target;
+        if (doorAnimRef.current[d.id] == null) {
+          // First sight of this door — start at its current pose, no animation.
+          doorAnimRef.current[d.id] = target;
+          setDoorAnim((prev) => ({ ...prev, [d.id]: target }));
+        } else {
+          changed = true;
+        }
+      }
+    }
+    if (!changed) return;
+    if (doorRafRef.current) return; // loop already running
+    const SPEED = 1 / 0.35; // full swing in ~350ms
+    let last = performance.now();
+    const step = () => {
+      const now = performance.now();
+      const dt = (now - last) / 1000;
+      last = now;
+      let anyMoving = false;
+      const next = { ...doorAnimRef.current };
+      for (const id of Object.keys(doorTargetRef.current)) {
+        const tgt = doorTargetRef.current[id];
+        const cur = next[id] ?? tgt;
+        if (Math.abs(cur - tgt) < 0.001) { next[id] = tgt; continue; }
+        const dir = tgt > cur ? 1 : -1;
+        let v = cur + dir * SPEED * dt;
+        if ((dir > 0 && v > tgt) || (dir < 0 && v < tgt)) v = tgt;
+        next[id] = v;
+        anyMoving = true;
+      }
+      doorAnimRef.current = next;
+      setDoorAnim(next);
+      if (anyMoving) {
+        doorRafRef.current = requestAnimationFrame(step);
+      } else {
+        doorRafRef.current = null;
+      }
+    };
+    doorRafRef.current = requestAnimationFrame(step);
+  }, [doors]);
+  useEffect(() => () => { if (doorRafRef.current) cancelAnimationFrame(doorRafRef.current); }, []);
   // Live drag preview for the spawn point being moved. Stage listening
   // is disabled at the Konva level (perf), so drag is implemented via
   // the container's native mousedown/move/up like tokens — see the
@@ -3321,6 +3976,10 @@ export default function MapStage({
     let terrainRotate = null; // { id, cx, cy } — center used for angle math
 
     function onMouseDown(e) {
+      if (fogBlockMenuRef.current?.contains(e.target)) return;
+      if (doorMenuRef.current?.contains(e.target)) return;
+      setDoorMenu(null);
+      setFogBlockMenu(null);
       if (e.button === 2) {
         rightPanning = true;
         rightPanMoved = false;
@@ -3535,6 +4194,39 @@ export default function MapStage({
         return;
       }
 
+      // ── Fog block polygon draw ────────────────────────────────────────────
+      if (tool === 'fog-block') {
+        const current = fogPolyRef.current;
+        // If not currently drawing, check if clicking inside an existing fog block
+        if (current.length === 0) {
+          const hit = (fogBlocksRef.current || []).find(fb => {
+            const pts = Array.isArray(fb.points) ? fb.points : [];
+            return pts.length >= 3 && pointInPolygon(mc.x, mc.y, pts);
+          });
+          if (hit) {
+            onFogBlockDeleteRef.current?.(hit.id);
+            return;
+          }
+        }
+        // Close polygon when clicking within 20px (screen) of first vertex with ≥3 pts
+        if (current.length >= 3) {
+          const fp = current[0];
+          const sc = scaleRef.current || 1;
+          const dist = Math.sqrt((mc.x - fp.x) ** 2 + (mc.y - fp.y) ** 2);
+          if (dist < 20 / sc) {
+            onFogBlockAddRef.current?.({ points: current });
+            setFogPolyPoints([]);
+            fogPolyRef.current = [];
+            setFogCursorGrid(null);
+            return;
+          }
+        }
+        const next = [...current, { x: mc.x, y: mc.y }];
+        fogPolyRef.current = next;
+        setFogPolyPoints(next);
+        return;
+      }
+
       // ── Named spawn point (polygon mode) ──────────────────────────────────
       // Each click drops a vertex; Enter or double-click finalises and
       // hands the polygon to the parent for the label modal. Esc cancels.
@@ -3715,6 +4407,13 @@ export default function MapStage({
         const dy = e.clientY - rightPanStart.cy;
         if (Math.abs(dx) > 5 || Math.abs(dy) > 5) rightPanMoved = true;
         setPos({ x: rightPanStart.sx + dx, y: rightPanStart.sy + dy });
+        return;
+      }
+
+      // ── Fog polygon cursor tracking ───────────────────────────────────────
+      if (activeToolRef.current === 'fog-block' && fogPolyRef.current.length > 0) {
+        const mc = toMap(e.clientX, e.clientY);
+        setFogCursorGrid({ x: mc.x, y: mc.y });
         return;
       }
 
@@ -3906,6 +4605,7 @@ export default function MapStage({
       }
       const moved = Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5;
       const tool  = activeToolRef.current;
+
 
       // ── Wall tools ────────────────────────────────────────────────────────
       if (WALL_DRAW_TOOLS.has(tool)) {
@@ -4130,6 +4830,15 @@ export default function MapStage({
         tokenDragRef.current = null;
         setDragVis(null);
       } else if (!moved) {
+        // Ping tool fires immediately and skips all other click handling
+        if (activeToolRef.current === 'ping' && onPingMapRef.current) {
+          const mc = toMap(e.clientX, e.clientY);
+          onPingMapRef.current(mc.x, mc.y);
+          panning.current = false;
+          measuring.current = false;
+          return;
+        }
+
         // GM can click near a door (pan or move mode) to toggle it
         if (onDoorToggleRef.current) {
           const mc = toMap(e.clientX, e.clientY);
@@ -4204,6 +4913,10 @@ export default function MapStage({
           setDarknessPreview(null);
         }
         darknessDrawRef.current = null;
+        // Cancel fog polygon draw
+        setFogPolyPoints([]);
+        fogPolyRef.current = [];
+        setFogCursorGrid(null);
         // Cancel any in-progress spawn polygon. Esc always discards;
         // use Enter to finalise.
         spawnPolyDrawRef.current = null;
@@ -4241,7 +4954,28 @@ export default function MapStage({
           return;
         }
       }
-      if (onDoorFlipRef.current) {
+      // Fog block right-click — GM-only quick menu (reveal/hide/delete).
+      if (!isPlayer) {
+        const mc = toMap(e.clientX, e.clientY);
+        const hit = (fogBlocksRef.current || []).find(fb => {
+          const pts = Array.isArray(fb.points) ? fb.points : [];
+          return pts.length >= 3 && pointInPolygon(mc.x, mc.y, pts);
+        });
+        if (hit) {
+          setFogBlockMenu({ id: hit.id, is_revealed: hit.is_revealed, clientX: e.clientX, clientY: e.clientY });
+          return;
+        }
+      }
+      // Door right-click — GM gets a full menu (toggle/flip/sprite/motion/
+      // delete); players just flip via the existing quick path isn't offered.
+      if (!isPlayer) {
+        const mc = toMap(e.clientX, e.clientY);
+        const hit = findNearestDoor(mc.x, mc.y, doorsRef.current, 14 / scaleRef.current);
+        if (hit) {
+          setDoorMenu({ door: hit.door, clientX: e.clientX, clientY: e.clientY });
+          return;
+        }
+      } else if (onDoorFlipRef.current) {
         const mc = toMap(e.clientX, e.clientY);
         const hit = findNearestDoor(mc.x, mc.y, doorsRef.current, 14 / scaleRef.current);
         if (hit) onDoorFlipRef.current(hit.door.id);
@@ -4406,6 +5140,8 @@ export default function MapStage({
     : LIGHT_DRAW_TOOLS.has(activeTool)            ? 'crosshair'
     : DARKNESS_DRAW_TOOLS.has(activeTool)         ? 'crosshair'
     : SPAWN_TOOLS.has(activeTool)                 ? 'crosshair'
+    : activeTool === 'fog-block'                  ? 'cell'
+    : activeTool === 'ping'                       ? 'crosshair'
     : 'default';
 
   // Grid lines — centered so partial cells are equal on both sides
@@ -4430,34 +5166,49 @@ export default function MapStage({
         style={{ background: '#111827' }}
         listening={false}
       >
-        {/* Map image */}
+        {/* Base layer — map, grid, walls, doors, templates, lights, zones,
+            spawns and terrain all share ONE canvas. Every extra Konva Layer
+            allocates two full-window canvases (scene + hit), which was the
+            main driver of tab memory exhaustion in long sessions. Only
+            content needing independent compositing (the two token layers
+            the water effect samples) gets its own Layer. */}
         <Layer listening={false}>
+        {/* Map image */}
+        <Group>
           {mapUrl
             ? <MapImage src={mapUrl} onDims={onDims} />
             : <Rect width={mW} height={mH} fill="#1f2937" listening={false} />}
-        </Layer>
+        </Group>
 
         {/* Grid */}
-        <Layer listening={false}>{gridLines}</Layer>
+        <Group>{gridLines}</Group>
 
         {/* Walls — GM only */}
         {!fogOfWar && (
-          <Layer listening={false}>
+          <Group>
             {walls.map(w => <WallShape key={w.id} wall={w} />)}
             <WallPreview preview={wallPreview} />
-          </Layer>
+          </Group>
         )}
 
         {/* Doors — always rendered (players see doors; GM sees open/closed state).
             Door preview uses the wall preview yellow dashed style. */}
-        <Layer listening={false}>
-          {doors.map(d => <DoorShape key={d.id} door={d} />)}
+        <Group>
+          {doors.map(d => (
+            <DoorShape
+              key={d.id}
+              door={d}
+              spriteImg={d.sprite_path ? doorSpriteImages[d.sprite_path] || null : null}
+              progress={doorAnim[d.id]}
+              isPlayer={isPlayer}
+            />
+          ))}
           {DOOR_DRAW_TOOLS.has(activeTool) && <WallPreview preview={wallPreview} />}
-        </Layer>
+        </Group>
 
         {/* Marquee selection rectangle — drawn while drag-selecting. */}
         {marqueeRect && (marqueeRect.w > 0 || marqueeRect.h > 0) && (
-          <Layer listening={false}>
+          <Group>
             <Rect
               x={marqueeRect.x}
               y={marqueeRect.y}
@@ -4469,13 +5220,13 @@ export default function MapStage({
               dash={[6, 4]}
               listening={false}
             />
-          </Layer>
+          </Group>
         )}
 
         {/* Spell templates — GM places and edits them, but the resulting
             shapes (and any plugin-driven elemental overlays) render for
             both GM and players so AOE effects are visible at the table. */}
-        <Layer listening={false}>
+        <Group>
           {(spellTemplates || []).map(t => {
             // GM-side live-translate during drag — players never see the
             // half-finished position because the move preview is GM state.
@@ -4496,11 +5247,11 @@ export default function MapStage({
           {!isPlayer && (TEMPLATE_TOOLS.has(activeTool) || activeTool === 'tpl-erase') && templatePreview && (
             <TemplatePreview preview={templatePreview} gridSize={gridSize} />
           )}
-        </Layer>
+        </Group>
 
         {/* Lights — GM-only visual indicators; players see the lighting effect via FOW, not these circles */}
         {!isPlayer && (
-          <Layer listening={false}>
+          <Group>
             {lights.map(l => <LightShape key={l.id} light={l} />)}
             {/* Token-attached lights */}
             {tokens.filter(t => (Number(t.token_light_bright) || 0) > 0 || (Number(t.token_light_dim) || 0) > 0).map(t => {
@@ -4517,13 +5268,13 @@ export default function MapStage({
               return <LightShape key={`tl-${t.id}`} light={fakeLight} />;
             })}
             {LIGHT_DRAW_TOOLS.has(activeTool) && <LightPreview preview={lightPreview} gridSize={gridSize} />}
-          </Layer>
+          </Group>
         )}
 
         {/* Magical Darkness / Heavy Fog zones — GM-only visual indicators.
             Players experience these via the fog canvas re-fill step. */}
         {!isPlayer && (
-          <Layer listening={false}>
+          <Group>
             {magicalDarkness.map(dz =>
               dz.zone_type === 'heavy-fog' ? <FogZone key={dz.id} dz={dz} /> :
               dz.zone_type === 'water'     ? <WaterZone key={dz.id} dz={dz} /> :
@@ -4537,13 +5288,13 @@ export default function MapStage({
                 isWater={activeTool === 'water-circle' || activeTool === 'water-polygon'}
               />
             )}
-          </Layer>
+          </Group>
         )}
 
         {/* Spawn point marker — GM-only. When the map's spawn point has
             a radius, render the bubble that new tokens scatter into. */}
         {!isPlayer && spawnPoint != null && (
-          <Layer listening={false}>
+          <Group>
             {(() => {
               const sx = offsetX + spawnPoint.col * gridSize;
               const sy = offsetY + spawnPoint.row * gridSize;
@@ -4557,7 +5308,7 @@ export default function MapStage({
                 </Group>
               );
             })()}
-          </Layer>
+          </Group>
         )}
 
         {/* Named spawn points — GM-only. Cyan to distinguish from the
@@ -4565,7 +5316,7 @@ export default function MapStage({
             GM can drag the centre dot to relocate; on release the
             grid-snapped col/row goes back to the parent. */}
         {!isPlayer && (
-          <Layer listening={false}>
+          <Group>
             {spawnPoints.map((sp) => {
               const isDragging = spawnDragVis && spawnDragVis.id === sp.id;
               const dragDx = isDragging ? (spawnDragVis.col - Number(sp.grid_col)) : 0;
@@ -4672,7 +5423,7 @@ export default function MapStage({
                 </Group>
               );
             })()}
-          </Layer>
+          </Group>
         )}
 
         {/* Map terrain — placed pieces from the global library. Below
@@ -4681,7 +5432,7 @@ export default function MapStage({
             with reduced opacity + a dashed border; players never see
             them at all (filtered server-side). The Group rotates
             around the piece's visual centre (offset = w/2, h/2). */}
-        <Layer listening={false}>
+        <Group>
           {terrain.map((t) => {
             const img = terrainImages[t.lib_image_path];
             if (!img) return null;
@@ -4746,6 +5497,7 @@ export default function MapStage({
               </Group>
             );
           })}
+        </Group>
         </Layer>
 
         {/* Submerged tokens — below the water canvas so they get distorted.
@@ -4815,17 +5567,22 @@ export default function MapStage({
           })}
         </Layer>
 
+        {/* Overlay layer — plugin decorations, fog polygons, GM markers and
+            measurements share one canvas (same memory rationale as the base
+            layer above). */}
+        <Layer listening={false}>
         {/* Plugin map decorations. Rendered ABOVE tokens so plugins can
             draw things like tree canopies, clouds, etc. that occlude
-            tokens. Layer is non-interactive — plugin nodes never
-            intercept clicks. Plugins handle clicks via mapClickHandlers
-            in pluginRegistry.js if they need them. */}
-        <Layer listening={false}>
+            tokens. Non-interactive — plugin nodes never intercept clicks.
+            Plugins handle clicks via mapClickHandlers in pluginRegistry.js
+            if they need them. */}
+        <Group>
           {Array.from(pluginRegistries.mapDecorations.entries()).map(([pid, fn]) => {
             try {
               const node = fn({
                 tokens, gridSize, offsetX, offsetY,
                 mapWidth: mW, mapHeight: mH,
+                mapId,
                 isPlayer, playerTokenId,
               });
               return node ? <React.Fragment key={pid}>{node}</React.Fragment> : null;
@@ -4834,11 +5591,76 @@ export default function MapStage({
               return null;
             }
           })}
-        </Layer>
+        </Group>
+
+        {/* Fog polygons — player view: opaque dark fill hides content until DM reveals */}
+        {isPlayer && fogBlocks.some(fb => !fb.is_revealed) && (
+          <Group>
+            {fogBlocks.map((fb) => {
+              if (fb.is_revealed) return null;
+              const pts = Array.isArray(fb.points) ? fb.points : [];
+              if (pts.length < 3) return null;
+              return (
+                <Line
+                  key={fb.id}
+                  points={pts.flatMap(p => [Number(p.x), Number(p.y)])}
+                  closed
+                  fill="rgba(0,0,0,0.97)"
+                  strokeWidth={0}
+                />
+              );
+            })}
+          </Group>
+        )}
+
+        {/* Fog polygons — DM view: purple=hidden, green=revealed */}
+        {!isPlayer && (fogBlocks.length > 0 || fogPolyPoints.length > 0) && (
+          <Group>
+            {fogBlocks.map((fb) => {
+              const pts = Array.isArray(fb.points) ? fb.points : [];
+              if (pts.length < 3) return null;
+              const flat = pts.flatMap(p => [Number(p.x), Number(p.y)]);
+              const sc = scaleRef.current || 1;
+              return (
+                <Line
+                  key={fb.id}
+                  points={flat}
+                  closed
+                  fill={fb.is_revealed ? 'rgba(34,197,94,0.18)' : 'rgba(124,58,237,0.45)'}
+                  stroke={fb.is_revealed ? 'rgba(34,197,94,0.7)' : 'rgba(167,139,250,0.9)'}
+                  strokeWidth={2 / sc}
+                  dash={fb.is_revealed ? [6 / sc, 4 / sc] : undefined}
+                />
+              );
+            })}
+            {/* In-progress polygon preview */}
+            {fogPolyPoints.length > 0 && (() => {
+              const sc = scaleRef.current || 1;
+              const flat = fogPolyPoints.flatMap(p => [p.x, p.y]);
+              const previewFlat = fogCursorGrid ? [...flat, fogCursorGrid.x, fogCursorGrid.y] : flat;
+              const fp = fogPolyPoints[0];
+              const nearClose = fogPolyPoints.length >= 3 && fogCursorGrid &&
+                Math.sqrt((fogCursorGrid.x - fp.x) ** 2 + (fogCursorGrid.y - fp.y) ** 2) < 20 / sc;
+              return (
+                <>
+                  <Line points={previewFlat} closed={false} stroke="rgba(167,139,250,1)" strokeWidth={2 / sc} dash={[4 / sc, 4 / sc]} />
+                  {fogPolyPoints.length >= 3 && (
+                    <Circle
+                      x={fp.x} y={fp.y}
+                      radius={nearClose ? 10 / sc : 6 / sc}
+                      fill={nearClose ? 'rgba(167,139,250,1)' : 'rgba(167,139,250,0.5)'}
+                      stroke="white" strokeWidth={1 / sc}
+                    />
+                  )}
+                </>
+              );
+            })()}
+          </Group>
+        )}
 
         {/* GM-only markers — rendered above tokens, never visible to players */}
         {dmMarkers.length > 0 && (
-          <Layer>
+          <Group>
             {dmMarkers.map((m) => {
               const cx = offsetX + (Number(m.grid_col) + 0.5) * gridSize;
               const cy = offsetY + (Number(m.grid_row) + 0.5) * gridSize;
@@ -4901,15 +5723,16 @@ export default function MapStage({
                 </React.Fragment>
               );
             })}
-          </Layer>
+          </Group>
         )}
 
         {/* Measurement overlay — always on top */}
-        <Layer listening={false}>
+        <Group>
           {remoteMeasurements.map((rm) => (
             <MeasureOverlay key={rm.name} meas={rm.meas} gridSize={gridSize} tint={rm.color} />
           ))}
           <MeasureOverlay meas={meas} gridSize={gridSize} />
+        </Group>
         </Layer>
       </Stage>
 
@@ -4924,7 +5747,10 @@ export default function MapStage({
 
       {/* Light glow — sits above the map/tokens but below fog so darkness occludes it.
           mix-blend-mode: screen makes the warm amber glow additive so it brightens
-          whatever is below (including tokens) rather than painting over them. */}
+          whatever is below (including tokens) rather than painting over them.
+          A small blur softens the hard edges left where a light's LOS polygon is
+          clipped by walls (and directional-cone edges), so shadow boundaries read
+          as soft falloff rather than crisp cutouts. Scales with zoom, clamped. */}
       {fogOfWar && (
         <canvas
           ref={glowCanvasRef}
@@ -4942,8 +5768,10 @@ export default function MapStage({
 
       {/* Fog of war — HTML canvas overlay so destination-out compositing works
           reliably across all browsers (Konva sceneFunc approach is unreliable).
-          Canvas is oversized by 2*fowBlur on each side so CSS blur never clips
-          at the browser viewport edge (Safari-safe alternative to ctx.filter). */}
+          Canvas is oversized by 2*fowBlur on each side so the smooth CSS blur
+          never clips at the viewport edge. `isolation` + `translateZ` force a
+          single compositing layer so the GPU doesn't tile the blur (which was
+          leaving a faint screen-fixed seam). */}
       {fogOfWar && (
         <canvas
           ref={fogCanvasRef}
@@ -4955,7 +5783,21 @@ export default function MapStage({
             left: -Math.ceil(fowBlur * scale),
             pointerEvents: 'none',
             filter: fowBlur > 0 ? `blur(${Math.round(fowBlur * scale)}px)` : 'none',
+            isolation: 'isolate',
+            transform: 'translateZ(0)',
+            willChange: 'filter',
           }}
+        />
+      )}
+
+      {/* Door sprite overlay — above the fog, no blur, so seen door art
+          (bookcases, etc.) shows crisply on top of shadow. */}
+      {fogOfWar && (
+        <canvas
+          ref={doorOverlayRef}
+          width={stageSize.w}
+          height={stageSize.h}
+          style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
         />
       )}
 
@@ -4973,6 +5815,101 @@ export default function MapStage({
           pointerEvents: 'none',
         }}
       />
+
+      {/* Ping canvas — expanding ring animations for DM map pings, above all overlays */}
+      <canvas
+        ref={pingCanvasRef}
+        width={stageSize.w}
+        height={stageSize.h}
+        style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
+      />
+
+      {/* Fog block right-click menu */}
+      {fogBlockMenu && !isPlayer && (
+        <div
+          ref={fogBlockMenuRef}
+          style={{ position: 'fixed', left: fogBlockMenu.clientX, top: fogBlockMenu.clientY, zIndex: 80 }}
+          className="bg-gray-900 border border-violet-700 rounded-xl shadow-2xl overflow-hidden text-sm"
+        >
+          <button
+            className="w-full px-4 py-2 text-left hover:bg-gray-700 text-violet-200"
+            onClick={() => {
+              if (fogBlockMenu.is_revealed) onFogBlockHideRef.current?.(fogBlockMenu.id);
+              else onFogBlockRevealRef.current?.(fogBlockMenu.id);
+              setFogBlockMenu(null);
+            }}
+          >
+            {fogBlockMenu.is_revealed ? 'Hide (restore block)' : 'Reveal (allow sight)'}
+          </button>
+          <button
+            className="w-full px-4 py-2 text-left hover:bg-red-900 text-red-300"
+            onClick={() => { onFogBlockDeleteRef.current?.(fogBlockMenu.id); setFogBlockMenu(null); }}
+          >
+            Delete
+          </button>
+          <button
+            className="w-full px-4 py-2 text-left hover:bg-gray-700 text-gray-400 text-xs"
+            onClick={() => setFogBlockMenu(null)}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Door right-click menu (GM) — toggle / flip / sprite / motion / delete */}
+      {doorMenu && !isPlayer && (() => {
+        const d = doorMenu.door;
+        const motion = (d.sprite_motion === 'slide' || d.sprite_motion === 'double') ? d.sprite_motion : 'swing';
+        return (
+          <div
+            ref={doorMenuRef}
+            style={{ position: 'fixed', left: doorMenu.clientX, top: doorMenu.clientY, zIndex: 80, minWidth: 200 }}
+            className="bg-gray-900 border border-amber-700 rounded-xl shadow-2xl overflow-hidden text-sm max-h-[70vh] overflow-y-auto"
+          >
+            <div className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-amber-500/80 border-b border-gray-700 truncate max-w-[220px]">{d.label ? d.label : 'Door'}</div>
+            <button className="w-full px-4 py-2 text-left hover:bg-gray-700 text-gray-200"
+              onClick={() => { onDoorToggleRef.current?.(d.id); setDoorMenu(null); }}>
+              {d.is_open ? 'Close door' : 'Open door'}
+            </button>
+            <button className="w-full px-4 py-2 text-left hover:bg-gray-700 text-gray-200"
+              onClick={() => { onDoorFlipRef.current?.(d.id); setDoorMenu(null); }}>
+              Flip swing direction
+            </button>
+            {d.sprite_path && (
+              <div className="px-3 py-2 flex items-center gap-1">
+                <span className="text-gray-400 text-xs mr-1">Motion</span>
+                {['swing', 'slide', 'double'].map((m) => (
+                  <button key={m}
+                    className={`text-[11px] px-2 py-1 rounded capitalize ${motion === m ? 'bg-amber-700 text-amber-100' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+                    onClick={() => { onDoorSpriteSetRef.current?.({ doorId: d.id, spritePath: d.sprite_path, spriteMotion: m }); setDoorMenu(null); }}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-amber-500/80 border-t border-gray-700">Sprite</div>
+            <button className={`w-full px-4 py-2 text-left hover:bg-gray-700 ${!d.sprite_path ? 'text-amber-300' : 'text-gray-300'}`}
+              onClick={() => { onDoorSpriteSetRef.current?.({ doorId: d.id, spritePath: null, spriteMotion: motion }); setDoorMenu(null); }}>
+              None (schematic)
+            </button>
+            {doorSprites.map((s) => (
+              <button key={s.id}
+                className={`w-full px-4 py-2 text-left hover:bg-gray-700 flex items-center gap-2 ${d.sprite_path === s.image_path ? 'text-amber-300' : 'text-gray-300'}`}
+                onClick={() => { onDoorSpriteSetRef.current?.({ doorId: d.id, spritePath: s.image_path, spriteMotion: motion }); setDoorMenu(null); }}>
+                <img src={`/uploads/${s.image_path}`} alt="" className="w-6 h-6 object-contain shrink-0" />
+                <span className="truncate">{s.name}</span>
+              </button>
+            ))}
+            {doorSprites.length === 0 && (
+              <div className="px-4 py-2 text-xs text-gray-500 italic">No sprites. Upload some in the Walls &amp; Doors panel.</div>
+            )}
+            <button className="w-full px-4 py-2 text-left hover:bg-red-900 text-red-300 border-t border-gray-700"
+              onClick={() => { onDoorDeleteRef.current?.(d.id); setDoorMenu(null); }}>
+              Delete door
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Feather tool panel — floats above selected zone centroid */}
       {activeTool === 'zone-feather' && featherZoneId && (() => {

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "externalBin": [
+      "binaries/node",
+      "binaries/apple-intelligence-server"
+    ],
+    "resources": [
+      "../backend/src/**/*",
+      "../backend/node_modules/**/*",
+      "../backend/package.json",
+      "../backend/plugins/**/*",
+      "../frontend/dist/**/*",
+      "../init.sql",
+      "../sounds/**/*",
+      "../default_player.png"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
+  }
+}

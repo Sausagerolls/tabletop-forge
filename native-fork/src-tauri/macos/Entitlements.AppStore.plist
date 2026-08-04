@@ -10,6 +10,18 @@
 -->
 <plist version="1.0">
 <dict>
+    <!-- App identity. REQUIRED for App Store: these must match the
+         embedded Mac App Store provisioning profile exactly, or App
+         Store Connect rejects the upload ("missing/invalid
+         application-identifier entitlement"). The value is
+         <TeamID>.<bundle-id>; bundle id comes from tauri.conf.json's
+         `identifier`. Hardcoded here because manual codesign (unlike
+         Xcode) does not synthesise them. -->
+    <key>com.apple.application-identifier</key>
+    <string>J4UJD4Z33J.studio.giantmushroom.tabletopforge</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>J4UJD4Z33J</string>
+
     <!-- Mandatory for any Mac App Store submission. -->
     <key>com.apple.security.app-sandbox</key>
     <true/>
@@ -32,26 +44,25 @@
     <key>com.apple.security.network.server</key>
     <true/>
 
-    <!-- V8 / Node uses JIT for JavaScript execution. PGlite (Postgres
-         compiled to WebAssembly) likewise needs runtime-allocated
-         executable memory pages. Every Electron-style app declares
-         this; we're no different. -->
+    <!-- V8 (Node) and PGlite (Postgres → WebAssembly) JIT-compile at
+         runtime. allow-jit grants the MAP_JIT path V8 needs; verified
+         on macOS 26 to be sufficient on its own — the bundled Node boots
+         and PGlite initialises under the sandbox with ONLY this. We
+         deliberately do NOT request allow-unsigned-executable-memory:
+         V8 doesn't need it here and the Mac App Store rejects it.
+
+         IMPORTANT: cs.allow-jit must ALSO be declared on each nested
+         helper (node, apple-intelligence-server) directly — see
+         Entitlements.AppStore.Helper.plist. `inherit` does NOT
+         propagate hardened-runtime (cs.*) entitlements to spawned
+         children; without it on the helper, Node aborts in
+         V8::Initialize() with a brk-1 trap. -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
 
-    <!-- The Tauri Rust shell spawns the bundled Node binary as a
-         sidecar. The sidecar lives inside the .app's Resources/ and
-         is signed with our team identity at bundle time, so the
-         "allow-unsigned-executable-memory" entitlement is NOT
-         needed; this one allows execution of Mach-O loaded from the
-         bundle, which is the supported path. -->
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-
-    <!-- Required when an app spawns child processes (the Node sidecar)
-         and the children inherit the parent's sandbox. Without this,
-         spawn() fails inside a sandboxed app. -->
-    <key>com.apple.security.inherit</key>
-    <false/>
+    <!-- disable-library-validation is intentionally OMITTED: every
+         bundled executable is signed with this same team ID, so library
+         validation passes on its own. Requesting it is an unnecessary
+         Mac App Store rejection risk. -->
 </dict>
 </plist>

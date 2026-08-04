@@ -38,7 +38,15 @@ export default function MulticlassRow({
     const auto = (choices || []).filter((c) =>
       c.kind === 'auto' && (c.at_level || 1) <= lvl
     );
-    if (auto.length === 0) return;
+    // Same reasoning as the primary-class effect: prior contributions
+    // mean we must still run so a level-down strips them.
+    const priorAdded = mc.class_state?.added || {};
+    const hasPrior = (priorAdded.spells    || []).length > 0
+      || (priorAdded.armor     || []).length > 0
+      || (priorAdded.weapons   || []).length > 0
+      || (priorAdded.languages || []).length > 0
+      || (priorAdded.traits_count || 0) > 0;
+    if (auto.length === 0 && !hasPrior) return;
     const already = mc.class_state?.class_id === mc.class
       && (mc.class_state.subclass_id || '') === (mc.subclass || '')
       && (mc.class_state.applied_at_level || 0) === lvl

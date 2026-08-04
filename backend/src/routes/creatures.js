@@ -48,7 +48,7 @@ const CREATURE_FIELDS = [
   'heroic_inspiration', 'death_save_successes', 'death_save_failures',
   'prof_light_armor', 'prof_medium_armor', 'prof_heavy_armor', 'prof_shields',
   'concentrating_on',
-  'char_level', 'char_xp', 'player_notes',
+  'char_level', 'char_xp', 'player_notes', 'backstory',
   'inventory', 'currency_cp', 'currency_sp', 'currency_gp',
   'spells', 'spell_slots', 'loot', 'movement_actions',
   'race_state',

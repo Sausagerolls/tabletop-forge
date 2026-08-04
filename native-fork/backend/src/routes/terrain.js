@@ -4,11 +4,11 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db');
+const { UPLOADS_DIR, ensureDir } = require('../paths');
 
 const router = express.Router();
 
-const TERRAIN_DIR = path.join(__dirname, '../../uploads/terrain');
-if (!fs.existsSync(TERRAIN_DIR)) fs.mkdirSync(TERRAIN_DIR, { recursive: true });
+const TERRAIN_DIR = ensureDir(path.join(UPLOADS_DIR, 'terrain'));
 
 const storage = multer.diskStorage({
   destination: TERRAIN_DIR,
@@ -128,7 +128,7 @@ router.delete('/library/:id', async (req, res) => {
     // the row though, since a GM may genuinely not want a default in
     // their library.)
     if (!r.rows[0].is_default && r.rows[0].image_path) {
-      const filePath = path.join(__dirname, '../../uploads', r.rows[0].image_path);
+      const filePath = path.join(UPLOADS_DIR, r.rows[0].image_path);
       fs.unlink(filePath, () => {}); // best-effort
     }
     res.json({ ok: true });
@@ -180,7 +180,7 @@ router.get('/library/export', async (req, res) => {
         image_filename: r.image_path ? path.basename(r.image_path) : null,
       };
       if (r.image_path) {
-        const filePath = path.join(__dirname, '../../uploads', r.image_path);
+        const filePath = path.join(UPLOADS_DIR, r.image_path);
         if (fs.existsSync(filePath)) {
           const buf = fs.readFileSync(filePath);
           const ext = path.extname(filePath).toLowerCase();

@@ -67,16 +67,92 @@ export function wallsToSegments(walls) {
   return walls.flatMap(wallToSegments);
 }
 
-// Closed doors block LOS exactly like a line wall.
-export function doorToSegments(door) {
-  if (door.is_open) return [];
+// Doors block LOS along the leaf's actual position.
+//
+// Schematic doors (no sprite) keep the classic behaviour: block on the
+// centreline when closed, clear when open. Sprite doors instead follow the
+// visible leaf — an open door that has swung to the side still occludes along
+// the panel where it now sits, so shadows/LOS match what players see rather
+// than the fixed vector line the door was drawn on.
+function doorCentrelineSegments(door) {
   const pts = door.points;
   if (!pts || pts.length < 4) return [];
-  return [{ ax: pts[0], ay: pts[1], bx: pts[2], by: pts[3] }];
+  const [x1, y1, x2, y2] = pts;
+
+  // Closed: occlude along the doorway line (same for schematic and sprite).
+  if (!door.is_open) {
+    return [{ ax: x1, ay: y1, bx: x2, by: y2 }];
+  }
+
+  // Open, no sprite → passable, as before.
+  if (!door.sprite_path) return [];
+
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  if (len < 2) return [];
+  const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+  const dir = door.open_dir === -1 ? -1 : 1;
+  const px = -uy * dir, py = ux * dir; // perpendicular swing direction
+  const motion = (door.sprite_motion === 'slide' || door.sprite_motion === 'double')
+    ? door.sprite_motion : 'swing';
+
+  if (motion === 'slide') {
+    // Leaf slid into the adjacent wall — the opening is clear.
+    return [];
+  }
+  if (motion === 'double') {
+    // Two leaves swung apart, each perpendicular from its own jamb.
+    const half = len / 2;
+    return [
+      { ax: x1, ay: y1, bx: x1 + px * half, by: y1 + py * half },
+      { ax: x2, ay: y2, bx: x2 + px * half, by: y2 + py * half },
+    ];
+  }
+  // Swing: single leaf now perpendicular to the doorway, hinged at (x1,y1).
+  return [{ ax: x1, ay: y1, bx: x1 + px * len, by: y1 + py * len }];
 }
 
-export function doorsToSegments(doors) {
-  return doors.flatMap(doorToSegments);
+// Occluder segments for a door, optionally pushed off its centreline.
+//
+// A door drawn with a sprite is not a zero-width line — the art spans a
+// thickness either side of the vector the door was drawn on. Occluding on the
+// centreline means the far half of the door's own art sits in the shadow the
+// door itself casts, so a secret door reads as a dark panel in a lit wall and
+// stops being secret. With `opts.ox/oy` (the viewer or light position) and
+// `opts.thickness` (the art's thickness in map px), the occluder moves to the
+// FAR edge of the art relative to that viewer, so the whole visible panel is
+// lit exactly like the wall it sits in. The two short jamb segments seal the
+// notch the offset would otherwise open at each end of the doorway — without
+// them, light leaks around the door's ends.
+export function doorToSegments(door, opts = {}) {
+  const base = doorCentrelineSegments(door);
+  const { ox, oy, thickness = 0 } = opts;
+  if (!(thickness > 0) || ox == null || oy == null || base.length === 0) return base;
+
+  const out = [];
+  for (const s of base) {
+    const dx = s.bx - s.ax, dy = s.by - s.ay;
+    const l = Math.hypot(dx, dy);
+    if (l < 1e-6) { out.push(s); continue; }
+    // Normal pointing AWAY from the viewer.
+    let nx = -dy / l, ny = dx / l;
+    const mx = (s.ax + s.bx) / 2, my = (s.ay + s.by) / 2;
+    if ((ox - mx) * nx + (oy - my) * ny > 0) { nx = -nx; ny = -ny; }
+    const off = thickness / 2;
+    const a2x = s.ax + nx * off, a2y = s.ay + ny * off;
+    const b2x = s.bx + nx * off, b2y = s.by + ny * off;
+    out.push({ ax: s.ax, ay: s.ay, bx: a2x, by: a2y }); // jamb side at end A
+    out.push({ ax: a2x,  ay: a2y,  bx: b2x, by: b2y }); // far face of the art
+    out.push({ ax: s.bx, ay: s.by, bx: b2x, by: b2y }); // jamb side at end B
+  }
+  return out;
+}
+
+// `opts.thicknessOf(door)` supplies each door's art thickness; everything else
+// in `opts` is forwarded to doorToSegments.
+export function doorsToSegments(doors, opts = {}) {
+  const { thicknessOf, ...rest } = opts;
+  if (!thicknessOf) return doors.flatMap(d => doorToSegments(d, rest));
+  return doors.flatMap(d => doorToSegments(d, { ...rest, thickness: thicknessOf(d) }));
 }
 
 function boundarySegs(mapW, mapH) {
@@ -211,4 +287,21 @@ export function ledgeFarSidePolygon(ledge, ox, oy, mapW, mapH) {
   const bFx = bx + (bDx / bLen) * L;
   const bFy = by + (bDy / bLen) * L;
   return [ax, ay, bx, by, bFx, bFy, aFx, aFy];
+}
+
+// Points stored as map-pixel {x,y} — no grid conversion needed.
+export function fogBlocksToSegments(fogBlocks) {
+  if (!fogBlocks) return [];
+  const segs = [];
+  for (const block of fogBlocks) {
+    if (block.is_revealed) continue;
+    const pts = Array.isArray(block.points) ? block.points : [];
+    if (pts.length < 3) continue;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      segs.push({ ax: Number(a.x), ay: Number(a.y), bx: Number(b.x), by: Number(b.y) });
+    }
+  }
+  return segs;
 }

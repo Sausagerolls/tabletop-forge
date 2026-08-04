@@ -87,27 +87,52 @@ review pass.
 
 ### Build for App Store
 
-```bash
-# Same identity env var, but pointing at the Apple Distribution cert
-# this time, NOT Developer ID:
-export APPLE_SIGNING_IDENTITY="Apple Distribution: Jake Watts (ABCDE12345)"
+Point `.signing-env`'s `APPLE_SIGNING_IDENTITY` at the **Apple
+Distribution** cert (not Developer ID):
 
-# Optional: tell Tauri to use the App Store entitlements file instead
-# of the Developer ID one. Set MACOSX_DEPLOYMENT_TARGET to match the
-# minimum macOS version your codebase actually compiles for.
-export MACOSX_DEPLOYMENT_TARGET=12.0
-
-# Edit tauri.conf.json before running — flip the entitlement path
-# to Entitlements.AppStore.plist:
-#
-#   "entitlements": "macos/Entitlements.AppStore.plist"
-#
-# Then build:
-npm run tauri:build -- --target aarch64-apple-darwin
-
-# The .pkg installer Tauri produces alongside the .app is what
-# Transporter / xcrun altool uploads to App Store Connect.
 ```
+APPLE_SIGNING_IDENTITY=Apple Distribution: Jake Watts (J4UJD4Z33J)
+```
+
+Then run the wrapper with the `appstore` target (add
+`--apple-intelligence` to include the on-device AI sidecar):
+
+```bash
+./scripts/build-signed.sh appstore --apple-intelligence
+```
+
+The wrapper does everything the App Store path needs:
+
+1. Flips `tauri.conf.json` to `Entitlements.AppStore.plist` (sandbox on).
+2. Builds + signs the bundle with the Apple Distribution cert.
+3. **Re-signs each nested helper** (`node`, `apple-intelligence-server`)
+   with `Entitlements.AppStore.Helper.plist`, then re-seals the `.app`.
+   This step is essential — see the JIT note below.
+4. Wraps the `.app` in an installer `.pkg` signed with the **3rd Party
+   Mac Developer Installer** cert → `target/release/bundle/TableTop Forge.pkg`.
+
+#### The JIT entitlement gotcha (why step 3 exists)
+
+The bundled Node aborts at `V8::Initialize()` (a `brk 1` trap in
+`pthread_jit_write_protect_np` → `ThreadIsolation::Initialize`) the
+moment it runs under the App Sandbox — UNLESS `com.apple.security.cs.allow-jit`
+is set **on the node binary itself**. `com.apple.security.inherit` does
+*not* propagate hardened-runtime (`cs.*`) entitlements to spawned
+children, so declaring allow-jit only on the main app is not enough.
+
+Verified on macOS 26: `allow-jit` alone is sufficient for both V8 and
+PGlite's WebAssembly. We do **not** use
+`com.apple.security.cs.allow-unsigned-executable-memory` or
+`com.apple.security.cs.disable-library-validation` — both are Mac App
+Store rejection triggers and neither is needed (all helpers are signed
+with the same team ID, so library validation passes).
+
+#### Build number
+
+App Store Connect rejects an upload whose `CFBundleVersion` isn't higher
+than the last accepted build. Tauri derives it from `version` in
+`tauri.conf.json` — bump that (or the build component) before each
+resubmission.
 
 ### Upload + review
 

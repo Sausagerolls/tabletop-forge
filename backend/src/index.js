@@ -18,6 +18,7 @@ const sessionsRouter = require('./routes/sessions');
 const aiRouter = require('./routes/ai');
 const wallsRouter = require('./routes/walls');
 const doorsRouter = require('./routes/doors');
+const doorSpritesRouter = require('./routes/door-sprites');
 const lightsRouter = require('./routes/lights');
 const dd2vttRouter = require('./routes/dd2vtt');
 const spellLibraryRouter = require('./routes/spell_library');
@@ -161,6 +162,7 @@ app.use('/api/sessions', sessionsRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/walls', wallsRouter);
 app.use('/api/doors', doorsRouter);
+app.use('/api/door-sprites', doorSpritesRouter);
 app.use('/api/lights', lightsRouter);
 app.use('/api/dd2vtt', dd2vttRouter);
 app.use('/api/spell-library', spellLibraryRouter);
@@ -413,6 +415,7 @@ db.query(`
 
 // Track connected users per session
 const sessionUsers = {}; // sessionCode -> Map<socketId, {name, role}>
+const sessionConnectionLog = {}; // sessionCode -> Map<name, {name, role, socketId, connectedAt, disconnectedAt}>
 const sessionTemplates = {}; // sessionCode -> Array<{ id, type, points, color, label }> — GM-only
 const sessionUserColors = {}; // sessionCode -> { name: color }
 // Per-session, per-map ambient state. The GM can layer multiple
@@ -615,6 +618,7 @@ async function getSessionState(sessionCode) {
   let tokensRows = [];
   let darknessRows = [];
   let dmMarkersRows = [];
+  let fogBlockRows = [];
   if (session.map_id) {
     const wallsRes = await db.query(
       'SELECT * FROM walls WHERE map_id=$1 ORDER BY created_at',
@@ -664,6 +668,10 @@ async function getSessionState(sessionCode) {
         ORDER BY mt.z_index, mt.id`,
       [session.map_id]
     )).rows;
+    fogBlockRows = (await db.query(
+      'SELECT * FROM map_fog_blocks WHERE map_id=$1 ORDER BY created_at',
+      [session.map_id]
+    )).rows;
   } else {
     // No map selected — still load player tokens that have no map association
     const tokensRes = await db.query(
@@ -698,6 +706,7 @@ async function getSessionState(sessionCode) {
     dmMarkers: dmMarkersRows,
     spawnPoints: typeof spawnPointsRows !== 'undefined' ? spawnPointsRows : [],
     terrain: typeof terrainRows !== 'undefined' ? terrainRows : [],
+    fogBlocks: fogBlockRows,
     spawnPoint: { col: session.map_spawn_col ?? 0, row: session.map_spawn_row ?? 0, radius: session.map_spawn_radius ?? 0 },
     playerMapOverrides: await loadPlayerMapOverrides(session.id),
   };
@@ -716,6 +725,15 @@ async function loadPlayerMapOverrides(sessionId) {
     if (row.player_name && row.map_id != null) out[row.player_name] = row.map_id;
   }
   return out;
+}
+
+function getConnectionLog(sessionCode) {
+  const log = sessionConnectionLog[sessionCode];
+  if (!log) return [];
+  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+  return Array.from(log.values()).filter(e =>
+    e.disconnectedAt && new Date(e.disconnectedAt).getTime() > cutoff
+  );
 }
 
 io.on('connection', (socket) => {
@@ -755,6 +773,15 @@ io.on('connection', (socket) => {
       if (!sessionUsers[sessionCode]) sessionUsers[sessionCode] = new Map();
       sessionUsers[sessionCode].set(socket.id, { name: socket.data.name, role: safeRole });
 
+      if (!sessionConnectionLog[sessionCode]) sessionConnectionLog[sessionCode] = new Map();
+      sessionConnectionLog[sessionCode].set(socket.data.name, {
+        name: socket.data.name,
+        role: safeRole,
+        socketId: socket.id,
+        connectedAt: new Date().toISOString(),
+        disconnectedAt: null,
+      });
+
       const state = await getSessionState(sessionCode);
       // Strip GM markers from non-GM state but include spell templates so
       // both players and spectators see plugin-driven AOE effects on the
@@ -771,7 +798,13 @@ io.on('connection', (socket) => {
         : { ...state, spellTemplates: sessionTemplates[sessionCode] || [], dmMarkers: [], terrain: visibleTerrain };
       const colors = sessionUserColors[sessionCode] || {};
       const currentUsers = Array.from(sessionUsers[sessionCode].values());
-      socket.emit('session_joined', { state: sendState, role: safeRole, userColors: colors, users: currentUsers });
+      socket.emit('session_joined', {
+        state: sendState,
+        role: safeRole,
+        userColors: colors,
+        users: currentUsers,
+        ...(safeRole === 'dm' ? { connectionLog: getConnectionLog(sessionCode) } : {}),
+      });
       // Re-attach the GM to whatever per-map ambients are currently
       // running so the GM panel can render the running list.
       if (role === 'dm') {
@@ -781,6 +814,7 @@ io.on('connection', (socket) => {
       // Broadcast updated user list
       io.to(sessionCode).emit('users_updated', {
         users: Array.from(sessionUsers[sessionCode].values()),
+        connectionLog: getConnectionLog(sessionCode),
       });
     } catch (err) {
       console.error(err);
@@ -1031,7 +1065,15 @@ io.on('connection', (socket) => {
         [tokenId]
       );
       const isHidden = res.rows[0].is_hidden;
-      io.to(sessionCode).emit('token_visibility_changed', { tokenId, isHidden });
+      // Include the full enriched token on reveal — players filter hidden
+      // tokens out of their local list entirely, so they need the complete
+      // row (not just the id) to re-add it without a page refresh.
+      const enrichedRes = await db.query(
+        `SELECT st.*, c.image_path AS creature_image, c.dexterity AS creature_dex, COALESCE(c.initiative_bonus, 0) AS initiative_bonus
+         FROM session_tokens st LEFT JOIN creatures c ON st.creature_id = c.id WHERE st.id = $1`,
+        [tokenId]
+      );
+      io.to(sessionCode).emit('token_visibility_changed', { tokenId, isHidden, token: enrichedRes.rows[0] || null });
     } catch (err) {
       console.error(err);
     }
@@ -2018,6 +2060,57 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── Fog Block CRUD ──────────────────────────────────────────────────────
+  socket.on('add_fog_block', async ({ mapId, points, label }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const result = await db.query(
+        `INSERT INTO map_fog_blocks (map_id, label, points)
+         VALUES ($1,$2,$3) RETURNING *`,
+        [mapId, label || '', JSON.stringify(points || [])]
+      );
+      io.to(sessionCode).emit('fog_block_added', { fogBlock: result.rows[0] });
+    } catch (err) { console.error(err); }
+  });
+
+  socket.on('reveal_fog_block', async ({ id }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const result = await db.query(
+        'UPDATE map_fog_blocks SET is_revealed=true WHERE id=$1 RETURNING *',
+        [id]
+      );
+      if (result.rows[0]) io.to(sessionCode).emit('fog_block_updated', { fogBlock: result.rows[0] });
+    } catch (err) { console.error(err); }
+  });
+
+  socket.on('hide_fog_block', async ({ id }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const result = await db.query(
+        'UPDATE map_fog_blocks SET is_revealed=false WHERE id=$1 RETURNING *',
+        [id]
+      );
+      if (result.rows[0]) io.to(sessionCode).emit('fog_block_updated', { fogBlock: result.rows[0] });
+    } catch (err) { console.error(err); }
+  });
+
+  socket.on('delete_fog_block', async ({ id }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      await db.query('DELETE FROM map_fog_blocks WHERE id=$1', [id]);
+      io.to(sessionCode).emit('fog_block_deleted', { id });
+    } catch (err) { console.error(err); }
+  });
+
   // ── Door CRUD + toggle ───────────────────────────────────────────────────
   socket.on('add_door', async ({ mapId, style, points }) => {
     if (socket.data.role !== 'dm') return;
@@ -2040,6 +2133,66 @@ io.on('connection', (socket) => {
     try {
       await db.query('DELETE FROM doors WHERE id=$1', [doorId]);
       io.to(sessionCode).emit('door_deleted', { doorId });
+    } catch (err) { console.error(err); }
+  });
+
+  // GM renames a door for easy identification in the door list.
+  socket.on('set_door_label', async ({ doorId, label }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const res = await db.query(
+        'UPDATE doors SET label=$1 WHERE id=$2 RETURNING id, label',
+        [String(label || '').slice(0, 100), doorId]
+      );
+      if (res.rows.length) {
+        io.to(sessionCode).emit('door_label_changed', { doorId: res.rows[0].id, label: res.rows[0].label });
+      }
+    } catch (err) { console.error(err); }
+  });
+
+  // GM sets a door's emitted light (fireplace glow). radius 0 = off.
+  socket.on('set_door_light', async ({ doorId, radius, color, side }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const r = Math.max(0, Math.min(200, Number(radius) || 0));
+      const s = side === -1 ? -1 : 1;
+      const res = await db.query(
+        'UPDATE doors SET light_radius=$1, light_color=$2, light_side=$3 WHERE id=$4 RETURNING id, light_radius, light_color, light_side',
+        [r, String(color || '').slice(0, 20), s, doorId]
+      );
+      if (res.rows.length) {
+        io.to(sessionCode).emit('door_light_changed', {
+          doorId: res.rows[0].id,
+          lightRadius: res.rows[0].light_radius,
+          lightColor: res.rows[0].light_color,
+          lightSide: res.rows[0].light_side,
+        });
+      }
+    } catch (err) { console.error(err); }
+  });
+
+  // GM assigns/clears a door's sprite + motion. spritePath null clears it.
+  socket.on('set_door_sprite', async ({ doorId, spritePath, spriteMotion }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    try {
+      const motion = (spriteMotion === 'slide' || spriteMotion === 'double') ? spriteMotion : 'swing';
+      const res = await db.query(
+        'UPDATE doors SET sprite_path=$1, sprite_motion=$2 WHERE id=$3 RETURNING id, sprite_path, sprite_motion',
+        [spritePath || null, motion, doorId]
+      );
+      if (res.rows.length) {
+        io.to(sessionCode).emit('door_sprite_changed', {
+          doorId: res.rows[0].id,
+          spritePath: res.rows[0].sprite_path,
+          spriteMotion: res.rows[0].sprite_motion,
+        });
+      }
     } catch (err) { console.error(err); }
   });
 
@@ -2746,16 +2899,34 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('dm_ping', ({ x, y, mapId }) => {
+    if (socket.data.role !== 'dm') return;
+    const sessionCode = socket.data.sessionCode;
+    if (!sessionCode) return;
+    io.to(sessionCode).emit('map_ping', { id: `ping-${socket.id}-${Date.now()}`, x, y, mapId });
+  });
+
   socket.on('disconnect', () => {
     const sessionCode = socket.data.sessionCode;
-    if (sessionCode && sessionUsers[sessionCode]) {
-      sessionUsers[sessionCode].delete(socket.id);
-      if (sessionUsers[sessionCode].size === 0) {
-        delete sessionUsers[sessionCode];
-      } else {
-        io.to(sessionCode).emit('users_updated', {
-          users: Array.from(sessionUsers[sessionCode].values()),
-        });
+    if (sessionCode) {
+      if (sessionConnectionLog[sessionCode]) {
+        for (const [, entry] of sessionConnectionLog[sessionCode]) {
+          if (entry.socketId === socket.id) {
+            entry.disconnectedAt = new Date().toISOString();
+            break;
+          }
+        }
+      }
+      if (sessionUsers[sessionCode]) {
+        sessionUsers[sessionCode].delete(socket.id);
+        if (sessionUsers[sessionCode].size === 0) {
+          delete sessionUsers[sessionCode];
+        } else {
+          io.to(sessionCode).emit('users_updated', {
+            users: Array.from(sessionUsers[sessionCode].values()),
+            connectionLog: getConnectionLog(sessionCode),
+          });
+        }
       }
     }
   });
@@ -2944,6 +3115,24 @@ server.listen(PORT, async () => {
       )
     `);
     await db.query(`ALTER TABLE doors ADD COLUMN IF NOT EXISTS open_dir INTEGER DEFAULT 1`);
+    await db.query(`ALTER TABLE doors ADD COLUMN IF NOT EXISTS label VARCHAR(100) DEFAULT ''`);
+    // Fireplace-style doors can emit directional light out the "fire" side.
+    await db.query(`ALTER TABLE doors ADD COLUMN IF NOT EXISTS light_radius FLOAT DEFAULT 0`);
+    await db.query(`ALTER TABLE doors ADD COLUMN IF NOT EXISTS light_color VARCHAR(20) DEFAULT ''`);
+    await db.query(`ALTER TABLE doors ADD COLUMN IF NOT EXISTS light_side INTEGER DEFAULT 1`);
+    // Per-door sprite overlay that animates with the door open/close.
+    // sprite_path → uploads-relative image; sprite_motion → 'swing' | 'slide'.
+    await db.query(`ALTER TABLE doors ADD COLUMN IF NOT EXISTS sprite_path VARCHAR(255) DEFAULT NULL`);
+    await db.query(`ALTER TABLE doors ADD COLUMN IF NOT EXISTS sprite_motion VARCHAR(12) DEFAULT 'swing'`);
+    // Reusable door-sprite library — upload art once, assign to any door.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS door_sprites (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(120) NOT NULL DEFAULT 'Door',
+        image_path VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS spawn_col FLOAT DEFAULT 0`);
     await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS spawn_row FLOAT DEFAULT 0`);
     await db.query(`ALTER TABLE maps ADD COLUMN IF NOT EXISTS session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE`);
@@ -3041,7 +3230,19 @@ server.listen(PORT, async () => {
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS char_level INTEGER DEFAULT 1`);
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS char_xp INTEGER DEFAULT 0`);
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS player_notes TEXT DEFAULT ''`);
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS backstory TEXT DEFAULT ''`);
     await db.query(`ALTER TABLE maps ADD COLUMN IF NOT EXISTS floor_label VARCHAR(60) DEFAULT ''`);
+    await db.query(`DROP TABLE IF EXISTS map_fog_blocks`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS map_fog_blocks (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        map_id INTEGER REFERENCES maps(id) ON DELETE CASCADE,
+        label VARCHAR(100) DEFAULT '',
+        points JSONB NOT NULL DEFAULT '[]',
+        is_revealed BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     await db.query(`
       CREATE TABLE IF NOT EXISTS spell_library (
         id UUID PRIMARY KEY,

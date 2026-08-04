@@ -5,11 +5,12 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { imageSize } = require('image-size');
 const db = require('../db');
+const { UPLOADS_DIR, ensureDir } = require('../paths');
 
 const router = express.Router();
 
 const storage = multer.diskStorage({
-  destination: path.join(__dirname, '../../uploads/maps'),
+  destination: ensureDir(path.join(UPLOADS_DIR, 'maps')),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `${uuidv4()}${ext}`);
@@ -161,7 +162,7 @@ router.delete('/:id', async (req, res) => {
     const imagePath = result.rows[0].image_path;
     await db.query('DELETE FROM maps WHERE id=$1', [req.params.id]);
     // Delete file from disk (non-fatal if missing)
-    const filePath = path.join(__dirname, '../../uploads', imagePath);
+    const filePath = path.join(UPLOADS_DIR, imagePath);
     fs.unlink(filePath, (err) => {
       if (err) console.warn('Could not delete map file:', filePath, err.message);
     });

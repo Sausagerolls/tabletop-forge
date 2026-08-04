@@ -30,6 +30,12 @@ use tauri::{AppHandle, Manager};
 /// access.
 struct BackendProc(Mutex<Option<Child>>);
 
+/// Holds the spawned Apple Intelligence sidecar (FoundationModels bridge) so
+/// the window-close hook can kill it alongside the backend. Only compiled when
+/// the `apple-intelligence` feature is on (the opt-in native-macOS build).
+#[cfg(feature = "apple-intelligence")]
+struct AppleProc(Mutex<Option<Child>>);
+
 /// Pick a port for the backend.
 ///
 /// Tries the canonical 3001 first (matches the Docker stack so a
@@ -50,6 +56,47 @@ fn pick_free_port() -> Option<u16> {
         .ok()
         .and_then(|l| l.local_addr().ok())
         .map(|a| a.port())
+}
+
+/// Ask the kernel for any free loopback port. Used for the Apple Intelligence
+/// sidecar, which only ever listens on 127.0.0.1, so it doesn't need the
+/// LAN-facing 0.0.0.0 probe (or the friendly 3001 range) the backend uses.
+#[cfg(feature = "apple-intelligence")]
+fn pick_loopback_port() -> Option<u16> {
+    TcpListener::bind("127.0.0.1:0")
+        .ok()
+        .and_then(|l| l.local_addr().ok())
+        .map(|a| a.port())
+}
+
+/// Spawn the Apple Intelligence sidecar (`apple-intelligence-server`, shipped
+/// next to the main binary via Tauri's externalBin). Returns the running child
+/// plus the loopback URL the backend should point its `apple` provider at.
+///
+/// Best-effort: if the binary is missing (older bundle), the port can't be
+/// picked, or the process won't spawn, we return None and the backend simply
+/// never sees $APPLE_AI_URL — so the provider isn't offered and nothing breaks.
+/// The sidecar itself self-reports availability via /health, so an ineligible
+/// Mac still spawns it but the GM gets a clear "not enabled" message.
+#[cfg(feature = "apple-intelligence")]
+fn spawn_apple_ai() -> Option<(Child, String)> {
+    let sidecar = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .map(|dir| {
+            let suffix = if cfg!(windows) { ".exe" } else { "" };
+            dir.join(format!("apple-intelligence-server{}", suffix))
+        })
+        .filter(|p| p.exists())?;
+
+    let port = pick_loopback_port()?;
+    let child = Command::new(&sidecar)
+        .env("PORT", port.to_string())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .ok()?;
+    Some((child, format!("http://127.0.0.1:{}", port)))
 }
 
 /// Returns the first non-loopback IPv4 address we can find — what
@@ -79,7 +126,7 @@ fn lan_address() -> Option<String> {
 /// inherited from the Tauri process so logs end up in
 /// `~/Library/Logs/...` on macOS and the equivalent on Win/Linux
 /// when the bundled app pipes them through.
-fn spawn_backend(app: &AppHandle, port: u16) -> Option<Child> {
+fn spawn_backend(app: &AppHandle, port: u16, apple_url: Option<&str>) -> Option<Child> {
     // Resolve the backend entry point. Three locations to try, in
     // order:
     //
@@ -191,6 +238,16 @@ fn spawn_backend(app: &AppHandle, port: u16) -> Option<Child> {
         .env("DM_MASTER_PASSWORD", "dungeonmaster")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
+    // When the Apple Intelligence sidecar is running, tell the backend where
+    // to reach it. ai.js reads $APPLE_AI_URL to (a) offer the provider to the
+    // frontend and (b) route `provider: 'apple'` requests to the sidecar.
+    if let Some(url) = apple_url {
+        cmd.env("APPLE_AI_URL", url);
+    }
+    // Mac App Store build: tell the backend to disable runtime plugin upload
+    // and force-hide the NSFW image toggle (App Store guidelines 2.5.2 / 1.1.4).
+    #[cfg(feature = "app-store")]
+    cmd.env("TTF_APP_STORE", "1");
     // Tauri inherits cwd `/` from macOS LaunchServices when the
     // .app is double-clicked, and PGlite's WASM aborts at
     // pg_initdb() when started from a non-writable cwd because
@@ -238,14 +295,38 @@ fn main() {
     let local_url = format!("http://127.0.0.1:{}/", port);
     let lan_url   = lan_address().map(|ip| format!("http://{}:{}/", ip, port));
 
-    tauri::Builder::default()
-        .manage(BackendProc(Mutex::new(None)))
+    let builder = tauri::Builder::default().manage(BackendProc(Mutex::new(None)));
+    #[cfg(feature = "apple-intelligence")]
+    let builder = builder.manage(AppleProc(Mutex::new(None)));
+
+    builder
         .setup(move |app| {
             let handle = app.handle().clone();
+
+            // Bring up the Apple Intelligence sidecar first (when built with
+            // the feature) so its URL is ready to hand to the backend. The
+            // sidecar binds instantly; it loads the model lazily on the first
+            // request, so this doesn't add to startup latency.
+            let apple_url: Option<String>;
+            #[cfg(feature = "apple-intelligence")]
+            {
+                match spawn_apple_ai() {
+                    Some((child, url)) => {
+                        *handle.state::<AppleProc>().0.lock().unwrap() = Some(child);
+                        apple_url = Some(url);
+                    }
+                    None => apple_url = None,
+                }
+            }
+            #[cfg(not(feature = "apple-intelligence"))]
+            {
+                apple_url = None;
+            }
+
             // Spawn backend on the main thread before the webview
             // tries to load — saves a flash of "ERR_CONNECTION_
             // REFUSED" while node + PGlite are warming up.
-            let child = spawn_backend(&handle, port);
+            let child = spawn_backend(&handle, port, apple_url.as_deref());
             *handle.state::<BackendProc>().0.lock().unwrap() = child;
 
             // Surface the URLs to the splash screen IMMEDIATELY —
@@ -282,6 +363,12 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 if let Some(state) = window.app_handle().try_state::<BackendProc>() {
+                    if let Some(mut child) = state.0.lock().unwrap().take() {
+                        let _ = child.kill();
+                    }
+                }
+                #[cfg(feature = "apple-intelligence")]
+                if let Some(state) = window.app_handle().try_state::<AppleProc>() {
                     if let Some(mut child) = state.0.lock().unwrap().take() {
                         let _ = child.kill();
                     }

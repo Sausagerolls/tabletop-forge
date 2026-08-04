@@ -120,6 +120,29 @@ function hexOpacityToRgba(hex, opacity) {
 const DEFAULT_PANEL_TABS = ['map', 'library', 'terrain', 'spells', 'items', 'origins', 'tokens', 'markers', 'treasure', 'handouts', 'session'];
 const PANEL_LABELS = { map: 'Map', library: 'Library', terrain: 'Terrain', spells: 'Spells', items: 'Items', origins: 'Origins', tokens: 'Tokens', markers: 'Markers', treasure: 'Treasure', handouts: 'Handouts', session: 'Session' };
 const PANEL_TAB_ORDER_KEY = 'dndvtt_dm_panel_tab_order';
+// The treasure chest has no backend table — it's GM-side scratch state.
+// Mirroring it to localStorage per session means a page refresh (or a
+// frontend redeploy) no longer empties the chest.
+const TREASURE_CHEST_KEY = 'dndvtt_dm_treasure_chest';
+// Buckets for the treasure list, keyed by an item's `item_type`. Order
+// here is the order the groups render in. Anything with an unrecognised
+// type falls into a trailing "Other" group so it can never go missing.
+const TREASURE_CATEGORIES = [
+  { id: 'item',          label: 'Items' },
+  { id: 'weapon',        label: 'Weapons' },
+  { id: 'potion',        label: 'Potions' },
+  { id: 'magic_item',    label: 'Magic Items' },
+  { id: 'wondrous_item', label: 'Wondrous Items' },
+];
+// Singular labels for the same ids, used wherever one item is described
+// rather than a group (the export picker, for one).
+const ITEM_TYPE_LABELS = {
+  item: 'Item', weapon: 'Weapon', armor: 'Armor',
+  magic_item: 'Magic Item', potion: 'Potion', wondrous_item: 'Wondrous Item',
+};
+// Types that can carry "requires attunement". Potions are consumed
+// rather than worn, so they deliberately can't be flagged.
+const ATTUNABLE_ITEM_TYPES = new Set(['weapon', 'magic_item', 'wondrous_item']);
 
 const DM_MARKER_TYPES = [
   { type: 'text_label',  Icon: MarkerIcons.text_label, label: 'Text Label'    },
@@ -591,7 +614,17 @@ function CombatTokenEntry({ token, isCurrent, displayName, dataCurrent }) {
   );
 }
 
-function CombatTracker({ tokens, combatTurn, onNext, onEnd }) {
+// One round is 6 seconds of in-game time regardless of how many
+// creatures are in it, so elapsed time comes off the ROUND count, not
+// the turn count.
+const SECONDS_PER_ROUND = 6;
+function formatCombatClock(totalSec) {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function CombatTracker({ tokens, combatTurn, onNext, onPrev, onEnd }) {
   const sorted = [...tokens]
     .filter((t) => !t.is_hidden && t.in_combat)
     .sort((a, b) => (b.initiative ?? 0) - (a.initiative ?? 0));
@@ -625,8 +658,21 @@ function CombatTracker({ tokens, combatTurn, onNext, onEnd }) {
     </div>
   );
 
+  // combatTurn is cumulative across the whole combat, so the round is
+  // just how many times the order has wrapped. Elapsed counts COMPLETED
+  // rounds — during round 1 no in-game time has passed yet.
+  const roundNum = Math.floor(combatTurn / sorted.length) + 1;
+  const elapsedSec = (roundNum - 1) * SECONDS_PER_ROUND;
+
   return (
     <div className="flex items-end gap-2 min-w-0 flex-1">
+      <div className="shrink-0 self-center pb-1 pr-1 leading-tight">
+        <div className="text-[11px] font-semibold text-yellow-300 whitespace-nowrap">Round {roundNum}</div>
+        <div
+          className="text-[10px] text-gray-400 tabular-nums whitespace-nowrap"
+          title={`In-game time elapsed — one round is ${SECONDS_PER_ROUND} seconds`}
+        >{formatCombatClock(elapsedSec)} elapsed</div>
+      </div>
       <div ref={scrollRef} className="flex items-end gap-2 overflow-x-auto min-w-0 flex-1 pb-1">
         {sorted.map((t, i) => {
           const isCurrent = i === combatTurn % sorted.length;
@@ -642,12 +688,22 @@ function CombatTracker({ tokens, combatTurn, onNext, onEnd }) {
         })}
       </div>
       <div className="flex flex-col gap-1 shrink-0 self-center pb-1">
-        <button
-          onClick={onNext}
-          className="px-2 py-1 bg-yellow-600 hover:bg-yellow-500 text-gray-900 rounded text-xs font-semibold"
-        >
-          Next →
-        </button>
+        <div className="flex gap-1">
+          <button
+            onClick={onPrev}
+            disabled={combatTurn <= 0}
+            title="Step back one turn (undo a mis-click)"
+            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:hover:bg-gray-700 text-gray-200 rounded text-xs font-semibold"
+          >
+            ← Back
+          </button>
+          <button
+            onClick={onNext}
+            className="px-2 py-1 bg-yellow-600 hover:bg-yellow-500 text-gray-900 rounded text-xs font-semibold"
+          >
+            Next →
+          </button>
+        </div>
         <button
           onClick={onEnd}
           className="px-2 py-1 bg-gray-700 hover:bg-red-900/50 text-gray-300 hover:text-red-300 rounded text-xs"
@@ -1969,6 +2025,30 @@ export default function DMView() {
   const [uploadCustomName, setUploadCustomName] = useState('');
   const [treasureList, setTreasureList] = useState([]);
   const [sendingItemId, setSendingItemId] = useState(null);
+  const [treasureSearch, setTreasureSearch] = useState('');
+  const [treasureCollapsedGroups, setTreasureCollapsedGroups] = useState(() => new Set());
+  // Which session's chest is currently loaded. Kept in state rather than
+  // a ref so the save effect below can't fire before the restore has
+  // actually landed — a ref would already read as "hydrated" during the
+  // same commit and write the initial [] over the stored chest.
+  const [treasureHydratedFor, setTreasureHydratedFor] = useState(null);
+  useEffect(() => {
+    const sid = session?.id;
+    if (sid == null || treasureHydratedFor === sid) return;
+    try {
+      const raw = localStorage.getItem(`${TREASURE_CHEST_KEY}:${sid}`);
+      const parsed = raw ? JSON.parse(raw) : null;
+      setTreasureList(Array.isArray(parsed) ? parsed : []);
+    } catch { setTreasureList([]); }
+    setTreasureHydratedFor(sid);
+  }, [session?.id, treasureHydratedFor]);
+  useEffect(() => {
+    const sid = session?.id;
+    if (sid == null || treasureHydratedFor !== sid) return;
+    try {
+      localStorage.setItem(`${TREASURE_CHEST_KEY}:${sid}`, JSON.stringify(treasureList));
+    } catch { /* quota / private mode — chest just stays in-memory */ }
+  }, [treasureList, treasureHydratedFor, session?.id]);
   // ── Plugin bridge for the treasure chest ─────────────────────────────
   // The treasure chest is purely GM-side ephemeral state — there's no
   // backend table for it, so plugins (e.g. Content Exporter) can't reach
@@ -2061,6 +2141,9 @@ export default function DMView() {
   const [combatPickerViewerId, setCombatPickerViewerId] = useState(null);
   const [userColors, setUserColors] = useState({});
   const [users, setUsers] = useState([]);
+  const [connectionLog, setConnectionLog] = useState([]); // recently disconnected players
+  const [activePings, setActivePings] = useState([]);
+  const [fogBlocks, setFogBlocks] = useState([]);
 
   // ── GM-side bridge for the split-the-party plugin ────────────────
   // Exposes a snapshot of the data the plugin needs to render its
@@ -2171,6 +2254,7 @@ export default function DMView() {
   // holds a library piece while the GM is in click-to-place mode.
   const [terrain, setTerrain] = useState([]);
   const [terrainLibrary, setTerrainLibrary] = useState([]);
+  const [doorSprites, setDoorSprites] = useState([]);
   const [pendingTerrain, setPendingTerrain] = useState(null);
   const [selectedTerrainId, setSelectedTerrainId] = useState(null);
   const [terrainContextMenu, setTerrainContextMenu] = useState(null);
@@ -2303,6 +2387,21 @@ export default function DMView() {
     return () => { cancelled = true; };
   }, []);
 
+  // On-device provider availability (Apple Intelligence). Only the native
+  // macOS app built with --apple-intelligence reports present:true; every
+  // other build (web, Docker, plain .dmg) returns present:false, so the
+  // provider option simply never appears. Probed once on mount.
+  const [nativeAi, setNativeAi] = useState({ appleIntelligence: { present: false } });
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/ai/native')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d) setNativeAi(d); })
+      .catch(() => { /* not a native build — leave the default */ });
+    return () => { cancelled = true; };
+  }, []);
+  const appleAi = nativeAi.appleIntelligence || { present: false };
+
   function updateAISettings(updates) {
     setAISettings((prev) => {
       const next = { ...prev, ...updates };
@@ -2326,6 +2425,10 @@ export default function DMView() {
     ollama: { baseUrl: 'http://host.docker.internal:11434', placeholder: 'http://host.docker.internal:11434' },
     openai: { baseUrl: 'https://api.openai.com', placeholder: 'https://api.openai.com' },
     custom: { baseUrl: '', placeholder: 'https://your-api-host.com' },
+    // Apple Intelligence: the base URL is the local sidecar, supplied by the
+    // native shell — not user-entered. Selecting it fills baseUrl from the
+    // /api/ai/native probe (see the Provider dropdown onChange).
+    apple: { baseUrl: '', placeholder: 'on-device — no URL needed' },
   };
 
   async function handleAITest() {
@@ -2409,7 +2512,7 @@ export default function DMView() {
       navigate(`/dm?code=${encodeURIComponent(newCode)}&pass=${encodeURIComponent(pass)}`);
     });
 
-    socket.on('session_joined', ({ state, userColors: uc, users: u }) => {
+    socket.on('session_joined', ({ state, userColors: uc, users: u, connectionLog: cl }) => {
       setSession(state.session);
       loadMaps(state.session.id);
       setTokens(state.tokens);
@@ -2426,6 +2529,11 @@ export default function DMView() {
         .then((r) => r.ok ? r.json() : [])
         .then((rows) => setTerrainLibrary(rows || []))
         .catch(() => {});
+      fetch('/api/door-sprites')
+        .then((r) => r.ok ? r.json() : [])
+        .then((rows) => setDoorSprites(rows || []))
+        .catch(() => {});
+      setFogBlocks(state.fogBlocks || []);
       setPlayerMapOverrides(state.playerMapOverrides || {});
       // Seed the current map's spawn points immediately, then pull
       // every other map's points in one shot so the right-click submenu
@@ -2469,6 +2577,7 @@ export default function DMView() {
       setSpawnMapId(state.session.spawn_map_id ?? null);
       if (uc) setUserColors(uc);
       if (u) setUsers(u);
+      if (cl) setConnectionLog(cl);
     });
 
     socket.on('error', ({ message }) => setError(message));
@@ -2651,6 +2760,12 @@ export default function DMView() {
       setDoors(prev => prev.map(d => d.id === doorId ? { ...d, is_open: isOpen } : d)));
     socket.on('door_dir_flipped', ({ doorId, openDir }) =>
       setDoors(prev => prev.map(d => d.id === doorId ? { ...d, open_dir: openDir } : d)));
+    socket.on('door_sprite_changed', ({ doorId, spritePath, spriteMotion }) =>
+      setDoors(prev => prev.map(d => d.id === doorId ? { ...d, sprite_path: spritePath, sprite_motion: spriteMotion } : d)));
+    socket.on('door_label_changed', ({ doorId, label }) =>
+      setDoors(prev => prev.map(d => d.id === doorId ? { ...d, label } : d)));
+    socket.on('door_light_changed', ({ doorId, lightRadius, lightColor, lightSide }) =>
+      setDoors(prev => prev.map(d => d.id === doorId ? { ...d, light_radius: lightRadius, light_color: lightColor, light_side: lightSide } : d)));
     socket.on('doors_cleared', () => setDoors([]));
 
     socket.on('light_added',   ({ light })   => setLights(prev => [...prev, light]));
@@ -2809,8 +2924,26 @@ export default function DMView() {
       setUserColors((prev) => ({ ...prev, [name]: color }));
     });
 
-    socket.on('users_updated', ({ users: u }) => {
+    socket.on('users_updated', ({ users: u, connectionLog: cl }) => {
       setUsers(u);
+      if (cl) setConnectionLog(cl);
+    });
+
+    socket.on('map_ping', ({ id, x, y, mapId }) => {
+      if (mapId != null && mapId !== sessionRef.current?.map_id) return;
+      const ts = Date.now();
+      setActivePings(prev => [...prev, { id, x, y, ts }]);
+      setTimeout(() => setActivePings(prev => prev.filter(p => p.id !== id)), 3500);
+    });
+
+    socket.on('fog_block_added', ({ fogBlock }) => {
+      setFogBlocks(prev => [...prev, fogBlock]);
+    });
+    socket.on('fog_block_updated', ({ fogBlock }) => {
+      setFogBlocks(prev => prev.map(fb => fb.id === fogBlock.id ? fogBlock : fb));
+    });
+    socket.on('fog_block_deleted', ({ id }) => {
+      setFogBlocks(prev => prev.filter(fb => fb.id !== id));
     });
 
     socket.on('whisper_sent', ({ targetName, message, delivered }) => {
@@ -2951,6 +3084,37 @@ export default function DMView() {
 
   function handleDoorFlip(doorId) {
     socket.emit('flip_door_dir', { doorId });
+  }
+
+  function handleDoorSpriteSet({ doorId, spritePath, spriteMotion }) {
+    socket.emit('set_door_sprite', { doorId, spritePath, spriteMotion });
+  }
+
+  function handleDoorLabelSet(doorId, label) {
+    socket.emit('set_door_label', { doorId, label });
+  }
+
+  function handleDoorLightSet(doorId, { radius, color, side }) {
+    socket.emit('set_door_light', { doorId, radius, color, side });
+  }
+
+  async function handleDoorSpriteUpload(file) {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('image', file);
+    fd.append('name', (file.name || 'Door').replace(/\.[^.]+$/, '').slice(0, 120));
+    try {
+      const r = await fetch('/api/door-sprites', { method: 'POST', body: fd });
+      const row = await r.json();
+      if (row && !row.error) setDoorSprites((prev) => [...prev, row]);
+    } catch (err) { console.error('Door sprite upload failed', err); }
+  }
+
+  async function handleDoorSpriteDelete(id) {
+    try {
+      await fetch(`/api/door-sprites/${id}`, { method: 'DELETE' });
+      setDoorSprites((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) { console.error('Door sprite delete failed', err); }
   }
 
   function handleLightAdd(lightData) {
@@ -3211,7 +3375,9 @@ export default function DMView() {
   function computeVisibleTokenIds(viewerId) {
     const viewer = tokens.find((t) => t.id === viewerId);
     if (!viewer) return new Set();
-    const segs = [...wallsToSegments(walls), ...doorsToSegments(doors.filter((d) => !d.is_open))];
+    // doorToSegments handles open/closed + sprite-leaf occlusion itself, so
+    // pass every door rather than pre-filtering out the open ones.
+    const segs = [...wallsToSegments(walls), ...doorsToSegments(doors)];
     const v = tokenCenter(viewer);
     const out = new Set([viewer.id]);
     for (const t of tokens) {
@@ -3287,13 +3453,21 @@ export default function DMView() {
     socket.emit('set_combat', { sessionId: session.id, active: false });
   }
 
+  // combat_turn is stored CUMULATIVELY (it no longer wraps) so the round
+  // number and elapsed in-game clock can be derived from it. Every reader
+  // already takes `combatTurn % length` to find the active combatant, so
+  // letting it run past the combatant count is safe.
   function handleNextTurn() {
     if (!session) return;
-    const sorted = [...tokens]
-      .filter((t) => !t.is_hidden && t.in_combat)
-      .sort((a, b) => (b.initiative ?? 0) - (a.initiative ?? 0));
-    const next = (combatTurn + 1) % Math.max(1, sorted.length);
-    socket.emit('next_combat_turn', { sessionId: session.id, currentTurn: next });
+    socket.emit('next_combat_turn', { sessionId: session.id, currentTurn: combatTurn + 1 });
+  }
+
+  // Step back one turn after a mis-click. Clamped at 0 so combat can't
+  // rewind past the top of round 1.
+  function handlePrevTurn() {
+    if (!session) return;
+    if (combatTurn <= 0) return;
+    socket.emit('next_combat_turn', { sessionId: session.id, currentTurn: combatTurn - 1 });
   }
 
   function handleSetUserColor(name, color) {
@@ -3431,6 +3605,7 @@ export default function DMView() {
               tokens={tokens}
               combatTurn={combatTurn}
               onNext={handleNextTurn}
+              onPrev={handlePrevTurn}
               onEnd={handleEndCombat}
             />
             <button
@@ -3449,6 +3624,7 @@ export default function DMView() {
 
           <MapStage
             mapUrl={mapUrl}
+            mapId={session?.map_id ?? null}
             mapWidth={session.map_width}
             mapHeight={session.map_height}
             gridSize={gridSize}
@@ -3473,6 +3649,8 @@ export default function DMView() {
             onDoorDelete={handleDoorDelete}
             onDoorToggle={handleDoorToggle}
             onDoorFlip={handleDoorFlip}
+            onDoorSpriteSet={handleDoorSpriteSet}
+            doorSprites={doorSprites}
             onLightAdd={handleLightAdd}
             onLightDelete={handleLightDelete}
             onLightSelect={setEditingLight}
@@ -3557,6 +3735,15 @@ export default function DMView() {
               });
               socket.emit('update_spawn_point', { id, gridCol: col, gridRow: row });
             }}
+            pings={activePings}
+            onPingMap={(x, y) => socket.emit('dm_ping', { x, y, mapId: session?.map_id ?? null })}
+            fogBlocks={fogBlocks}
+            onFogBlockAdd={({ points }) =>
+              socket.emit('add_fog_block', { mapId: session?.map_id, points })
+            }
+            onFogBlockDelete={(id) => socket.emit('delete_fog_block', { id })}
+            onFogBlockReveal={(id) => socket.emit('reveal_fog_block', { id })}
+            onFogBlockHide={(id) => socket.emit('hide_fog_block', { id })}
           />
 
           {tokenContextMenu && (
@@ -4433,6 +4620,7 @@ export default function DMView() {
                     <div className="text-xs text-gray-400">
                       Use the wall tools (W, R, P, O) in the left toolbar to draw LOS barriers. The GM always sees the full map.
                     </div>
+
                     {walls.length > 0 && (
                       <button
                         onClick={handleClearWalls}
@@ -4465,6 +4653,162 @@ export default function DMView() {
                         Clear All Darkness/Fog ({magicalDarkness.length})
                       </button>
                     )}
+                  </div>
+                </div>
+
+                {/* Doors — sprite library + per-door sprite/motion controls.
+                    Draw doors with the Door tool (D) in the left toolbar. */}
+                <div>
+                  <h3 className="text-sm font-semibold text-dnd-gold mb-2">Doors</h3>
+                  <div className="bg-gray-800 rounded-xl p-3 space-y-3">
+                    {/* Sprite library */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-semibold text-amber-300">Sprite Library</span>
+                        <label className="text-[11px] px-2 py-1 bg-amber-900/40 hover:bg-amber-800/50 border border-amber-800 text-amber-200 rounded cursor-pointer">
+                          + Upload sprite
+                          <input
+                            type="file"
+                            accept=".png,.jpg,.jpeg,.webp,.gif,.svg"
+                            className="hidden"
+                            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleDoorSpriteUpload(f); }}
+                          />
+                        </label>
+                      </div>
+                      {doorSprites.length > 0 ? (
+                        <div className="grid grid-cols-5 gap-2">
+                          {doorSprites.map((s) => (
+                            <div key={s.id} className="relative group">
+                              <div className="aspect-square bg-gray-900 rounded border border-gray-700 flex items-center justify-center overflow-hidden">
+                                <img src={`/uploads/${s.image_path}`} alt={s.name} className="max-w-full max-h-full object-contain" />
+                              </div>
+                              <button
+                                onClick={() => handleDoorSpriteDelete(s.id)}
+                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-800 hover:bg-red-700 text-white text-xs leading-none opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Delete sprite"
+                              >×</button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-gray-500 italic">Upload a top-down door image to overlay on doors.</p>
+                      )}
+                    </div>
+
+                    {/* Per-door controls */}
+                    <div className="border-t border-gray-700 pt-2">
+                      {doors.length === 0 ? (
+                        <p className="text-[11px] text-gray-500 italic">
+                          No doors on this map. Select the Door tool (D) in the left toolbar and drag across a doorway.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {doors.map((d, i) => {
+                            const motion = (d.sprite_motion === 'slide' || d.sprite_motion === 'double') ? d.sprite_motion : 'swing';
+                            const spr = doorSprites.find((s) => s.image_path === d.sprite_path);
+                            const isFireplace = spr && /fire/i.test(spr.name || '');
+                            const lightRadius = Number(d.light_radius) || 0;
+                            const lightColor = d.light_color || '#ff7a2a';
+                            const lightSide = d.light_side === -1 ? -1 : 1;
+                            return (
+                              <div key={d.id} className="bg-gray-900/60 rounded-lg p-2 space-y-1.5">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="text"
+                                    defaultValue={d.label || ''}
+                                    key={d.label || ''}
+                                    placeholder={`Door ${i + 1}`}
+                                    maxLength={100}
+                                    onBlur={(e) => { const v = e.target.value.trim(); if (v !== (d.label || '')) handleDoorLabelSet(d.id, v); }}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                    className="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded text-xs text-gray-200 px-2 py-1 placeholder-gray-500"
+                                    title="Rename this door"
+                                  />
+                                  <button
+                                    onClick={() => handleDoorToggle(d.id)}
+                                    className={`text-[11px] px-2 py-0.5 rounded ${d.is_open ? 'bg-green-800 hover:bg-green-700 text-green-100' : 'bg-gray-700 hover:bg-gray-600 text-gray-200'}`}
+                                  >{d.is_open ? 'Open' : 'Closed'}</button>
+                                  <button
+                                    onClick={() => handleDoorFlip(d.id)}
+                                    className="text-[11px] px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600 text-gray-200"
+                                    title="Flip swing direction"
+                                  >Flip</button>
+                                  <button
+                                    onClick={() => handleDoorDelete(d.id)}
+                                    className="text-[11px] px-1.5 py-0.5 rounded bg-red-900/60 hover:bg-red-800 text-red-300"
+                                    title="Delete door"
+                                  >×</button>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={d.sprite_path || ''}
+                                    onChange={(e) => handleDoorSpriteSet({ doorId: d.id, spritePath: e.target.value || null, spriteMotion: motion })}
+                                    className="flex-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-200 px-2 py-1"
+                                  >
+                                    <option value="">No sprite (schematic)</option>
+                                    {doorSprites.map((s) => (
+                                      <option key={s.id} value={s.image_path}>{s.name}</option>
+                                    ))}
+                                  </select>
+                                  <div className="flex rounded overflow-hidden border border-gray-700 shrink-0">
+                                    {['swing', 'slide', 'double'].map((m) => (
+                                      <button
+                                        key={m}
+                                        onClick={() => handleDoorSpriteSet({ doorId: d.id, spritePath: d.sprite_path || null, spriteMotion: m })}
+                                        disabled={!d.sprite_path}
+                                        className={`text-[11px] px-2 py-1 capitalize transition-colors ${
+                                          motion === m
+                                            ? 'bg-amber-700 text-amber-100'
+                                            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                                        } ${!d.sprite_path ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                        title={!d.sprite_path ? 'Assign a sprite first' : m === 'double' ? 'Splits the sprite into two leaves that swing apart' : `${m} motion`}
+                                      >{m}</button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Fireplace light — only for fire sprites. Sheds
+                                    directional glow out the fire side. */}
+                                {isFireplace && (
+                                  <div className="border-t border-gray-700/60 pt-1.5 space-y-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] text-orange-300 shrink-0">🔥 Light</span>
+                                      <input
+                                        type="range" min={0} max={60} step={5}
+                                        value={lightRadius}
+                                        onChange={(e) => handleDoorLightSet(d.id, { radius: Number(e.target.value), color: lightColor, side: lightSide })}
+                                        className="flex-1 min-w-0 accent-orange-500"
+                                        title="Light radius (feet). 0 = off."
+                                      />
+                                      <span className="text-[11px] text-gray-400 font-mono w-10 text-right shrink-0">
+                                        {lightRadius > 0 ? `${lightRadius}ft` : 'off'}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="color"
+                                        value={/^#[0-9a-fA-F]{6}$/.test(lightColor) ? lightColor : '#ff7a2a'}
+                                        onChange={(e) => handleDoorLightSet(d.id, { radius: lightRadius, color: e.target.value, side: lightSide })}
+                                        disabled={lightRadius <= 0}
+                                        className="w-8 h-6 rounded bg-transparent border border-gray-700 p-0 shrink-0 disabled:opacity-40"
+                                        title="Fire colour"
+                                      />
+                                      <button
+                                        onClick={() => handleDoorLightSet(d.id, { radius: lightRadius, color: lightColor, side: -lightSide })}
+                                        disabled={lightRadius <= 0}
+                                        className="text-[11px] px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 disabled:opacity-40"
+                                        title="Flip which side the fire faces"
+                                      >Flip fire side</button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <p className="text-[11px] text-gray-600 mt-2">Tip: right-click a door on the map for the same options.</p>
+                    </div>
                   </div>
                 </div>
 
@@ -4947,6 +5291,33 @@ export default function DMView() {
               const inputCls = 'bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-dnd-gold';
               const labelCls = 'block text-xs text-gray-400 mb-0.5';
 
+              function toggleTreasureGroup(id) {
+                setTreasureCollapsedGroups(prev => {
+                  const next = new Set(prev);
+                  if (next.has(id)) next.delete(id); else next.add(id);
+                  return next;
+                });
+              }
+
+              // Free-text filter across the fields a GM would actually
+              // scan for — name, description and weapon properties.
+              const q = treasureSearch.trim().toLowerCase();
+              const matchesSearch = (it) => !q
+                || String(it.name || '').toLowerCase().includes(q)
+                || String(it.desc || '').toLowerCase().includes(q)
+                || String(it.properties || '').toLowerCase().includes(q);
+              const visibleItems = treasureList.filter(matchesSearch);
+
+              const knownTypes = new Set(TREASURE_CATEGORIES.map(c => c.id));
+              const treasureGroups = [
+                ...TREASURE_CATEGORIES.map(c => ({
+                  ...c,
+                  items: visibleItems.filter(it => (it.item_type || 'item') === c.id),
+                })),
+                { id: 'other', label: 'Other',
+                  items: visibleItems.filter(it => !knownTypes.has(it.item_type || 'item')) },
+              ].filter(g => g.items.length > 0);
+
               return (
                 <div className="h-full overflow-y-auto p-4 space-y-4">
                   <div className="flex items-center justify-between">
@@ -4991,226 +5362,258 @@ export default function DMView() {
                     </div>
                   </div>
 
+                  {treasureList.length > 1 && (
+                    <input
+                      className={`w-full ${inputCls}`}
+                      placeholder="Search treasure by name, description or properties…"
+                      value={treasureSearch}
+                      onChange={e => setTreasureSearch(e.target.value)}
+                    />
+                  )}
+
                   {treasureList.length === 0 ? (
                     <p className="text-xs text-gray-500 italic">Add items to send to players.</p>
+                  ) : treasureGroups.length === 0 ? (
+                    <p className="text-xs text-gray-500 italic">No items match “{treasureSearch}”.</p>
                   ) : (
                     <div className="space-y-3">
-                      {treasureList.map(item => {
-                        const isWeapon = item.item_type === 'weapon';
+                      {treasureGroups.map(group => {
+                        // An active search force-opens every group — a
+                        // match the GM can't see is worse than a tidy list.
+                        const groupCollapsed = !q && treasureCollapsedGroups.has(group.id);
                         return (
-                          <div key={item.id} className="bg-gray-800 rounded-lg p-3 space-y-2">
-                            {/* Row 1: type / name / qty / send / remove */}
-                            <div className="flex gap-1.5">
-                              <select
-                                className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-1 text-xs text-gray-300 focus:outline-none focus:border-dnd-gold shrink-0"
-                                value={item.item_type || 'item'}
-                                onChange={e => updateTreasureItem(item.id, 'item_type', e.target.value)}
-                              >
-                                <option value="item">Item</option>
-                                <option value="weapon">Weapon</option>
-                                <option value="magic_item">Magic Item</option>
-                              </select>
-                              <input
-                                className={`flex-1 ${inputCls}`}
-                                placeholder="Name"
-                                value={item.name}
-                                onChange={e => updateTreasureItem(item.id, 'name', e.target.value)}
-                              />
-                              <input
-                                type="number" min={1}
-                                className={`w-12 text-center ${inputCls}`}
-                                title="Qty"
-                                value={item.qty}
-                                onChange={e => updateTreasureItem(item.id, 'qty', Math.max(1, parseInt(e.target.value) || 1))}
-                              />
-                              <button
-                                title="Send this item to a player"
-                                onClick={() => setSendingItemId(prev => prev === item.id ? null : item.id)}
-                                className={`px-1.5 shrink-0 rounded text-sm transition-colors ${sendingItemId === item.id ? 'bg-yellow-600 text-yellow-100' : 'text-yellow-400 hover:text-yellow-200'}`}
-                              >📤</button>
-                              <button onClick={() => removeTreasureItem(item.id)} className="text-red-400 hover:text-red-300 px-1 shrink-0 flex items-center"><XIcon /></button>
-                            </div>
-
-                            {/* Per-item player picker */}
-                            {sendingItemId === item.id && (
-                              <div className="flex flex-col gap-1 pl-1">
-                                {pcTokens.length === 0 ? (
-                                  <p className="text-xs text-gray-500 italic">No players on map.</p>
-                                ) : pcTokens.map(tok => (
-                                  <button
-                                    key={tok.id}
-                                    onClick={() => { sendItemToPlayer(item.id, tok.creature_id); setSendingItemId(null); }}
-                                    className="flex items-center gap-2 px-2 py-1 bg-yellow-900/40 hover:bg-yellow-900/70 border border-yellow-700/50 hover:border-yellow-500 rounded text-left transition-colors"
-                                  >
-                                    <span className="text-xs text-yellow-400">gp</span>
-                                    <span className="text-xs text-yellow-200">{tok.name}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Weapon fields */}
-                            {isWeapon && (
-                              <div className="space-y-2 border-l-2 border-dnd-gold/40 pl-3">
-                                {/* Range + Atk stat + Misc bonus */}
+                        <div key={group.id} className="space-y-3">
+                          <button
+                            onClick={() => toggleTreasureGroup(group.id)}
+                            className="w-full flex items-center gap-2 px-2 py-1 bg-gray-800/60 hover:bg-gray-800 border border-gray-700 rounded text-left transition-colors"
+                            title={groupCollapsed ? 'Expand group' : 'Collapse group'}
+                          >
+                            <span className={`text-gray-400 text-[10px] transition-transform ${groupCollapsed ? '' : 'rotate-90'}`}>▶</span>
+                            <span className="text-xs font-semibold text-dnd-gold uppercase tracking-wider">{group.label}</span>
+                            <span className="text-xs text-gray-500 ml-auto">{group.items.length}</span>
+                          </button>
+                          {!groupCollapsed && group.items.map(item => {
+                            const isWeapon = item.item_type === 'weapon';
+                            return (
+                              <div key={item.id} className="bg-gray-800 rounded-lg p-3 space-y-2">
+                                {/* Row 1: type / name / qty / send / remove */}
                                 <div className="flex gap-1.5">
-                                  <div className="flex-1">
-                                    <label className={labelCls}>Range</label>
-                                    <input className={`w-full ${inputCls}`} placeholder="5ft or 60/120ft"
-                                      value={item.weapon_range || ''}
-                                      onChange={e => updateTreasureItem(item.id, 'weapon_range', e.target.value)} />
-                                  </div>
-                                  <div className="w-20">
-                                    <label className={labelCls}>Atk Stat</label>
-                                    <select className={`w-full ${inputCls}`}
-                                      value={item.attack_stat || 'STR'}
-                                      onChange={e => updateTreasureItem(item.id, 'attack_stat', e.target.value)}>
-                                      {['STR','DEX','CON','INT','WIS','CHA'].map(s => <option key={s} value={s}>{s}</option>)}
-                                    </select>
-                                  </div>
-                                  <div className="w-14">
-                                    <label className={labelCls}>Misc+</label>
-                                    <input type="number" className={`w-full text-center ${inputCls}`}
-                                      placeholder="0"
-                                      value={item.attack_bonus_misc ?? 0}
-                                      onChange={e => updateTreasureItem(item.id, 'attack_bonus_misc', parseInt(e.target.value) || 0)} />
-                                  </div>
-                                </div>
-
-                                {/* Damage entries */}
-                                <div>
-                                  <div className="flex items-center justify-between mb-1">
-                                    <label className={labelCls}>Damage</label>
-                                    <button type="button" onClick={() => addDmgEntry(item.id)} className="text-xs text-indigo-400 hover:text-indigo-200">+ Add</button>
-                                  </div>
-                                  <div className="space-y-1">
-                                    {getDmgEntries(item).map((entry, ei) => (
-                                      <div key={ei} className="flex gap-1.5 items-center">
-                                        <input className={`w-20 ${inputCls}`} placeholder="1d8+3"
-                                          value={entry.damage}
-                                          onChange={e => updateDmgEntry(item.id, ei, 'damage', e.target.value)} />
-                                        <input className={`flex-1 ${inputCls}`} placeholder="Slashing"
-                                          value={entry.damage_type}
-                                          onChange={e => updateDmgEntry(item.id, ei, 'damage_type', e.target.value)} />
-                                        {getDmgEntries(item).length > 1 && (
-                                          <button type="button" onClick={() => removeDmgEntry(item.id, ei)} className="text-red-400 hover:text-red-300 px-1 shrink-0 flex items-center"><XIcon /></button>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {/* Properties */}
-                                <div>
-                                  <label className={labelCls}>Properties</label>
-                                  <input className={`w-full ${inputCls}`} placeholder="Versatile, Finesse…"
-                                    value={item.properties || ''}
-                                    onChange={e => updateTreasureItem(item.id, 'properties', e.target.value)} />
-                                </div>
-
-                                {/* Mastery */}
-                                <div>
-                                  <label className={labelCls}>Mastery</label>
                                   <select
-                                    className={`w-full ${inputCls}`}
-                                    value={item.mastery || ''}
-                                    onChange={e => updateTreasureItem(item.id, 'mastery', e.target.value)}
+                                    className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-1 text-xs text-gray-300 focus:outline-none focus:border-dnd-gold shrink-0"
+                                    value={item.item_type || 'item'}
+                                    onChange={e => updateTreasureItem(item.id, 'item_type', e.target.value)}
                                   >
-                                    <option value="">None</option>
-                                    {['Cleave','Graze','Nick','Push','Sap','Slow','Topple','Vex'].map(m => (
-                                      <option key={m} value={m}>{m}</option>
-                                    ))}
+                                    <option value="item">Item</option>
+                                    <option value="weapon">Weapon</option>
+                                    <option value="potion">Potion</option>
+                                    <option value="magic_item">Magic Item</option>
+                                    <option value="wondrous_item">Wondrous Item</option>
                                   </select>
+                                  <input
+                                    className={`flex-1 ${inputCls}`}
+                                    placeholder="Name"
+                                    value={item.name}
+                                    onChange={e => updateTreasureItem(item.id, 'name', e.target.value)}
+                                  />
+                                  <input
+                                    type="number" min={1}
+                                    className={`w-12 text-center ${inputCls}`}
+                                    title="Qty"
+                                    value={item.qty}
+                                    onChange={e => updateTreasureItem(item.id, 'qty', Math.max(1, parseInt(e.target.value) || 1))}
+                                  />
+                                  <button
+                                    title="Send this item to a player"
+                                    onClick={() => setSendingItemId(prev => prev === item.id ? null : item.id)}
+                                    className={`px-1.5 shrink-0 rounded text-sm transition-colors ${sendingItemId === item.id ? 'bg-yellow-600 text-yellow-100' : 'text-yellow-400 hover:text-yellow-200'}`}
+                                  >📤</button>
+                                  <button onClick={() => removeTreasureItem(item.id)} className="text-red-400 hover:text-red-300 px-1 shrink-0 flex items-center"><XIcon /></button>
                                 </div>
-                              </div>
-                            )}
 
-                            {/* Attunement (weapons + magic items only) */}
-                            {(item.item_type === 'weapon' || item.item_type === 'magic_item') && (
-                              <label className="flex items-center gap-1.5 text-xs text-gray-300">
-                                <span className="text-gray-400">Attunement:</span>
-                                <select
-                                  className={inputCls}
-                                  value={item.attunement_required ? 'yes' : 'no'}
-                                  onChange={e => updateTreasureItem(item.id, 'attunement_required', e.target.value === 'yes')}
-                                >
-                                  <option value="no">Not required</option>
-                                  <option value="yes">Requires attunement</option>
-                                </select>
-                              </label>
-                            )}
+                                {/* Per-item player picker */}
+                                {sendingItemId === item.id && (
+                                  <div className="flex flex-col gap-1 pl-1">
+                                    {pcTokens.length === 0 ? (
+                                      <p className="text-xs text-gray-500 italic">No players on map.</p>
+                                    ) : pcTokens.map(tok => (
+                                      <button
+                                        key={tok.id}
+                                        onClick={() => { sendItemToPlayer(item.id, tok.creature_id); setSendingItemId(null); }}
+                                        className="flex items-center gap-2 px-2 py-1 bg-yellow-900/40 hover:bg-yellow-900/70 border border-yellow-700/50 hover:border-yellow-500 rounded text-left transition-colors"
+                                      >
+                                        <span className="text-xs text-yellow-400">gp</span>
+                                        <span className="text-xs text-yellow-200">{tok.name}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
 
-                            {/* Equipped + Sheds light — mirror the
-                                inventory form so a weapon arrives with
-                                the same toggles available. */}
-                            <div className="flex items-center gap-3 flex-wrap">
-                              <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={item.equipped || false}
-                                  onChange={e => updateTreasureItem(item.id, 'equipped', e.target.checked)}
-                                  className="accent-dnd-gold"
-                                />
-                                Equipped
-                              </label>
-                              <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={item.sheds_light || false}
-                                  onChange={e => updateTreasureItem(item.id, 'sheds_light', e.target.checked)}
-                                  className="accent-yellow-400"
-                                />
-                                Sheds Light
-                              </label>
-                            </div>
-                            {item.sheds_light && (
-                              <div className="flex items-center gap-3 flex-wrap pl-1">
-                                <label className="flex items-center gap-1.5 text-xs text-gray-300">
-                                  <span className="text-yellow-300">Bright:</span>
+                                {/* Weapon fields */}
+                                {isWeapon && (
+                                  <div className="space-y-2 border-l-2 border-dnd-gold/40 pl-3">
+                                    {/* Range + Atk stat + Misc bonus */}
+                                    <div className="flex gap-1.5">
+                                      <div className="flex-1">
+                                        <label className={labelCls}>Range</label>
+                                        <input className={`w-full ${inputCls}`} placeholder="5ft or 60/120ft"
+                                          value={item.weapon_range || ''}
+                                          onChange={e => updateTreasureItem(item.id, 'weapon_range', e.target.value)} />
+                                      </div>
+                                      <div className="w-20">
+                                        <label className={labelCls}>Atk Stat</label>
+                                        <select className={`w-full ${inputCls}`}
+                                          value={item.attack_stat || 'STR'}
+                                          onChange={e => updateTreasureItem(item.id, 'attack_stat', e.target.value)}>
+                                          {['STR','DEX','CON','INT','WIS','CHA'].map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                      </div>
+                                      <div className="w-14">
+                                        <label className={labelCls}>Misc+</label>
+                                        <input type="number" className={`w-full text-center ${inputCls}`}
+                                          placeholder="0"
+                                          value={item.attack_bonus_misc ?? 0}
+                                          onChange={e => updateTreasureItem(item.id, 'attack_bonus_misc', parseInt(e.target.value) || 0)} />
+                                      </div>
+                                    </div>
+
+                                    {/* Damage entries */}
+                                    <div>
+                                      <div className="flex items-center justify-between mb-1">
+                                        <label className={labelCls}>Damage</label>
+                                        <button type="button" onClick={() => addDmgEntry(item.id)} className="text-xs text-indigo-400 hover:text-indigo-200">+ Add</button>
+                                      </div>
+                                      <div className="space-y-1">
+                                        {getDmgEntries(item).map((entry, ei) => (
+                                          <div key={ei} className="flex gap-1.5 items-center">
+                                            <input className={`w-20 ${inputCls}`} placeholder="1d8+3"
+                                              value={entry.damage}
+                                              onChange={e => updateDmgEntry(item.id, ei, 'damage', e.target.value)} />
+                                            <input className={`flex-1 ${inputCls}`} placeholder="Slashing"
+                                              value={entry.damage_type}
+                                              onChange={e => updateDmgEntry(item.id, ei, 'damage_type', e.target.value)} />
+                                            {getDmgEntries(item).length > 1 && (
+                                              <button type="button" onClick={() => removeDmgEntry(item.id, ei)} className="text-red-400 hover:text-red-300 px-1 shrink-0 flex items-center"><XIcon /></button>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    {/* Properties */}
+                                    <div>
+                                      <label className={labelCls}>Properties</label>
+                                      <input className={`w-full ${inputCls}`} placeholder="Versatile, Finesse…"
+                                        value={item.properties || ''}
+                                        onChange={e => updateTreasureItem(item.id, 'properties', e.target.value)} />
+                                    </div>
+
+                                    {/* Mastery */}
+                                    <div>
+                                      <label className={labelCls}>Mastery</label>
+                                      <select
+                                        className={`w-full ${inputCls}`}
+                                        value={item.mastery || ''}
+                                        onChange={e => updateTreasureItem(item.id, 'mastery', e.target.value)}
+                                      >
+                                        <option value="">None</option>
+                                        {['Cleave','Graze','Nick','Push','Sap','Slow','Topple','Vex'].map(m => (
+                                          <option key={m} value={m}>{m}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Attunement — weapons, magic items and
+                                    wondrous items. Not potions. */}
+                                {ATTUNABLE_ITEM_TYPES.has(item.item_type) && (
+                                  <label className="flex items-center gap-1.5 text-xs text-gray-300">
+                                    <span className="text-gray-400">Attunement:</span>
+                                    <select
+                                      className={inputCls}
+                                      value={item.attunement_required ? 'yes' : 'no'}
+                                      onChange={e => updateTreasureItem(item.id, 'attunement_required', e.target.value === 'yes')}
+                                    >
+                                      <option value="no">Not required</option>
+                                      <option value="yes">Requires attunement</option>
+                                    </select>
+                                  </label>
+                                )}
+
+                                {/* Equipped + Sheds light — mirror the
+                                    inventory form so a weapon arrives with
+                                    the same toggles available. */}
+                                <div className="flex items-center gap-3 flex-wrap">
+                                  <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={item.equipped || false}
+                                      onChange={e => updateTreasureItem(item.id, 'equipped', e.target.checked)}
+                                      className="accent-dnd-gold"
+                                    />
+                                    Equipped
+                                  </label>
+                                  <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={item.sheds_light || false}
+                                      onChange={e => updateTreasureItem(item.id, 'sheds_light', e.target.checked)}
+                                      className="accent-yellow-400"
+                                    />
+                                    Sheds Light
+                                  </label>
+                                </div>
+                                {item.sheds_light && (
+                                  <div className="flex items-center gap-3 flex-wrap pl-1">
+                                    <label className="flex items-center gap-1.5 text-xs text-gray-300">
+                                      <span className="text-yellow-300">Bright:</span>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step={5}
+                                        className={`w-16 text-center ${inputCls}`}
+                                        value={item.bright_ft ?? 20}
+                                        onChange={e => updateTreasureItem(item.id, 'bright_ft', Math.max(0, parseInt(e.target.value) || 0))}
+                                      />
+                                      <span className="text-gray-500">ft</span>
+                                    </label>
+                                    <label className="flex items-center gap-1.5 text-xs text-gray-300">
+                                      <span className="text-yellow-600">Dim:</span>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step={5}
+                                        className={`w-16 text-center ${inputCls}`}
+                                        value={item.dim_ft ?? 40}
+                                        onChange={e => updateTreasureItem(item.id, 'dim_ft', Math.max(0, parseInt(e.target.value) || 0))}
+                                      />
+                                      <span className="text-gray-500">ft</span>
+                                    </label>
+                                  </div>
+                                )}
+
+                                {/* Weight */}
+                                <div className="flex items-center gap-2">
+                                  <label className="text-xs text-gray-400 shrink-0">Weight</label>
                                   <input
-                                    type="number"
-                                    min={0}
-                                    step={5}
-                                    className={`w-16 text-center ${inputCls}`}
-                                    value={item.bright_ft ?? 20}
-                                    onChange={e => updateTreasureItem(item.id, 'bright_ft', Math.max(0, parseInt(e.target.value) || 0))}
+                                    className={`w-24 ${inputCls}`}
+                                    placeholder="e.g. 3 lb"
+                                    value={item.weight || ''}
+                                    onChange={e => updateTreasureItem(item.id, 'weight', e.target.value)}
                                   />
-                                  <span className="text-gray-500">ft</span>
-                                </label>
-                                <label className="flex items-center gap-1.5 text-xs text-gray-300">
-                                  <span className="text-yellow-600">Dim:</span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={5}
-                                    className={`w-16 text-center ${inputCls}`}
-                                    value={item.dim_ft ?? 40}
-                                    onChange={e => updateTreasureItem(item.id, 'dim_ft', Math.max(0, parseInt(e.target.value) || 0))}
-                                  />
-                                  <span className="text-gray-500">ft</span>
-                                </label>
+                                </div>
+
+                                {/* Description */}
+                                <input
+                                  className={`w-full text-xs ${inputCls}`}
+                                  placeholder="Description (optional)"
+                                  value={item.desc || ''}
+                                  onChange={e => updateTreasureItem(item.id, 'desc', e.target.value)}
+                                />
                               </div>
-                            )}
-
-                            {/* Weight */}
-                            <div className="flex items-center gap-2">
-                              <label className="text-xs text-gray-400 shrink-0">Weight</label>
-                              <input
-                                className={`w-24 ${inputCls}`}
-                                placeholder="e.g. 3 lb"
-                                value={item.weight || ''}
-                                onChange={e => updateTreasureItem(item.id, 'weight', e.target.value)}
-                              />
-                            </div>
-
-                            {/* Description */}
-                            <input
-                              className={`w-full text-xs ${inputCls}`}
-                              placeholder="Description (optional)"
-                              value={item.desc || ''}
-                              onChange={e => updateTreasureItem(item.id, 'desc', e.target.value)}
-                            />
-                          </div>
+                            );
+                          })}
+                        </div>
                         );
                       })}
                     </div>
@@ -5477,9 +5880,55 @@ export default function DMView() {
                   </div>
                 </CollapsibleSection>
 
-                {users.length > 0 && (
+                <CollapsibleSection id="fog_blocks" title="Vision Blocks">
+                  <div className="space-y-1.5">
+                    {fogBlocks.length === 0 && (
+                      <p className="text-xs text-gray-500 italic py-1">
+                        No vision blocks. Select the Fog Block tool and drag on the map to add one.
+                      </p>
+                    )}
+                    {fogBlocks.map((fb) => (
+                      <div key={fb.id} className="bg-gray-800 rounded-lg px-3 py-2 flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-sm shrink-0 ${fb.is_revealed ? 'bg-green-400' : 'bg-violet-500'}`} />
+                        <span className="text-xs text-gray-300 flex-1">
+                          {fb.label || `Polygon (${(fb.points || []).length} pts)`}
+                        </span>
+                        <button
+                          onClick={() => socket.emit(fb.is_revealed ? 'hide_fog_block' : 'reveal_fog_block', { id: fb.id })}
+                          className={`text-xs px-2 py-0.5 rounded shrink-0 ${
+                            fb.is_revealed
+                              ? 'bg-violet-800 hover:bg-violet-700 text-violet-100'
+                              : 'bg-green-800 hover:bg-green-700 text-green-100'
+                          }`}
+                        >
+                          {fb.is_revealed ? 'Hide' : 'Reveal'}
+                        </button>
+                        <button
+                          onClick={() => socket.emit('delete_fog_block', { id: fb.id })}
+                          className="text-xs px-2 py-0.5 rounded shrink-0 bg-red-900 hover:bg-red-800 text-red-200"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </CollapsibleSection>
+
+                {(users.length > 0 || connectionLog.length > 0) && (
                   <CollapsibleSection id="connected_players" title="Connected Players">
                     <div className="space-y-2">
+                      {connectionLog.map((entry) => {
+                        const disconnectedMs = entry.disconnectedAt ? Date.now() - new Date(entry.disconnectedAt).getTime() : 0;
+                        const mins = Math.floor(disconnectedMs / 60000);
+                        const timeAgo = mins < 1 ? 'just now' : mins === 1 ? '1 min ago' : `${mins} min ago`;
+                        return (
+                          <div key={`disc-${entry.name}`} className="bg-gray-800/60 rounded-lg px-3 py-2 flex items-center gap-3 opacity-70">
+                            <div className="w-2 h-2 rounded-full shrink-0 bg-red-500" />
+                            <span className="text-sm flex-1 text-gray-400">{entry.name}</span>
+                            <span className="text-xs text-red-400/80">dropped {timeAgo}</span>
+                          </div>
+                        );
+                      })}
                       {users.map((u) => {
                         const hasToken = tokens.some(t => t.is_player && t.player_name === u.name);
                         const isWhispering = whisperOpen === u.name;
@@ -5633,10 +6082,20 @@ export default function DMView() {
                         value={aiSettings.provider}
                         onChange={(e) => {
                           const p = e.target.value;
-                          const defaults = AI_PROVIDER_DEFAULTS[p] || AI_PROVIDER_DEFAULTS.custom;
-                          updateAISettings({ provider: p, baseUrl: defaults.baseUrl });
+                          if (p === 'apple') {
+                            // On-device: point at the sidecar, no key/model.
+                            updateAISettings({ provider: 'apple', baseUrl: appleAi.url || '', model: '', apiKey: '' });
+                          } else {
+                            const defaults = AI_PROVIDER_DEFAULTS[p] || AI_PROVIDER_DEFAULTS.custom;
+                            updateAISettings({ provider: p, baseUrl: defaults.baseUrl });
+                          }
                         }}
                       >
+                        {appleAi.present && (
+                          <option value="apple">
+                            Apple Intelligence (on-device){appleAi.available ? '' : ' — unavailable'}
+                          </option>
+                        )}
                         <option value="lmstudio">LM Studio</option>
                         <option value="ollama">Ollama</option>
                         <option value="openai">OpenAI</option>
@@ -5644,38 +6103,50 @@ export default function DMView() {
                       </select>
                     </div>
 
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-1">Base URL</label>
-                      <input
-                        className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
-                        placeholder={AI_PROVIDER_DEFAULTS[aiSettings.provider]?.placeholder || 'http://...'}
-                        value={aiSettings.baseUrl}
-                        onChange={(e) => updateAISettings({ baseUrl: e.target.value })}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        {aiSettings.provider === 'lmstudio' && 'App runs in Docker — use host.docker.internal, not localhost'}
-                        {aiSettings.provider === 'ollama' && 'App runs in Docker — use host.docker.internal, not localhost'}
-                        {aiSettings.provider === 'openai' && '/v1/chat/completions is appended automatically'}
-                      </p>
-                    </div>
+                    {aiSettings.provider === 'apple' && (
+                      <div className={`text-xs rounded-lg px-3 py-2 leading-snug border ${appleAi.available ? 'text-gray-300 bg-gray-700/40 border-gray-600' : 'text-amber-300 bg-amber-900/20 border-amber-700/50'}`}>
+                        {appleAi.available
+                          ? 'Runs entirely on this Mac using Apple Intelligence — no API key, no model download, nothing leaves the device. No setup needed.'
+                          : (appleAi.reason || 'Apple Intelligence is not available on this Mac right now.')}
+                      </div>
+                    )}
 
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-1">
-                        Model Name{aiSettings.provider !== 'openai' && ' (optional)'}
-                      </label>
-                      <input
-                        className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
-                        placeholder={
-                          aiSettings.provider === 'ollama' ? 'llama3' :
-                          aiSettings.provider === 'openai' ? 'gpt-4o' :
-                          'leave blank to use whatever is loaded'
-                        }
-                        value={aiSettings.model}
-                        onChange={(e) => updateAISettings({ model: e.target.value })}
-                      />
-                    </div>
+                    {aiSettings.provider !== 'apple' && (
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Base URL</label>
+                        <input
+                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                          placeholder={AI_PROVIDER_DEFAULTS[aiSettings.provider]?.placeholder || 'http://...'}
+                          value={aiSettings.baseUrl}
+                          onChange={(e) => updateAISettings({ baseUrl: e.target.value })}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          {aiSettings.provider === 'lmstudio' && 'App runs in Docker — use host.docker.internal, not localhost'}
+                          {aiSettings.provider === 'ollama' && 'App runs in Docker — use host.docker.internal, not localhost'}
+                          {aiSettings.provider === 'openai' && '/v1/chat/completions is appended automatically'}
+                        </p>
+                      </div>
+                    )}
 
-                    {aiSettings.provider !== 'lmstudio' && aiSettings.provider !== 'ollama' && (
+                    {aiSettings.provider !== 'apple' && (
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">
+                          Model Name{aiSettings.provider !== 'openai' && ' (optional)'}
+                        </label>
+                        <input
+                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-dnd-gold"
+                          placeholder={
+                            aiSettings.provider === 'ollama' ? 'llama3' :
+                            aiSettings.provider === 'openai' ? 'gpt-4o' :
+                            'leave blank to use whatever is loaded'
+                          }
+                          value={aiSettings.model}
+                          onChange={(e) => updateAISettings({ model: e.target.value })}
+                        />
+                      </div>
+                    )}
+
+                    {aiSettings.provider !== 'lmstudio' && aiSettings.provider !== 'ollama' && aiSettings.provider !== 'apple' && (
                       <div>
                         <label className="block text-xs text-gray-400 mb-1">API Key</label>
                         <input
@@ -6628,9 +7099,7 @@ export default function DMView() {
                     <div className="min-w-0 flex-1">
                       <div className="text-sm text-white truncate">{it.name || '(unnamed)'}</div>
                       <div className="text-[11px] text-gray-400">
-                        {it.item_type === 'weapon' ? 'Weapon'
-                          : it.item_type === 'magic_item' ? 'Magic Item'
-                          : 'Item'}
+                        {ITEM_TYPE_LABELS[it.item_type] || 'Item'}
                         {it.qty > 1 ? ` ×${it.qty}` : ''}
                         {it.attunement_required ? ' · attunement' : ''}
                       </div>

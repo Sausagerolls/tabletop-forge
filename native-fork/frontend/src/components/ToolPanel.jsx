@@ -182,6 +182,22 @@ const ChevronRightIcon = () => (
   </svg>
 );
 
+const PingIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-6 h-6">
+    <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="5.5" strokeOpacity="0.7" />
+    <circle cx="12" cy="12" r="9" strokeOpacity="0.35" strokeDasharray="3 2" />
+  </svg>
+);
+
+const FogBlockIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-6 h-6">
+    <rect x="3" y="3" width="18" height="18" rx="2" strokeOpacity="0.5" strokeDasharray="3 2" />
+    <rect x="5" y="5" width="14" height="14" rx="1" fill="currentColor" fillOpacity="0.25" />
+    <line x1="5" y1="19" x2="19" y2="5" strokeOpacity="0.6" />
+  </svg>
+);
+
 // ── Tool groups config ────────────────────────────────────────────────────────
 
 const MEASURE_GROUP = {
@@ -440,6 +456,9 @@ export default function ToolPanel({ activeTool, onToolChange, showWallTools = fa
 
       {showWallTools && (
         <>
+          <div className="border-t border-gray-700 my-0.5" />
+          <ToolButton tool={{ id: 'ping', label: 'Ping', key: 'C', icon: <PingIcon /> }} activeTool={activeTool} onToolChange={onToolChange} />
+          <ToolButton tool={{ id: 'fog-block', label: 'Fog Block', key: 'V', icon: <FogBlockIcon /> }} activeTool={activeTool} onToolChange={onToolChange} />
           <div className="border-t border-gray-700 my-0.5" />
           {DM_GROUPS.map(group => (
             <GroupButton

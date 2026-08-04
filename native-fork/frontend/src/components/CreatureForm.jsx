@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import LanguagePicker from './LanguagePicker.jsx';
+import ImageFramer from './ImageFramer.jsx';
 import { useAllClasses, useAllSubclasses, useClassChoices, computeHitDicePool, formatHitDicePool, hitDieFor } from '../utils/classes.js';
 import { getClassBuild, formatPrimaryAbility } from '../data/class_build.js';
 import { expandWeaponProficiency } from '../data/weapons.js';
@@ -757,8 +758,19 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     const autoChoices = (classChoices || []).filter((c) =>
       c.kind === 'auto' && (c.at_level || 1) <= lvl
     );
-    if (autoChoices.length === 0) return;
     const prevState = form.class_state || {};
+    // Bail only when there's nothing due AND nothing already applied.
+    // If prior contributions exist we still have to run, otherwise
+    // dropping below every feature's level would leave them stranded
+    // on the sheet with no pass to strip them.
+    const priorAdded = prevState.added || {};
+    const hasPrior = (priorAdded.spells    || []).length > 0
+      || (priorAdded.saves     || []).length > 0
+      || (priorAdded.armor     || []).length > 0
+      || (priorAdded.weapons   || []).length > 0
+      || (priorAdded.languages || []).length > 0
+      || (priorAdded.traits_count || 0) > 0;
+    if (autoChoices.length === 0 && !hasPrior) return;
     // Re-apply when class, subclass, or level changes so newly
     // unlocked features land + reverted ones strip cleanly. The
     // strip-prev pass at the top of applyClassChoices removes
@@ -779,12 +791,13 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   }, [form.char_class, form.char_subclass, form.char_level, classChoices.length]);
 
   const tabs = isPlayerCharacter
-    ? ['basic', 'combat', 'abilities', 'skills', 'traits', 'spells', 'inventory', 'weapons']
+    ? ['basic', 'combat', 'abilities', 'skills', 'traits', 'spells', 'inventory', 'weapons', 'backstory']
     : ['basic', 'combat', 'abilities', 'skills', 'traits', 'spells', 'inventory', 'loot'];
   const tabLabel = {
     basic: 'Basic', combat: 'Combat', abilities: 'Ability Scores',
     skills: 'Skills & Saves', traits: 'Traits & Actions',
     spells: 'Spells', inventory: 'Inventory', loot: 'Loot', weapons: 'Weapons',
+    backstory: 'Backstory',
   };
 
   // Stable setField — useCallback with no deps so children that
@@ -813,11 +826,35 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     [form.weapon_proficiencies],
   );
 
-  function handleImageChange(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+  // Framing happens between "picked a file" and "it becomes the portrait".
+  // `framerSrc` holds whatever the GM is currently framing; confirming
+  // swaps in the cropped file so the normal multipart save path is
+  // unchanged. Reset the input's value so re-picking the same file
+  // still fires onChange.
+  const [framerSrc, setFramerSrc] = useState(null);
+  const framerObjectUrlRef = useRef(null);
+
+  function openFramer(src, isObjectUrl) {
+    if (framerObjectUrlRef.current) URL.revokeObjectURL(framerObjectUrlRef.current);
+    framerObjectUrlRef.current = isObjectUrl ? src : null;
+    setFramerSrc(src);
+  }
+  function closeFramer() {
+    if (framerObjectUrlRef.current) URL.revokeObjectURL(framerObjectUrlRef.current);
+    framerObjectUrlRef.current = null;
+    setFramerSrc(null);
+  }
+  function handleFramed(file) {
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
+    closeFramer();
+  }
+
+  function handleImageChange(e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    openFramer(URL.createObjectURL(file), true);
   }
 
   // Player-side AI portrait generation. Availability is fetched once on
@@ -1936,9 +1973,18 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         }
       }
 
+      // Level the gate is measured against. Read off the form rather
+      // than trusting the caller to pre-filter — callers pass the FULL
+      // choice list (pickable entries must survive a re-apply), so the
+      // at_level gate has to live here or a level-10 feature lands on a
+      // level-3 sheet.
+      const effLevel = Math.max(1, Number(f.char_level) || 1);
+
       for (const choice of choiceList) {
-        // Auto-grant choices apply unconditionally — no pick needed.
+        // Auto-grant choices need no pick, but a per-level feature only
+        // applies once the character has reached its level.
         if (choice.kind === 'auto') {
+          if ((choice.at_level || 1) > effLevel) continue;
           applyAdds(choice.adds, `cls:primary:${f.char_class}:${choice.id}:auto`);
           continue;
         }
@@ -2300,8 +2346,14 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         }
       }
 
+      // Gated against THIS slot's level, not the character's total —
+      // a level-10 feature on a 2-level dip shouldn't land. Same
+      // reasoning as the primary-class applier above.
+      const effLevel = Math.max(1, Number(slot.level) || 1);
+
       for (const choice of choiceList) {
         if (choice.kind === 'auto') {
+          if ((choice.at_level || 1) > effLevel) continue;
           applyAdds(choice.adds, `${slotPrefix}${slot.class}:${choice.id}:auto`);
           continue;
         }
@@ -2770,6 +2822,14 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 </div>
                 <input id="creature-img" type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
                 <p className="text-xs text-gray-500 text-center mt-1">Click to upload</p>
+                {imagePreview && (
+                  <button
+                    type="button"
+                    onClick={() => openFramer(imagePreview, false)}
+                    className="w-24 mt-1 text-[11px] text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded py-1"
+                    title="Pan and zoom the portrait — useful when the subject isn't dead centre"
+                  >Adjust framing</button>
+                )}
                 {isPlayerCharacter && aiPortraitAvailable && (
                   <div className="mt-2 space-y-1.5 w-44">
                     <input
@@ -4230,13 +4290,17 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                   const isWeapon = item.item_type === 'weapon';
                   const isArmor = item.item_type === 'armor';
                   const isMagicItem = item.item_type === 'magic_item';
+                  const isWondrous = item.item_type === 'wondrous_item';
                   // Plain mundane items don't get attuned — show the flag
-                  // only on weapons / armor / magic items where it actually applies.
-                  const canAttune = isWeapon || isMagicItem || isArmor;
+                  // only on weapons / armor / magic + wondrous items where
+                  // it actually applies. Potions are consumed, never attuned.
+                  const canAttune = isWeapon || isMagicItem || isArmor || isWondrous;
                   // Magic-bonus AC field appears on magic items AND on
                   // armor (so a +1 plate is just an armor row with
                   // ac_bonus=1, no need for a separate magic-item entry).
-                  const showAcBonus = isMagicItem || isArmor;
+                  // Wondrous items get it too — a Cloak of Protection is
+                  // an AC bonus with no armor slot of its own.
+                  const showAcBonus = isMagicItem || isArmor || isWondrous;
                   return (
                   <div key={i} className="bg-gray-800 rounded-lg p-3 space-y-2">
                     <div className="flex gap-2">
@@ -4248,7 +4312,9 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                         <option value="item">Item</option>
                         <option value="weapon">Weapon</option>
                         <option value="armor">Armor</option>
+                        <option value="potion">Potion</option>
                         <option value="magic_item">Magic Item</option>
+                        <option value="wondrous_item">Wondrous Item</option>
                       </select>
                       <input
                         className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-dnd-gold"
@@ -4655,6 +4721,22 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             </div>
           );
         })()}
+
+        {/* ── Backstory tab ── */}
+        {activeTab === 'backstory' && (
+          <div className="p-4 space-y-3">
+            <div>
+              <label className="block text-xs uppercase tracking-wider text-gray-400 mb-1">Character Backstory</label>
+              <textarea
+                value={form.backstory || ''}
+                onChange={(e) => setForm((f) => ({ ...f, backstory: e.target.value }))}
+                placeholder="Write your character's backstory here — their history, motivations, secrets, and how they came to be an adventurer…"
+                className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 text-sm text-gray-100 resize-none focus:outline-none focus:border-dnd-gold"
+                style={{ minHeight: 320 }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
@@ -5022,6 +5104,15 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             </div>
           </div>
         </div>
+      )}
+
+      {framerSrc && (
+        <ImageFramer
+          src={framerSrc}
+          title={imageFile || imagePreview ? 'Adjust framing' : 'Frame artwork'}
+          onCancel={closeFramer}
+          onConfirm={handleFramed}
+        />
       )}
     </form>
   );

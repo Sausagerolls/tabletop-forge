@@ -407,6 +407,7 @@ General-purpose "draw stuff on the map". Your function is called every render wi
 - `ctx.tokens` — current token list. See **Token shape** below for fields.
 - `ctx.gridSize`, `ctx.offsetX`, `ctx.offsetY` — grid sizing in pixels (use `(grid_col + 0.5) * gridSize + offsetX` for a 1×1 token's centre x).
 - `ctx.mapWidth`, `ctx.mapHeight` — map natural size in pixels.
+- `ctx.mapId` — database id of the map currently being rendered, or `null` when no map is loaded. Player clients report whichever map *they* are showing (including a `playerMapOverride` target), so a split party on two maps yields two different ids. Key per-map plugin state on this — e.g. `map_${ctx.mapId}` in KV. The bundled `weather-effects` plugin uses it to give every map its own sky.
 - `ctx.isPlayer` — whether this is the player view.
 - `ctx.playerTokenId` — id of the player's own character token (player view only).
 

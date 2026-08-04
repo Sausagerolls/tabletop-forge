@@ -418,6 +418,18 @@ const BookIcon = () => (
     <path d="M4 19.5A2.5 2.5 0 016.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
   </svg>
 );
+const VolumeIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+    <path d="M11 5 6 9H2v6h4l5 4V5z" />
+    <path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" />
+  </svg>
+);
+const VolumeMuteIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+    <path d="M11 5 6 9H2v6h4l5 4V5z" />
+    <line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" />
+  </svg>
+);
 const CharacterIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
     <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
@@ -664,6 +676,23 @@ export default function PlayerView() {
   const [sheetTab, setSheetTab] = useState('edit');
   const [showQuickRef, setShowQuickRef] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  // Per-player master volume. Applied via a master GainNode all audio routes
+  // through, so it scales GM sounds + ambient without touching GM-side levels.
+  // Persisted per-browser so it survives reloads.
+  const MASTER_VOLUME_KEY = 'dndvtt_player_master_volume_v1';
+  const [masterVolume, setMasterVolume] = useState(() => {
+    try {
+      const v = parseFloat(localStorage.getItem(MASTER_VOLUME_KEY));
+      if (Number.isFinite(v) && v >= 0 && v <= 1) return v;
+    } catch {}
+    return 1;
+  });
+  const [showVolume, setShowVolume] = useState(false);
+  // While true, the quick-control wrapper's native drag-to-reorder is
+  // suppressed so dragging the volume slider adjusts the slider instead
+  // of picking up the whole button.
+  const [quickCtrlDragLocked, setQuickCtrlDragLocked] = useState(false);
+  const masterGainRef = useRef(null);
   const QUICK_CTRL_ORDER_KEY = 'dndvtt_player_quick_ctrl_order_v1';
   const [quickCtrlOrder, setQuickCtrlOrder] = useState(() => {
     try {
@@ -937,19 +966,34 @@ export default function PlayerView() {
   const playerTokenCreated = useRef(false);
   const activeSoundsRef = useRef([]); // array of AudioBufferSourceNode
   const audioCtxRef = useRef(null);
-  const ambientSrcRef  = useRef(null);
-  const ambientGainRef = useRef(null);
+  // Layered ambient playback. The GM can stack multiple ambient
+  // loops on a map ("Forest" + "Bird Song" + "Wind Blowing") to build
+  // a scene; each track has its own AudioBufferSourceNode + GainNode.
+  // wantedAmbientsRef tracks which filenames the user/GM still wants
+  // playing — checked inside the async fetch→decode pipeline so a
+  // stop issued mid-load doesn't accidentally start the track once
+  // the buffer arrives.
+  const ambientTracksRef  = useRef(new Map()); // filename -> { src, gain }
+  const wantedAmbientsRef = useRef(new Set()); // filename set
   const [centerOnMapPoint, setCenterOnMapPoint] = useState(null);
   const hasCenteredRef = useRef(false);
   const [treasureNotif, setTreasureNotif] = useState(null);
   const [whispers, setWhispers] = useState([]);
   const [remoteMeasurements, setRemoteMeasurements] = useState([]);
+  const [activePings, setActivePings] = useState([]);
+  const [fogBlocks, setFogBlocks] = useState([]);
 
   // Create the AudioContext immediately and resume it on the first user gesture.
   // This ensures it's in 'running' state before the GM ever triggers a sound,
   // so socket-triggered playback works without requiring a tap from the player.
   useEffect(() => {
     audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    // Master gain — every sound/ambient source connects here instead of
+    // straight to destination, so the player's volume slider scales everything.
+    const mg = audioCtxRef.current.createGain();
+    mg.gain.value = masterVolume;
+    mg.connect(audioCtxRef.current.destination);
+    masterGainRef.current = mg;
     function unlock() {
       if (audioCtxRef.current?.state === 'suspended') {
         audioCtxRef.current.resume();
@@ -963,6 +1007,32 @@ export default function PlayerView() {
       audioCtxRef.current?.close();
     };
   }, []);
+
+  // Safety net: always clear the drag lock on any global pointer release,
+  // even if it happens off the slider thumb.
+  useEffect(() => {
+    if (!quickCtrlDragLocked) return;
+    const clear = () => setQuickCtrlDragLocked(false);
+    window.addEventListener('pointerup', clear);
+    window.addEventListener('pointercancel', clear);
+    return () => {
+      window.removeEventListener('pointerup', clear);
+      window.removeEventListener('pointercancel', clear);
+    };
+  }, [quickCtrlDragLocked]);
+
+  // Apply master volume changes live + persist. Smooth ramp avoids clicks.
+  useEffect(() => {
+    const mg = masterGainRef.current;
+    const ctx = audioCtxRef.current;
+    if (mg && ctx) {
+      const now = ctx.currentTime;
+      mg.gain.cancelScheduledValues(now);
+      mg.gain.setValueAtTime(mg.gain.value, now);
+      mg.gain.linearRampToValueAtTime(masterVolume, now + 0.08);
+    }
+    try { localStorage.setItem(MASTER_VOLUME_KEY, String(masterVolume)); } catch {}
+  }, [masterVolume]);
 
   // Centre the map on the player token once on load.
   useEffect(() => {
@@ -1045,6 +1115,7 @@ export default function PlayerView() {
       setDoors(state.doors || []);
       setLights(state.lights || []);
       setMagicalDarkness(state.magicalDarkness || []);
+      setFogBlocks(state.fogBlocks || []);
       setFowEnabled(state.session.fow_enabled || false);
       setFowBlur(state.session.fow_blur ?? 16);
       setFowColor(state.session.fow_color || '#000000');
@@ -1176,10 +1247,21 @@ export default function PlayerView() {
       patchOverrideToken(tokenId, (t) => ({ ...t, initiative }));
     });
 
-    socket.on('token_visibility_changed', ({ tokenId, isHidden }) => {
+    socket.on('token_visibility_changed', ({ tokenId, isHidden, token }) => {
       if (isHidden) {
         setTokens((prev) => prev.filter((t) => t.id !== tokenId));
         removeOverrideToken(tokenId);
+      } else if (token) {
+        // Reveal: the token was filtered out of our list while hidden, so
+        // add it back from the broadcast payload (update in place if a
+        // stale copy is somehow still present).
+        setTokens((prev) => {
+          const exists = prev.some((t) => t.id === tokenId);
+          return exists
+            ? prev.map((t) => (t.id === tokenId ? { ...t, ...token } : t))
+            : [...prev, token];
+        });
+        addOverrideToken(token);
       }
     });
 
@@ -1325,6 +1407,14 @@ export default function PlayerView() {
       setDoors(prev => prev.map(d => d.id === doorId ? { ...d, open_dir: openDir } : d));
       patchOverrideField('doors', (d) => d.id === doorId, (d) => ({ ...d, open_dir: openDir }));
     });
+    socket.on('door_sprite_changed', ({ doorId, spritePath, spriteMotion }) => {
+      setDoors(prev => prev.map(d => d.id === doorId ? { ...d, sprite_path: spritePath, sprite_motion: spriteMotion } : d));
+      patchOverrideField('doors', (d) => d.id === doorId, (d) => ({ ...d, sprite_path: spritePath, sprite_motion: spriteMotion }));
+    });
+    socket.on('door_light_changed', ({ doorId, lightRadius, lightColor, lightSide }) => {
+      setDoors(prev => prev.map(d => d.id === doorId ? { ...d, light_radius: lightRadius, light_color: lightColor, light_side: lightSide } : d));
+      patchOverrideField('doors', (d) => d.id === doorId, (d) => ({ ...d, light_radius: lightRadius, light_color: lightColor, light_side: lightSide }));
+    });
     socket.on('doors_cleared', () => {
       setDoors([]);
       clearOverrideField('doors');
@@ -1381,7 +1471,7 @@ export default function PlayerView() {
             gain.gain.value = vol;
             src.buffer = decoded;
             src.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(masterGainRef.current || ctx.destination);
             src.start(0);
             activeSoundsRef.current.push(src);
             src.addEventListener('ended', () => {
@@ -1401,56 +1491,77 @@ export default function PlayerView() {
       activeSoundsRef.current = [];
     });
 
+    // play_ambient is additive: a brand-new filename starts as a fresh
+    // layer with a fade-in; an existing filename gets a live volume
+    // ramp (so dragging a per-track slider on the GM side is smooth).
     socket.on('play_ambient', ({ filename, volume }) => {
       const ctx = audioCtxRef.current;
-      if (!ctx) return;
+      if (!ctx || !filename) return;
       const vol = Math.max(0, Math.min(1, volume ?? 0.5));
-      const FADE = 2;
 
-      function startAmbient(decoded) {
-        const src  = ctx.createBufferSource();
-        const gain = ctx.createGain();
-        src.buffer = decoded;
-        src.loop   = true;
-        gain.gain.setValueAtTime(0, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + FADE);
-        src.connect(gain);
-        gain.connect(ctx.destination);
-        src.start(0);
-        ambientSrcRef.current  = src;
-        ambientGainRef.current = gain;
+      const existing = ambientTracksRef.current.get(filename);
+      if (existing) {
+        // Live volume update on a track already in the layer.
+        const now = ctx.currentTime;
+        existing.gain.gain.cancelScheduledValues(now);
+        existing.gain.gain.setValueAtTime(existing.gain.gain.value, now);
+        existing.gain.gain.linearRampToValueAtTime(vol, now + 0.2);
+        return;
       }
 
-      // Fade out any existing ambient then start new track
-      if (ambientSrcRef.current && ambientGainRef.current) {
-        const oldGain = ambientGainRef.current;
-        const oldSrc  = ambientSrcRef.current;
-        ambientSrcRef.current  = null;
-        ambientGainRef.current = null;
-        oldGain.gain.setValueAtTime(oldGain.gain.value, ctx.currentTime);
-        oldGain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
-        oldSrc.stop(ctx.currentTime + FADE);
-      }
+      wantedAmbientsRef.current.add(filename);
 
       ctx.resume()
         .then(() => fetch(`/sounds/ambient/${encodeURIComponent(filename)}`))
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
         .then(buf => ctx.decodeAudioData(buf))
-        .then(startAmbient)
+        .then(decoded => {
+          // Cancelled while loading, or another start raced us — drop.
+          if (!wantedAmbientsRef.current.has(filename)) return;
+          if (ambientTracksRef.current.has(filename)) return;
+          const src  = ctx.createBufferSource();
+          const gain = ctx.createGain();
+          src.buffer = decoded;
+          src.loop   = true;
+          gain.gain.setValueAtTime(0, ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 2);
+          src.connect(gain);
+          gain.connect(masterGainRef.current || ctx.destination);
+          src.start(0);
+          ambientTracksRef.current.set(filename, { src, gain });
+        })
         .catch(console.error);
     });
 
+    // Remove a single track from the layer; the rest keep playing.
+    socket.on('stop_ambient_track', ({ filename }) => {
+      const ctx = audioCtxRef.current;
+      if (!ctx || !filename) return;
+      wantedAmbientsRef.current.delete(filename);
+      const track = ambientTracksRef.current.get(filename);
+      if (!track) return;
+      ambientTracksRef.current.delete(filename);
+      const FADE = 2;
+      track.gain.gain.cancelScheduledValues(ctx.currentTime);
+      track.gain.gain.setValueAtTime(track.gain.gain.value, ctx.currentTime);
+      track.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
+      try { track.src.stop(ctx.currentTime + FADE); } catch (_) {}
+    });
+
+    // Stop every layer (session-wide stop, or local stop on map switch).
     socket.on('stop_ambient', () => {
       const ctx = audioCtxRef.current;
-      if (!ctx || !ambientSrcRef.current) return;
+      wantedAmbientsRef.current.clear();
+      if (!ctx) { ambientTracksRef.current.clear(); return; }
       const FADE = 2;
-      const gain = ambientGainRef.current;
-      const src  = ambientSrcRef.current;
-      ambientSrcRef.current  = null;
-      ambientGainRef.current = null;
-      gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
-      src.stop(ctx.currentTime + FADE);
+      const tracks = Array.from(ambientTracksRef.current.values());
+      ambientTracksRef.current.clear();
+      for (const t of tracks) {
+        t.gain.gain.cancelScheduledValues(ctx.currentTime);
+        t.gain.gain.setValueAtTime(t.gain.gain.value, ctx.currentTime);
+        t.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + FADE);
+        try { t.src.stop(ctx.currentTime + FADE); } catch (_) {}
+      }
     });
 
     socket.on('fow_changed',           ({ enabled })      => setFowEnabled(enabled));
@@ -1557,6 +1668,23 @@ export default function PlayerView() {
         if (!meas) return filtered;
         return [...filtered, { name: senderName, meas, color }];
       });
+    });
+
+    socket.on('map_ping', ({ id, x, y, mapId }) => {
+      // effectiveMap is from state — compare via session-level map id
+      const ts = Date.now();
+      setActivePings(prev => [...prev, { id, x, y, ts }]);
+      setTimeout(() => setActivePings(prev => prev.filter(p => p.id !== id)), 3500);
+    });
+
+    socket.on('fog_block_added', ({ fogBlock }) => {
+      setFogBlocks(prev => [...prev, fogBlock]);
+    });
+    socket.on('fog_block_updated', ({ fogBlock }) => {
+      setFogBlocks(prev => prev.map(fb => fb.id === fogBlock.id ? fogBlock : fb));
+    });
+    socket.on('fog_block_deleted', ({ id }) => {
+      setFogBlocks(prev => prev.filter(fb => fb.id !== id));
     });
 
     socket.on('disconnect', () => setConnected(false));
@@ -1910,6 +2038,7 @@ export default function PlayerView() {
 
         <MapStage
           mapUrl={mapUrl}
+          mapId={effectiveMap?.id ?? null}
           mapWidth={effectiveMap.width}
           mapHeight={effectiveMap.height}
           gridSize={effectiveMap.gridSize}
@@ -1938,6 +2067,8 @@ export default function PlayerView() {
           onMeasureChange={(meas) => socket.emit('measure_update', { meas, color: userColors[name] || '#60a5fa' })}
           remoteMeasurements={remoteMeasurements}
           terrain={terrain}
+          pings={activePings}
+          fogBlocks={fogBlocks}
         />
 
         {/* Top bar */}
@@ -2029,6 +2160,49 @@ export default function PlayerView() {
               ),
             },
             {
+              id: 'volume',
+              available: true,
+              render: () => {
+                const muted = masterVolume <= 0;
+                const pct = Math.round(masterVolume * 100);
+                return (
+                  <div className="relative">
+                    {showVolume && (
+                      <div className="absolute bottom-12 left-0 bg-gray-900/95 border border-gray-600 rounded-xl p-3 shadow-2xl flex items-center gap-3 w-56">
+                        <button
+                          onClick={() => setMasterVolume(muted ? 1 : 0)}
+                          className="text-gray-300 hover:text-white shrink-0"
+                          title={muted ? 'Unmute' : 'Mute'}
+                        >
+                          {muted ? <VolumeMuteIcon /> : <VolumeIcon />}
+                        </button>
+                        <input
+                          type="range" min={0} max={1} step={0.01}
+                          value={masterVolume}
+                          onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
+                          onPointerDown={() => setQuickCtrlDragLocked(true)}
+                          onPointerUp={() => setQuickCtrlDragLocked(false)}
+                          onPointerCancel={() => setQuickCtrlDragLocked(false)}
+                          className="flex-1 accent-dnd-gold"
+                        />
+                        <span className="text-xs text-gray-400 font-mono w-9 text-right shrink-0">{pct}%</span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setShowVolume(v => !v)}
+                      title="Master volume"
+                      className={`rounded-full w-10 h-10 text-lg shadow-lg flex items-center justify-center transition-colors ${
+                        muted ? 'bg-gray-800/90 hover:bg-gray-700 text-red-400'
+                              : 'bg-gray-800/90 hover:bg-gray-700 text-cyan-300'
+                      }`}
+                    >
+                      {muted ? <VolumeMuteIcon /> : <VolumeIcon />}
+                    </button>
+                  </div>
+                );
+              },
+            },
+            {
               id: 'light',
               available: !!playerTokenId && availablePresets.length > 1,
               render: () => (
@@ -2092,7 +2266,7 @@ export default function PlayerView() {
                 return (
                   <div
                     key={id}
-                    draggable
+                    draggable={!quickCtrlDragLocked}
                     onDragStart={(e) => {
                       e.dataTransfer.setData('application/x-quick-ctrl', id);
                       e.dataTransfer.effectAllowed = 'move';
@@ -2341,6 +2515,12 @@ export default function PlayerView() {
                 >
                   <ScrollIcon />Sheet
                 </button>
+                <button
+                  onClick={() => setSheetTab('backstory')}
+                  className={`text-xs px-3 py-1 rounded-lg transition-colors ${sheetTab === 'backstory' ? 'bg-dnd-red text-white' : 'text-gray-400 hover:text-white border border-gray-700'}`}
+                >
+                  Backstory
+                </button>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -2379,6 +2559,20 @@ export default function PlayerView() {
                     socket.emit('roll_dice', { dice, count, modifier, label });
                   }}
                 />
+              </div>
+            )}
+            {/* Backstory tab */}
+            {sheetTab === 'backstory' && (
+              <div className="flex-1 overflow-y-auto p-4 no-print">
+                {myCreature.backstory ? (
+                  <p className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
+                    {myCreature.backstory}
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-500 italic">
+                    No backstory written yet. Open the Edit tab and go to the Backstory section to add one.
+                  </p>
+                )}
               </div>
             )}
             {/* Stat block — only shown during print */}

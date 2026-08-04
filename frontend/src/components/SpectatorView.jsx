@@ -101,8 +101,15 @@ export default function SpectatorView() {
     socket.on('token_temp_hp_changed',({ tokenId, tempHp })    => setTokens(p => p.map(t => t.id === tokenId ? { ...t, temp_hp: tempHp }   : t)));
     socket.on('token_conditions_changed', ({ tokenId, conditions }) => setTokens(p => p.map(t => t.id === tokenId ? { ...t, conditions } : t)));
     socket.on('token_initiative_changed', ({ tokenId, initiative }) => setTokens(p => p.map(t => t.id === tokenId ? { ...t, initiative } : t)));
-    socket.on('token_visibility_changed', ({ tokenId, isHidden }) => {
-      if (isHidden) setTokens((p) => p.filter((t) => t.id !== tokenId));
+    socket.on('token_visibility_changed', ({ tokenId, isHidden, token }) => {
+      if (isHidden) {
+        setTokens((p) => p.filter((t) => t.id !== tokenId));
+      } else if (token) {
+        // Reveal: hidden tokens were filtered out — re-add from the payload.
+        setTokens((p) => p.some((t) => t.id === tokenId)
+          ? p.map((t) => (t.id === tokenId ? { ...t, ...token } : t))
+          : [...p, token]);
+      }
     });
     socket.on('token_flying_changed', ({ tokenId, isFlying }) => setTokens(p => p.map(t => t.id === tokenId ? { ...t, is_flying: isFlying } : t)));
     socket.on('token_size_changed',   ({ tokenId, size })      => setTokens(p => p.map(t => t.id === tokenId ? { ...t, size }    : t)));
@@ -145,6 +152,8 @@ export default function SpectatorView() {
     socket.on('door_deleted',     ({ doorId }) => setDoors((p) => p.filter((d) => d.id !== doorId)));
     socket.on('door_toggled',     ({ doorId, isOpen }) => setDoors((p) => p.map((d) => d.id === doorId ? { ...d, is_open: isOpen } : d)));
     socket.on('door_dir_flipped', ({ doorId, openDir }) => setDoors((p) => p.map((d) => d.id === doorId ? { ...d, open_dir: openDir } : d)));
+    socket.on('door_sprite_changed', ({ doorId, spritePath, spriteMotion }) => setDoors((p) => p.map((d) => d.id === doorId ? { ...d, sprite_path: spritePath, sprite_motion: spriteMotion } : d)));
+    socket.on('door_light_changed', ({ doorId, lightRadius, lightColor, lightSide }) => setDoors((p) => p.map((d) => d.id === doorId ? { ...d, light_radius: lightRadius, light_color: lightColor, light_side: lightSide } : d)));
     socket.on('doors_cleared',    () => setDoors([]));
 
     socket.on('light_added',   ({ light })   => setLights((p) => p.find((l) => l.id === light.id) ? p : [...p, light]));
@@ -251,6 +260,7 @@ export default function SpectatorView() {
     <div className="w-screen h-screen bg-black overflow-hidden relative">
       <MapStage
         mapUrl={mapUrl}
+        mapId={session?.map_id ?? null}
         mapWidth={mapWidth}
         mapHeight={mapHeight}
         gridSize={gridSize}

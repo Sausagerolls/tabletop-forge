@@ -11,6 +11,7 @@ const path    = require('path');
 const fs      = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const db      = require('../db');
+const { UPLOADS_DIR, ensureDir } = require('../paths');
 
 const router = express.Router();
 
@@ -19,7 +20,7 @@ const upload = multer({
   limits: { fileSize: 300 * 1024 * 1024 },
 });
 
-const UPLOADS_MAPS = path.join(__dirname, '../../uploads/maps');
+const UPLOADS_MAPS = ensureDir(path.join(UPLOADS_DIR, 'maps'));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

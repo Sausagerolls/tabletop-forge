@@ -8,6 +8,7 @@ import CustomRaceEditor from './CustomRaceEditor.jsx';
 import CustomBackgroundEditor from './CustomBackgroundEditor.jsx';
 import CustomClassEditor from './CustomClassEditor.jsx';
 import { notifyCustomClassesChanged } from '../plugins/customClassesProvider.js';
+import { useAllClasses } from '../utils/classes.js';
 
 export default function CustomOriginsPanel() {
   const [tab, setTab] = useState('races');   // 'races' | 'backgrounds' | 'classes'
@@ -47,6 +48,16 @@ export default function CustomOriginsPanel() {
     }
     return out;
   }, [races]);
+
+  // Classes the app knows about — SRD plus anything the Custom Classes
+  // plugin added — that have no row in this table. Per-level features
+  // and feature-scoped subclasses live on the row, so without one there
+  // is nowhere to author them; these buttons create the row.
+  const allClasses = useAllClasses();
+  const unbackedClasses = useMemo(() => {
+    const have = new Set(classes.map((c) => String(c.name || '').toLowerCase()));
+    return allClasses.filter((n) => !have.has(String(n).toLowerCase()));
+  }, [allClasses, classes]);
 
   async function deleteRow(kind, id) {
     if (!window.confirm('Delete this entry?')) return;
@@ -135,6 +146,26 @@ export default function CustomOriginsPanel() {
               </div>
             </div>
           ))}
+
+          {unbackedClasses.length > 0 && (
+            <div className="bg-gray-900/40 border border-gray-700 rounded p-2 space-y-1.5">
+              <div className="text-[11px] text-gray-400">
+                <span className="text-gray-300 font-semibold">Add features to an existing class.</span>{' '}
+                These have no record here yet — the SRD classes plus anything the Custom Classes
+                plugin added. Pick one to give it per-level features (including features scoped to
+                subclasses the plugin defined). An SRD class keeps its own hit die, saves and
+                proficiencies.
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {unbackedClasses.map((n) => (
+                  <button key={n} onClick={() => setEditor({ kind: 'classes', initial: { name: n } })}
+                    className="text-[10px] bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 px-2 py-1 rounded">
+                    + {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : tab === 'races' ? (
         <div className="space-y-2">

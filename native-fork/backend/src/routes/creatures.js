@@ -4,12 +4,13 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db');
+const { UPLOADS_DIR, ensureDir } = require('../paths');
 
 module.exports = function makeCreaturesRouter(io) {
 const router = express.Router();
 
 const storage = multer.diskStorage({
-  destination: path.join(__dirname, '../../uploads/creatures'),
+  destination: ensureDir(path.join(UPLOADS_DIR, 'creatures')),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `${uuidv4()}${ext}`);
@@ -48,7 +49,7 @@ const CREATURE_FIELDS = [
   'heroic_inspiration', 'death_save_successes', 'death_save_failures',
   'prof_light_armor', 'prof_medium_armor', 'prof_heavy_armor', 'prof_shields',
   'concentrating_on',
-  'char_level', 'char_xp', 'player_notes',
+  'char_level', 'char_xp', 'player_notes', 'backstory',
   'inventory', 'currency_cp', 'currency_sp', 'currency_gp',
   'spells', 'spell_slots', 'loot', 'movement_actions',
   'race_state',
@@ -132,7 +133,6 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/creatures/export?ids=1,2,3  OR  ids=all
-const UPLOADS_DIR = path.join(__dirname, '../../uploads');
 const CREATURES_DIR = path.join(UPLOADS_DIR, 'creatures');
 const IMG_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
 

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Mac App Store entitlements for the NESTED helper executables that
+    ship inside Contents/MacOS/ — the bundled `node` backend and the
+    `apple-intelligence-server` sidecar.
+
+    Under the App Sandbox every executable in the bundle must be signed
+    and sandboxed. Helpers don't redeclare each capability; they set
+    `inherit` so they run inside the SAME sandbox container as the main
+    app and pick up its entitlements (network.server/client, JIT, etc.).
+    That's the Apple-sanctioned pattern for sandboxed helper tools.
+
+    Signed inside-out by scripts/build-signed.sh: helpers first with
+    this file, then the main .app with Entitlements.AppStore.plist.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.inherit</key>
+    <true/>
+
+    <!-- Node's V8 engine aborts during V8::Initialize() (a brk-1 trap in
+         pthread_jit_write_protect_np / ThreadIsolation::Initialize) unless
+         the JIT entitlement is present ON THE HELPER ITSELF. `inherit` does
+         NOT propagate hardened-runtime (cs.*) entitlements to the child, so
+         declaring it on the main app is not enough — it must be here too.
+         allow-jit alone is sufficient (V8 uses the MAP_JIT path); we do NOT
+         need allow-unsigned-executable-memory, which the Mac App Store
+         rejects. PGlite's WebAssembly runs over the same JIT mapping. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+</dict>
+</plist>

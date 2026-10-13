@@ -58,7 +58,7 @@ export default function CustomBackgroundEditor({ initial, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 bg-black/70 z-[90] flex items-center justify-center p-4"
       onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}
         className="bg-gray-900 border border-amber-700 rounded-lg w-full max-w-3xl max-h-[90vh] flex flex-col">

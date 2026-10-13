@@ -17,6 +17,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   combat_active BOOLEAN DEFAULT false,
   combat_turn INTEGER DEFAULT 0,
   fow_enabled BOOLEAN DEFAULT false,
+  -- What newly added library tokens start with for player-facing label
+  -- visibility. Player tokens ignore these.
+  default_hide_token_names BOOLEAN DEFAULT false,
+  default_hide_token_hp BOOLEAN DEFAULT false,
   fow_blur INTEGER DEFAULT 16,
   fow_color VARCHAR(9) DEFAULT '#000000',
   ambient_light VARCHAR(10) DEFAULT 'bright',
@@ -37,8 +41,27 @@ CREATE TABLE IF NOT EXISTS maps (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- 2b. backdrops — full-screen scene art shown to players when no map is in
+-- play. Deliberately not a map: no grid, no walls, no tokens, no fog.
+CREATE TABLE IF NOT EXISTS backdrops (
+  id SERIAL PRIMARY KEY,
+  session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  image_path VARCHAR(500) NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  -- Original art path when this backdrop was generated from a token's image
+  -- (the GM's "show this to the players" action); NULL for uploaded scene art.
+  -- Pushing the same token again reuses the row rather than making another.
+  source_image_path VARCHAR(500),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
 -- 3. Close the circular reference: sessions -> maps
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS map_id INTEGER REFERENCES maps(id) ON DELETE SET NULL;
+-- Which backdrop (if any) is currently on the players' screens. NULL means
+-- "show the map" — deleting the live backdrop falls back to the map rather
+-- than leaving players staring at a dead reference.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS backdrop_id INTEGER REFERENCES backdrops(id) ON DELETE SET NULL;
 
 -- 4. creatures (all columns including those added in later migrations)
 CREATE TABLE IF NOT EXISTS creatures (
@@ -107,6 +130,10 @@ CREATE TABLE IF NOT EXISTS creatures (
   movement_actions JSONB DEFAULT '[]',
   is_player_character BOOLEAN DEFAULT false,
   player_owner VARCHAR(255),
+  -- Tokens spawned from this creature start with their name / health bar
+  -- hidden from players. Per-token overrides still apply once placed.
+  hide_token_name BOOLEAN DEFAULT false,
+  hide_token_hp BOOLEAN DEFAULT false,
   inventory JSONB DEFAULT '[]',
   currency_cp INTEGER DEFAULT 0,
   currency_sp INTEGER DEFAULT 0,
@@ -116,6 +143,21 @@ CREATE TABLE IF NOT EXISTS creatures (
   loot JSONB DEFAULT '[]',
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- 4b. creature_images — extra token art beyond the creature's primary
+-- portrait. `creatures.image_path` stays the default (the face on the stat
+-- block and in the library); these are the alternates the GM can pick from
+-- when dropping a token, so a pack of wolves or a crowd of guards isn't six
+-- copies of one picture.
+CREATE TABLE IF NOT EXISTS creature_images (
+  id SERIAL PRIMARY KEY,
+  creature_id INTEGER REFERENCES creatures(id) ON DELETE CASCADE,
+  image_path VARCHAR(500) NOT NULL,
+  label VARCHAR(100) DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS creature_images_creature_idx ON creature_images (creature_id, sort_order);
 
 -- 5. session_tokens (all columns)
 CREATE TABLE IF NOT EXISTS session_tokens (
@@ -136,6 +178,17 @@ CREATE TABLE IF NOT EXISTS session_tokens (
   is_dead BOOLEAN DEFAULT false,
   is_player BOOLEAN DEFAULT false,
   player_name VARCHAR(255),
+  -- Familiar binding: the player_name this token is attached to, or NULL for
+  -- an ordinary token. Bound by name (not by owning token id) so the pairing
+  -- survives the owner's token being respawned or moved between maps.
+  familiar_of VARCHAR(255),
+  -- Label-card visibility for the players' view only. The GM always sees the
+  -- full card; a token in combat shows both regardless.
+  hide_name_from_players BOOLEAN DEFAULT false,
+  hide_hp_from_players BOOLEAN DEFAULT false,
+  -- Pre-transformation identity (creature/name/art/size/HP), set when the GM
+  -- transforms this token so it can be reverted. NULL = original form.
+  pretransform JSONB,
   vision_type VARCHAR(20) DEFAULT 'normal',
   vision_range INTEGER DEFAULT 0,
   senses JSONB,
@@ -232,6 +285,44 @@ ALTER TABLE creatures ADD COLUMN IF NOT EXISTS char_level INTEGER DEFAULT 1;
 ALTER TABLE creatures ADD COLUMN IF NOT EXISTS char_xp INTEGER DEFAULT 0;
 ALTER TABLE creatures ADD COLUMN IF NOT EXISTS player_notes TEXT DEFAULT '';
 ALTER TABLE maps ADD COLUMN IF NOT EXISTS floor_label VARCHAR(60) DEFAULT '';
+-- Wildspace maps: the grid defines the play area, not the art. `image_path`
+-- holds a distant starscape painted as a fixed backdrop behind the stage —
+-- it never pans, zooms or scales with the grid, so a 1000ft encounter needs
+-- no 10,000px image. width/height are derived (cols/rows * grid_size) so
+-- everything downstream that reads map pixel bounds keeps working unchanged.
+ALTER TABLE maps ADD COLUMN IF NOT EXISTS map_type VARCHAR(20) DEFAULT 'image';
+ALTER TABLE maps ADD COLUMN IF NOT EXISTS grid_cols INTEGER;
+ALTER TABLE maps ADD COLUMN IF NOT EXISTS grid_rows INTEGER;
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS familiar_of VARCHAR(255);
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS hide_name_from_players BOOLEAN DEFAULT false;
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS hide_hp_from_players BOOLEAN DEFAULT false;
+ALTER TABLE backdrops ADD COLUMN IF NOT EXISTS source_image_path VARCHAR(500);
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS pretransform JSONB;
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS companion_kind VARCHAR(20) DEFAULT 'familiar';
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS auras JSONB DEFAULT '[]';
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS marked_by VARCHAR(255);
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS mark_label VARCHAR(60);
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS exhaustion INTEGER DEFAULT 0;
+-- Aboard-ship binding. When ship_id is set, deck_col/deck_row are the token's
+-- position in DECK-LOCAL squares and are the source of truth; grid_col/grid_row
+-- continue to hold the projected WORLD position, rewritten by the server every
+-- time the ship moves or rotates. Keeping world coords in the original columns
+-- means LOS origins, fog, auras and measurement all keep working untouched.
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS ship_id INTEGER REFERENCES map_ships(id) ON DELETE SET NULL;
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS deck_index INTEGER DEFAULT 0;
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS deck_col FLOAT;
+ALTER TABLE session_tokens ADD COLUMN IF NOT EXISTS deck_row FLOAT;
+ALTER TABLE magical_darkness ADD COLUMN IF NOT EXISTS attached_token_id INTEGER REFERENCES session_tokens(id) ON DELETE CASCADE;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS lair_action_enabled BOOLEAN DEFAULT false;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS lair_action_note TEXT DEFAULT '';
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS default_hide_token_names BOOLEAN DEFAULT false;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS default_hide_token_hp BOOLEAN DEFAULT false;
+ALTER TABLE creatures ADD COLUMN IF NOT EXISTS hide_token_name BOOLEAN DEFAULT false;
+ALTER TABLE creatures ADD COLUMN IF NOT EXISTS hide_token_hp BOOLEAN DEFAULT false;
+ALTER TABLE creatures ADD COLUMN IF NOT EXISTS wildshape_forms JSONB DEFAULT '[]';
+ALTER TABLE creatures ADD COLUMN IF NOT EXISTS wildshape_eligible BOOLEAN DEFAULT false;
+ALTER TABLE creatures ADD COLUMN IF NOT EXISTS ac_misc_bonus INTEGER DEFAULT 0;
+ALTER TABLE creatures ADD COLUMN IF NOT EXISTS wildshape_keep_hp BOOLEAN DEFAULT false;
 
 -- Shared spell library — populated by scanning PDFs (or manually). Players
 -- "learn" by copying a row into their creature.spells JSONB. The structured
@@ -260,6 +351,95 @@ CREATE TABLE IF NOT EXISTS spell_library (
   UNIQUE (name)
 );
 CREATE INDEX IF NOT EXISTS idx_spell_library_level ON spell_library(level);
+
+-- ── Spelljammer ships ────────────────────────────────────────────────────────
+-- A ship is a reusable class (ship_library) made of one or more decks
+-- (ship_decks), placed onto a map as an instance (map_ships). The split
+-- mirrors terrain_library/map_terrain, which solves the same problem: a
+-- rotatable, grid-sized thing whose geometry has to be re-projected into map
+-- space every time it moves.
+CREATE TABLE IF NOT EXISTS ship_library (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(120) NOT NULL DEFAULT '',
+  ship_class VARCHAR(80) DEFAULT '',
+  -- Stats. Ship combat uses hull HP against a damage threshold rather than
+  -- a creature's HP pool, so these deliberately don't reuse `creatures`.
+  armor_class INTEGER DEFAULT 15,
+  hull_hp INTEGER DEFAULT 300,
+  damage_threshold INTEGER DEFAULT 0,
+  -- Tactical speed in feet per round — drives the same movement counter
+  -- normal tokens get when the ship is dragged.
+  speed INTEGER DEFAULT 0,
+  maneuverability VARCHAR(20) DEFAULT '',
+  crew_min INTEGER DEFAULT 0,
+  crew_max INTEGER DEFAULT 0,
+  cargo_tons FLOAT DEFAULT 0,
+  keel_length INTEGER DEFAULT 0,
+  beam_width INTEGER DEFAULT 0,
+  weapons JSONB DEFAULT '[]',
+  notes TEXT DEFAULT '',
+  -- Air envelope, in feet BEYOND the hull. Spelljammer ships carry their own
+  -- air out to roughly their own length, so the envelope comes out oval rather
+  -- than round — the hull is longer than it is wide and the bubble is drawn
+  -- outward from it. Stored explicitly rather than always derived: the GM can
+  -- fudge it per ship, and an explicit number is one less thing to reason
+  -- about mid-session. 0 = no envelope drawn.
+  air_bubble_ft INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- One row per level. deck_index 0 is the topmost deck and the default view.
+-- grid_cols/grid_rows size the deck in SQUARES, so a deck always lands on the
+-- host map's own 5ft scale no matter how big the art file is.
+CREATE TABLE IF NOT EXISTS ship_decks (
+  id SERIAL PRIMARY KEY,
+  ship_id INTEGER REFERENCES ship_library(id) ON DELETE CASCADE,
+  deck_index INTEGER NOT NULL DEFAULT 0,
+  name VARCHAR(80) NOT NULL DEFAULT '',
+  image_path VARCHAR(500) NOT NULL,
+  grid_cols FLOAT NOT NULL DEFAULT 4,
+  grid_rows FLOAT NOT NULL DEFAULT 8,
+  -- Where this deck sits relative to the ship's anchor, in squares. Decks are
+  -- rarely the same size — a cramped lower hold under a broad main deck — so
+  -- without this they'd all pin to the same top-left corner and the hull would
+  -- visibly jump when the GM flicks between levels. Deck 0 is the reference
+  -- and stays at 0,0; the others are nudged into alignment with it.
+  offset_col FLOAT NOT NULL DEFAULT 0,
+  offset_row FLOAT NOT NULL DEFAULT 0,
+  -- Hull outline in deck-local normalised coords, same shape as
+  -- terrain_library.custom_walls ([[{col,row},…]]) so the existing
+  -- rotate-into-map-space wall generator can be reused verbatim.
+  hull_walls JSONB,
+  -- [{ col, row, to_deck, to_col, to_row, kind, label }] — stairs, ladders and
+  -- hatches. A token ending its move on one is offered the move to to_deck.
+  transitions JSONB DEFAULT '[]',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- A ship placed on a map. `rotation` is free (degrees, no snap); the deck grid
+-- rotates with the hull. `active_deck` is which level is currently drawn in
+-- place on the map — the GM flips it from the buttons beside the ship.
+CREATE TABLE IF NOT EXISTS map_ships (
+  id SERIAL PRIMARY KEY,
+  session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
+  map_id INTEGER REFERENCES maps(id) ON DELETE CASCADE,
+  library_id INTEGER REFERENCES ship_library(id) ON DELETE SET NULL,
+  name VARCHAR(255) NOT NULL DEFAULT '',
+  grid_col FLOAT NOT NULL DEFAULT 0,
+  grid_row FLOAT NOT NULL DEFAULT 0,
+  rotation FLOAT NOT NULL DEFAULT 0,
+  active_deck INTEGER NOT NULL DEFAULT 0,
+  current_hp INTEGER,
+  -- player_name of whoever is attuned to the spelljamming helm. Only they may
+  -- drag the ship (the GM always may). NULL = nobody attuned, ship is adrift.
+  attuned_player VARCHAR(255),
+  z_index INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ship_decks_ship ON ship_decks(ship_id, deck_index);
+CREATE INDEX IF NOT EXISTS idx_map_ships_map ON map_ships(map_id);
+CREATE INDEX IF NOT EXISTS idx_session_tokens_ship ON session_tokens(ship_id);
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_dm_markers_session ON dm_markers(session_id);

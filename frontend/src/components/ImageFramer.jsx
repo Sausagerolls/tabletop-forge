@@ -16,13 +16,32 @@
 // Everything is same-origin (/uploads) or a blob:/data: URL, so the
 // canvas is never tainted and toBlob() works without CORS headers.
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
-const VIEW = 288;   // on-screen viewport, px
-const OUT  = 512;   // exported image edge, px
+const VIEW = 288;   // on-screen viewport, px — the WIDTH; height follows shape
+const OUT  = 512;   // exported image width, px; height follows shape
 const MAX_ZOOM = 4;
 
-export default function ImageFramer({ src, title = 'Frame artwork', onCancel, onConfirm }) {
+// The frame's own proportions, by what the art is for.
+//
+//   token   — square with a circular guide. The map draws token art as a disc,
+//             so the corners only ever show on a stat-block portrait.
+//   standee — 2:3 portrait, no circle. The 3D view stands this art up whole and
+//             takes its height from the file's aspect ratio, so a square export
+//             would produce a figure exactly as tall as its own square is wide:
+//             a medium creature five feet tall. A tall frame is what makes a
+//             standee stand.
+const SHAPES = {
+  token:   { aspect: 1,     circle: true,
+             hint: 'The circle shows the token crop; the square is what gets saved.' },
+  standee: { aspect: 2 / 3, circle: false,
+             hint: 'Fill the frame with the figure — this is exactly what stands up in the 3D view.' },
+};
+
+export default function ImageFramer({ src, title = 'Frame artwork', shape = 'token', onCancel, onConfirm }) {
+  const cfg = SHAPES[shape] || SHAPES.token;
+  const viewH = Math.round(VIEW / cfg.aspect);
+  const outH = Math.round(OUT / cfg.aspect);
   const [img, setImg] = useState(null);
   const [error, setError] = useState('');
   const [zoom, setZoom] = useState(1);
@@ -32,14 +51,20 @@ export default function ImageFramer({ src, title = 'Frame artwork', onCancel, on
 
   // Scale at which the image exactly covers the viewport — zoom is a
   // multiplier on top, so zoom=1 always fills with no letterboxing.
-  const baseScale = img ? Math.max(VIEW / img.naturalWidth, VIEW / img.naturalHeight) : 1;
+  const baseScale = img ? Math.max(VIEW / img.naturalWidth, viewH / img.naturalHeight) : 1;
   const drawW = img ? img.naturalWidth  * baseScale * zoom : 0;
   const drawH = img ? img.naturalHeight * baseScale * zoom : 0;
 
-  const clamp = useCallback((p, w, h) => ({
-    x: Math.min(0, Math.max(VIEW - w, p.x)),
-    y: Math.min(0, Math.max(VIEW - h, p.y)),
-  }), []);
+  // Panning is FREE. There is no clamp: the picture can be moved anywhere,
+  // including partly or wholly outside the frame.
+  //
+  // It used to be pinned so the image always covered the frame completely
+  // (`VIEW - w <= x <= 0`). That is a reasonable default for a circular token
+  // face and useless for a standee: with the picture nailed to the edges there
+  // is no way to leave headroom above a figure, sit it on the bottom of the
+  // frame, or crop in from one side only. Whatever is inside the frame is
+  // exactly what gets saved, so there is nothing to protect the user from — and
+  // Reset puts a picture dragged off into the distance straight back.
 
   useEffect(() => {
     if (!src) return;
@@ -47,10 +72,10 @@ export default function ImageFramer({ src, title = 'Frame artwork', onCancel, on
     const im = new Image();
     im.onload = () => {
       if (cancelled) return;
-      const b = Math.max(VIEW / im.naturalWidth, VIEW / im.naturalHeight);
+      const b = Math.max(VIEW / im.naturalWidth, viewH / im.naturalHeight);
       setImg(im);
       setZoom(1);
-      setPos({ x: (VIEW - im.naturalWidth * b) / 2, y: (VIEW - im.naturalHeight * b) / 2 });
+      setPos({ x: (VIEW - im.naturalWidth * b) / 2, y: (viewH - im.naturalHeight * b) / 2 });
     };
     im.onerror = () => { if (!cancelled) setError('Could not load that image.'); };
     im.src = src;
@@ -66,11 +91,11 @@ export default function ImageFramer({ src, title = 'Frame artwork', onCancel, on
     const oldH = img.naturalHeight * baseScale * zoom;
     const newW = img.naturalWidth * baseScale * z;
     const newH = img.naturalHeight * baseScale * z;
-    const cx = VIEW / 2, cy = VIEW / 2;
+    const cx = VIEW / 2, cy = viewH / 2;
     const nx = cx - ((cx - pos.x) / oldW) * newW;
     const ny = cy - ((cy - pos.y) / oldH) * newH;
     setZoom(z);
-    setPos(clamp({ x: nx, y: ny }, newW, newH));
+    setPos({ x: nx, y: ny });
   }
 
   function onPointerDown(e) {
@@ -81,7 +106,7 @@ export default function ImageFramer({ src, title = 'Frame artwork', onCancel, on
   function onPointerMove(e) {
     const d = dragRef.current;
     if (!d || !img) return;
-    setPos(clamp({ x: d.ox + (e.clientX - d.px), y: d.oy + (e.clientY - d.py) }, drawW, drawH));
+    setPos({ x: d.ox + (e.clientX - d.px), y: d.oy + (e.clientY - d.py) });
   }
   function onPointerUp(e) {
     dragRef.current = null;
@@ -95,9 +120,9 @@ export default function ImageFramer({ src, title = 'Frame artwork', onCancel, on
 
   function reset() {
     if (!img) return;
-    const b = Math.max(VIEW / img.naturalWidth, VIEW / img.naturalHeight);
+    const b = Math.max(VIEW / img.naturalWidth, viewH / img.naturalHeight);
     setZoom(1);
-    setPos({ x: (VIEW - img.naturalWidth * b) / 2, y: (VIEW - img.naturalHeight * b) / 2 });
+    setPos({ x: (VIEW - img.naturalWidth * b) / 2, y: (viewH - img.naturalHeight * b) / 2 });
   }
 
   async function confirm() {
@@ -106,11 +131,13 @@ export default function ImageFramer({ src, title = 'Frame artwork', onCancel, on
     try {
       const canvas = document.createElement('canvas');
       canvas.width = OUT;
-      canvas.height = OUT;
+      canvas.height = outH;
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingQuality = 'high';
       // Viewport px → output px. The drawn rect maps 1:1 through k, so
       // what's inside the square on screen is exactly what's exported.
+      // Uniform: outH/viewH equals OUT/VIEW by construction, since both the
+      // output and the viewport derive their height from the same aspect.
       const k = OUT / VIEW;
       ctx.drawImage(img, pos.x * k, pos.y * k, drawW * k, drawH * k);
       // PNG keeps transparency — plenty of token art is cut out.
@@ -124,7 +151,7 @@ export default function ImageFramer({ src, title = 'Frame artwork', onCancel, on
   }
 
   return (
-    <div className="fixed inset-0 bg-black/75 z-[60] flex items-center justify-center p-4" onClick={onCancel}>
+    <div className="fixed inset-0 bg-black/75 z-[92] flex items-center justify-center p-4" onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()}
         className="bg-gray-900 border border-dnd-gold/60 rounded-lg w-full max-w-md flex flex-col">
         <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
@@ -134,14 +161,13 @@ export default function ImageFramer({ src, title = 'Frame artwork', onCancel, on
 
         <div className="p-4 space-y-3">
           <p className="text-[11px] text-gray-400 leading-snug">
-            Drag to move the picture, scroll or use the slider to zoom. The circle shows the token crop;
-            the square is what gets saved.
+            Drag to move the picture, scroll or use the slider to zoom. {cfg.hint}
           </p>
 
           <div className="flex justify-center">
             <div
               className="relative overflow-hidden bg-gray-950 border border-gray-700 rounded touch-none select-none"
-              style={{ width: VIEW, height: VIEW, cursor: img ? 'grab' : 'default' }}
+              style={{ width: VIEW, height: viewH, cursor: img ? 'grab' : 'default' }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -165,8 +191,12 @@ export default function ImageFramer({ src, title = 'Frame artwork', onCancel, on
                   this ring only shows on the stat-block portrait. The huge
                   spread darkens everything outside the circle and is clipped
                   by the viewport's own overflow:hidden. */}
-              <div className="absolute inset-0 pointer-events-none rounded-full border border-dnd-gold/70"
-                style={{ boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)' }} />
+              {cfg.circle ? (
+                <div className="absolute inset-0 pointer-events-none rounded-full border border-dnd-gold/70"
+                  style={{ boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)' }} />
+              ) : (
+                <div className="absolute inset-0 pointer-events-none border border-dnd-gold/70" />
+              )}
               {!img && !error && (
                 <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">Loading…</div>
               )}

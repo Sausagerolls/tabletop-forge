@@ -12,6 +12,7 @@
 
 const express = require('express');
 const db = require('../db');
+const { clearDoorDefaultCache } = require('../doorDefaults');
 
 const router = express.Router();
 
@@ -42,6 +43,7 @@ router.put('/:key', async (req, res) => {
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
       [key, JSON.stringify(value)]
     );
+    if (key === 'door_default') clearDoorDefaultCache();
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -53,6 +55,7 @@ router.delete('/:key', async (req, res) => {
     const key = String(req.params.key || '');
     if (!SLUG_RE.test(key)) return res.status(400).json({ error: 'Invalid key' });
     await db.query('DELETE FROM app_settings WHERE key=$1', [key]);
+    if (key === 'door_default') clearDoorDefaultCache();
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

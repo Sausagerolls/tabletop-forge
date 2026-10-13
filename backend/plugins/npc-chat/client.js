@@ -193,6 +193,28 @@ async function tokenKnowsLanguage(token, langSlug) {
 
 // ── Modal renderer (player view) ───────────────────────────────────
 
+// Where the viewer's own character comes from when there is no map.
+//
+// The plugin normally reads the player's token out of the map decoration
+// context, which only exists on a client that draws a map. The phone sheet
+// (/sheet) draws no map at all, so without this every NPC line arrived with
+// "no token" — targeted lines were dropped and untargeted ones rendered as
+// gibberish, because "does this character know the language" had nothing to
+// ask. The host can instead hand over a getter.
+let hostToken = null;      // () => token row, supplied by the host
+function viewerToken() {
+  const fromMap = lastCtx?.playerTokenId != null
+    ? (lastCtx.tokens || []).find((t) => t.id === lastCtx.playerTokenId)
+    : null;
+  if (fromMap) return fromMap;
+  try { return (typeof hostToken === 'function' ? hostToken() : null) || null; }
+  catch { return null; }
+}
+function viewerTokenId() {
+  const t = viewerToken();
+  return t ? t.id : (lastCtx?.playerTokenId ?? null);
+}
+
 function ensureModalRoot() {
   if (modalContainer && document.body.contains(modalContainer)) return modalContainer;
   modalContainer = document.createElement('div');
@@ -211,8 +233,7 @@ async function paintModal() {
   if (modalQueue.length === 0) return;
 
   const top = modalQueue[0];
-  const myTokenId = lastCtx?.playerTokenId;
-  const myToken = (lastCtx?.tokens || []).find((t) => t.id === myTokenId) || null;
+  const myToken = viewerToken();
   const understands = myToken ? await tokenKnowsLanguage(myToken, top.langSlug) : false;
   const langName = nameForSlug(top.langSlug);
 
@@ -294,6 +315,10 @@ async function paintModal() {
 export default {
   register({ React, ReactKonva, registries, context }) {
     const { role, subscribe, emitEvent } = context;
+    // Hosts with no map hand over their own character directly. See
+    // viewerToken(); a host that draws a map leaves this null and the map
+    // context wins as before.
+    hostToken = typeof context.getPlayerToken === 'function' ? context.getPlayerToken : null;
 
     // Pull the canonical language list. Failure isn't fatal — the
     // dropdown will just be empty and the GM can retry via the refresh
@@ -324,7 +349,7 @@ export default {
         pingTab();
       }
       if (role === 'player') {
-        const myTokenId = lastCtx?.playerTokenId;
+        const myTokenId = viewerTokenId();
         if (entry.target != null && String(entry.target) !== String(myTokenId)) return;
         modalQueue.push(entry);
         ensureModalRoot();

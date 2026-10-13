@@ -1,26 +1,44 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import LanguagePicker from './LanguagePicker.jsx';
 import ImageFramer from './ImageFramer.jsx';
-import { useAllClasses, useAllSubclasses, useClassChoices, computeHitDicePool, formatHitDicePool, hitDieFor } from '../utils/classes.js';
-import { getClassBuild, formatPrimaryAbility } from '../data/class_build.js';
+import EditionTag from './EditionTag.jsx';
+import TokenEditorModal from './TokenEditorModal.jsx';
+import { useAllClasses, useAllSubclasses, useClassChoices, computeHitDicePool, formatHitDicePool, hitDieFor,
+  normalizeHitDicePool, parseHitDiceString, formatHitDiceFormula, clampHitDiceUsed } from '../utils/classes.js';
+import HitDiceEditor from './HitDiceEditor.jsx';
+import { getClassBuild, formatPrimaryAbility, startingEquipmentOptions } from '../data/class_build.js';
 import { expandWeaponProficiency } from '../data/weapons.js';
-import { formatDamageWithMod, formatDamageType } from '../utils/damage.js';
+import { formatDamageWithMod, formatDamageType, weaponDamageModes, damageParts, weaponStatOptions, bestWeaponStat, weaponDamageMod } from '../utils/damage.js';
+import { subclassEntry, subclassPreparedSpells, subclassLearnableSpells, wildShapeCrCap, wildShapeTempHp, classEntry } from '../data/subclasses.js';
+import { formatSizeType } from '../utils/creature.js';
+import { featureSkillBonuses, featureCantripBonus } from '../utils/skills.js';
+import { maxHitPoints } from '../utils/hitPoints.js';
+import { computeAcFromGear, naturalArmorOf } from '../utils/armorClass.js';
+import { SPELL_TYPES, SPELL_TYPE_KEYS, spellType } from '../utils/spellTypes.js';
+import { SpellBox } from './StatBlock.jsx';
 import {
   RACE_EDITIONS,
-  raceTypesForEdition,
-  racesForType,
+  racesForEdition,
+  editionLabel,
   findRace,
   combinedRaceTraits,
 } from '../data/races.js';
-import { BACKGROUNDS_2024, findBackground, SKILL_LABELS } from '../data/backgrounds.js';
+import { BACKGROUNDS_2024, SKILL_LABELS, toolChoicesFor } from '../data/backgrounds.js';
+import { FEATS_2024, FEAT_CATEGORIES } from '../data/feats.js';
 import { resourcesForCreature } from '../data/resources.js';
+import { spellCapacityTotals, learnableSpellsFor, spellSlotsForCreature, pactMagicForCreature } from '../data/classes.js';
 import socket from '../socket.js';
 import ClassChoicesPicker from './ClassChoicesPicker.jsx';
+import ItemStatsEditor from './ItemStatsEditor.jsx';
+import { optionGroupsForClass } from '../data/class_options.js';
+import { extraOptionGroupsForClass } from '../data/class_options_extra.js';
+import { IMPORTED_BACKGROUNDS, ALL_ABILITY_FIELDS, affectedAbilities } from '../data/backgrounds_imported.js';
 import MulticlassRow from './MulticlassRow.jsx';
 
 const XIcon = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="w-3.5 h-3.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>);
 const DragonIcon = () => (<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10 text-gray-500"><path d="M44 12c4-2 8 0 10 4s0 10-4 12l-4 2" /><path d="M20 12c-4-2-8 0-10 4s0 10 4 12l4 2" /><ellipse cx="32" cy="32" rx="14" ry="10" fill="currentColor" stroke="none" opacity="0.15" /><path d="M18 28c0 10 6 18 14 18s14-8 14-18" /><path d="M26 24c0-2 2-4 6-4s6 2 6 4" /><circle cx="27" cy="26" r="1.5" fill="currentColor" stroke="none" /><circle cx="37" cy="26" r="1.5" fill="currentColor" stroke="none" /><path d="M28 36c1 2 3 3 4 3s3-1 4-3" /></svg>);
 const SwordIcon = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 inline mr-1"><path d="M14.5 17.5L3 6V3h3l11.5 11.5" /><path d="M13 19l6-6" /><path d="M2 2l5.5 5.5" /><path d="M17 17l4 4" /></svg>);
+const CrossIcon = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 inline mr-1"><path d="M12 4v16" /><path d="M4 12h16" /></svg>);
 const OrbIcon = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 inline mr-1"><circle cx="12" cy="12" r="9" /><path d="M12 3c-2 3-3 6-3 9s1 6 3 9" /><path d="M12 3c2 3 3 6 3 9s-1 6-3 9" /><path d="M3 12h18" /></svg>);
 const LightbulbIcon = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 inline mr-1"><path d="M9 21h6" /><path d="M12 3a6 6 0 0 1 6 6c0 2.2-1.2 4.2-3 5.4V18H9v-3.6C7.2 13.2 6 11.2 6 9a6 6 0 0 1 6-6z" /></svg>);
 
@@ -43,6 +61,8 @@ const CREATURE_TYPES = [
 ];
 
 const SIZES = ['tiny','small','medium','large','huge','gargantuan'];
+// Suggestions only — the field accepts anything.
+const PRONOUN_SUGGESTIONS = ['she/her', 'he/him', 'they/them', 'she/they', 'he/they', 'it/its'];
 const SIZE_LABELS = { tiny:'Tiny',small:'Small',medium:'Medium',large:'Large',huge:'Huge',gargantuan:'Gargantuan' };
 
 const ALIGNMENTS = [
@@ -85,92 +105,37 @@ function mod(score) {
   return Math.floor((score - 10) / 2);
 }
 
-// computeAcFromGear — reads the equipped armor / shield / magic-item
-// AC bonuses out of the form's inventory and returns the rolled-up
-// total + a printable breakdown. Returns null when there's nothing
-// to compute (no equipped gear AND no shield), so the caller can
-// hide the readout entirely on creatures with manual AC only.
+// Collapse spells that share a name.
 //
-// Rules (5e standard, 2024 SRD wording):
-//   • Light armor:  base + DEX mod (no cap)
-//   • Medium armor: base + min(DEX mod, 2)
-//   • Heavy armor:  base (DEX ignored)
-//   • Shield:       +2 (from creature.shield_equipped OR an equipped
-//                   armor item with armor_category='shield')
-//   • Magic items:  +N from each equipped item with ac_bonus set
-//   • No body armor: 10 + DEX mod (the unarmored default)
-function computeAcFromGear(form) {
-  const inv = Array.isArray(form?.inventory) ? form.inventory : [];
-  const equippedArmor = inv.filter(
-    (it) => it && it.item_type === 'armor' && it.equipped
-              && (it.armor_category || '') !== 'shield'
-              && Number(it.ac_base) > 0
-  );
-  // Shield: either via an equipped shield-category armor item OR the
-  // legacy shield_equipped boolean.
-  const equippedShield = inv.some(
-    (it) => it && it.item_type === 'armor' && it.equipped
-              && (it.armor_category || '') === 'shield'
-  ) || !!form?.shield_equipped;
-  const acBonusItems = inv.filter(
-    (it) => it && it.equipped && Number(it.ac_bonus) > 0
-  );
-
-  if (equippedArmor.length === 0 && !equippedShield && acBonusItems.length === 0) {
-    return null;
-  }
-
-  const dex = mod(Number(form?.dexterity) || 10);
-  const parts = [];
-  let total = 0;
-
-  if (equippedArmor.length > 0) {
-    // If multiple armor items are flagged equipped (shouldn't happen
-    // but the form allows it), use the highest-AC one.
-    const armor = equippedArmor.reduce((best, it) =>
-      Number(it.ac_base) > Number(best.ac_base) ? it : best
-    );
-    const cat = armor.armor_category || 'light';
-    const base = Number(armor.ac_base) || 10;
-    // ac_bonus on a body-armor row represents enchantment (+1 plate,
-    // +2 plate). Folded into the armor's contribution so it doesn't
-    // get double-counted in the magic-bonus loop below.
-    const armorMagic = Number(armor.ac_bonus) || 0;
-    let dexAdded = 0;
-    if (cat === 'light') dexAdded = dex;
-    else if (cat === 'medium') dexAdded = Math.min(dex, 2);
-    // heavy: dexAdded stays 0
-    total += base + dexAdded + armorMagic;
-    parts.push(`${base} (${armor.name || 'armor'})`);
-    if (armorMagic > 0) parts.push(`+${armorMagic} magic`);
-    if (dexAdded !== 0) {
-      parts.push(`${dexAdded >= 0 ? '+' : ''}${dexAdded} DEX`);
+// applyAdds already refuses to add a granted spell the sheet has, but sheets
+// edited across many sessions still carry pairs from before that guard, and a
+// duplicate reads as a bug to the player: the same cantrip listed twice, one
+// prepared and one not. The richer row wins (the one enriched from the
+// library, which has school/description/components), and `prepared` is kept if
+// EITHER copy was prepared, so collapsing never silently unprepares a spell.
+function dedupeSpells(list) {
+  const out = [];
+  const byName = new Map();
+  for (const sp of Array.isArray(list) ? list : []) {
+    const key = String(sp?.name || '').trim().toLowerCase();
+    if (!key) { out.push(sp); continue; }
+    const seen = byName.get(key);
+    if (!seen) {
+      byName.set(key, sp);
+      out.push(sp);
+      continue;
     }
-  } else {
-    total += 10 + dex;
-    parts.push(`10 (unarmored)`);
-    if (dex !== 0) parts.push(`${dex >= 0 ? '+' : ''}${dex} DEX`);
+    const richer = Object.keys(sp).length > Object.keys(seen).length ? sp : seen;
+    const merged = { ...seen, ...richer, prepared: !!(sp.prepared || seen.prepared) };
+    out[out.indexOf(seen)] = merged;
+    byName.set(key, merged);
   }
-
-  if (equippedShield) {
-    total += 2;
-    parts.push('+2 shield');
-  }
-
-  for (const it of acBonusItems) {
-    // Body armor's ac_bonus is already counted above as the armor's
-    // enchantment. Shield ac_bonus (e.g. a +1 shield) and any other
-    // equipped item's ac_bonus (cloak / ring / amulet of protection)
-    // get added here.
-    if (it.item_type === 'armor' && (it.armor_category || '') !== 'shield') continue;
-    const b = Number(it.ac_bonus) || 0;
-    if (b === 0) continue;
-    total += b;
-    parts.push(`+${b} ${it.name || 'magic'}`);
-  }
-
-  return { total, parts };
+  return out;
 }
+
+// computeAcFromGear / hasFightingStyle live in utils/armorClass.js — the
+// player's phone recomputes AC on equip too, and two copies of that
+// arithmetic is how the two screens drift apart.
 
 function fmtMod(m) {
   return m >= 0 ? `+${m}` : `${m}`;
@@ -184,17 +149,772 @@ const SKILL_EXPERTISE_KEYS = [
   'skill_stealth','skill_survival',
 ];
 
+// Druid level for the temp-HP readout below — the DRUID portion only, matching
+// what the server grants on a shift. Mirrors druidLevelOf() in the backend.
+export function druidLevelOfForm(form) {
+  if (!form) return 0;
+  let level = 0;
+  if (String(form.char_class || '').toLowerCase() === 'druid') {
+    level += Math.max(1, Number(form.char_level) || 1);
+  }
+  for (const mc of (Array.isArray(form.multiclasses) ? form.multiclasses : [])) {
+    if (String(mc?.class || '').toLowerCase() === 'druid') {
+      level += Math.max(1, Number(mc.level) || 1);
+    }
+  }
+  return level || Math.max(1, Number(form.char_level) || 1);
+}
+
+// How many spells this character may have prepared, and how many cantrips they
+// know, against how many they've actually got.
+//
+// Always-prepared spells — domain spells, feat and lineage grants — are
+// excluded from the "used" count, because the rules don't charge them against
+// the limit. Those arrive from applyAdds carrying a `__source` tag, which is
+// what separates them from spells the player chose.
+//
+// Renders nothing for a non-caster, or for a class whose table isn't covered
+// (see spellCapacityFor) — showing no allowance is better than showing a made
+// up one.
+// The sheet's classes as { className, subclassName, level } — the shape the
+// data/classes.js helpers take. Main class first, then each multiclass row.
+function classEntriesOf(form) {
+  const entries = [];
+  if (form?.char_class) {
+    entries.push({
+      className: form.char_class,
+      subclassName: form.char_subclass || '',
+      level: Math.max(1, Number(form.char_level) || 1),
+    });
+  }
+  for (const mc of (Array.isArray(form?.multiclasses) ? form.multiclasses : [])) {
+    if (mc?.class) {
+      entries.push({
+        className: mc.class,
+        subclassName: mc.subclass || '',
+        level: Math.max(1, Number(mc.level) || 1),
+      });
+    }
+  }
+  return entries;
+}
+
+function SpellCapacityBar({ form }) {
+  const cap = useMemo(
+    () => {
+      const base = spellCapacityTotals(classEntriesOf(form));
+      if (!base) return base;
+      // A class choice can widen the allowance — Primal Order (Magician) is
+      // one extra Druid cantrip — and that is not in any class table.
+      const extra = featureCantripBonus(form);
+      return extra ? { ...base, cantrips: base.cantrips + extra, cantripExtra: extra } : base;
+    },
+    [form?.char_class, form?.char_subclass, form?.char_level, form?.multiclasses,
+      form?.class_state],
+  );
+
+  const counts = useMemo(() => {
+    const list = Array.isArray(form?.spells) ? form.spells : [];
+    // A granted spell is one the character didn't choose. `__source` is set by
+    // applyAdds; `always_prepared` covers anything hand-flagged on the sheet.
+    const chosen = list.filter((sp) => !sp.__source && !sp.always_prepared);
+    return {
+      prepared: chosen.filter((sp) => Number(sp.level) > 0 && sp.prepared).length,
+      cantrips: chosen.filter((sp) => Number(sp.level) === 0).length,
+      granted:  list.length - chosen.length,
+    };
+  }, [form?.spells]);
+
+  if (!cap) return null;
+
+  const Row = ({ label, used, limit, hint, note }) => {
+    if (!limit) return null;
+    const over = used > limit;
+    const left = limit - used;
+    return (
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="text-gray-400">
+          {label}
+          {note ? <span className="block text-[10px] text-gray-500">{note}</span> : null}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className={over ? 'text-red-400 font-semibold' : 'text-gray-200'}>
+            {used} / {limit}
+          </span>
+          <span className={over ? 'text-red-400' : left === 0 ? 'text-gray-500' : 'text-dnd-gold'}>
+            {over ? `${used - limit} over` : left === 0 ? 'full' : `${left} to ${hint}`}
+          </span>
+        </span>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-3 space-y-1.5">
+      <div className="text-sm font-semibold text-dnd-gold">Spell Allowance</div>
+      <Row label="Prepared spells" used={counts.prepared} limit={cap.prepared} hint="prepare" />
+      <Row label="Cantrips known"  used={counts.cantrips} limit={cap.cantrips} hint="learn"
+        note={cap.cantripExtra ? `includes ${cap.cantripExtra} from a class feature` : ''} />
+      <p className="text-[11px] text-gray-500 leading-snug pt-0.5">
+        {counts.granted > 0
+          ? `${counts.granted} always-prepared ${counts.granted === 1 ? 'spell' : 'spells'} from your subclass, feats or lineage ${counts.granted === 1 ? 'is' : 'are'} not counted — those don't use up your allowance.`
+          : "Always-prepared spells from a subclass, feat or lineage don't count against these."}
+        {cap.uncovered.length > 0 && ` Not counting ${[...new Set(cap.uncovered)].join(', ')} — no spell table for ${cap.uncovered.length === 1 ? 'it' : 'them'}.`}
+      </p>
+    </div>
+  );
+}
+
+// Subclass feature reference. Read-only by design: it shows what the chosen
+// subclass grants at this level, and offers a one-click copy into the sheet's
+// own Class Features list so the player can edit or annotate their copy
+// without the reference text drifting.
+// Shared renderer for a level-gated feature list — used for both the class's
+// own progression and the chosen subclass, so the two always look and behave
+// the same.
+function FeatureProgression({ title, entry, level, existingNames, onAppendFeatures, preparedSpells }) {
+  if (!entry) return null;
+  const unlocked = (entry.features || []).filter((f) => f.level <= level);
+  const upcoming = (entry.features || []).filter((f) => f.level > level);
+  const have = new Set((existingNames || []).map((n) => String(n || '').trim().toLowerCase()));
+  const missing = unlocked.filter((f) => !have.has(f.name.trim().toLowerCase()));
+
+  return (
+    <div className="bg-gray-800 rounded-lg p-3 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-dnd-gold">{title}</h4>
+          <p className="text-[11px] text-gray-500 leading-snug">{entry.blurb}</p>
+        </div>
+        {missing.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onAppendFeatures(missing.map((f) => ({ name: f.name, desc: f.desc })))}
+            className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-200 shrink-0"
+            title="Copy these into this character's Class Features list"
+          >
+            + Add {missing.length} to sheet
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        {unlocked.map((f) => (
+          <details key={`${f.level}-${f.name}`} className="bg-gray-900/60 rounded border border-gray-700">
+            <summary className="cursor-pointer px-2 py-1.5 text-xs text-gray-200 flex items-center gap-2">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-300 shrink-0">
+                L{f.level}
+              </span>
+              <span className="truncate">{f.name}</span>
+            </summary>
+            <p className="px-2 pb-2 text-[11px] text-gray-400 whitespace-pre-wrap leading-relaxed">{f.desc}</p>
+          </details>
+        ))}
+        {upcoming.length > 0 && (
+          <p className="text-[11px] text-gray-600 px-1">
+            Later: {upcoming.map((f) => `${f.name} (L${f.level})`).join(', ')}
+          </p>
+        )}
+      </div>
+
+      {preparedSpells?.length > 0 && (
+        <p className="text-[11px] text-gray-400">
+          <span className="text-gray-500">Always prepared: </span>{preparedSpells.join(', ')}
+        </p>
+      )}
+
+      {Array.isArray(entry.notes) && entry.notes.length > 0 && (
+        <ul className="text-[11px] text-gray-500 list-disc pl-4 space-y-0.5">
+          {entry.notes.map((n, i) => <li key={i}>{n}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Add class/subclass features to the sheet, applying any stat they grant.
+//
+// A feature that raises an ability by itself — a Barbarian's Primal Champion
+// is +4 Strength and +4 Constitution — should land on the numbers the moment
+// the character has it, with nothing for the player to choose. Features carry
+// that as `abilities: [{ ability, bonus }]`.
+//
+// Which features qualify is hand-checked in class-data/import_5etools_classes.py
+// and deliberately NOT parsed out of the rules text: a wrong guess here writes
+// a wrong number onto a character sheet, which is worse than writing none.
+//
+// The grant is stamped onto the stored feature as `__applied_abilities` so it
+// is traceable on the sheet — removing the feature does not take the bonus
+// back off again, which is a gap worth knowing about.
+// Collapse a sense list to one entry per type, keeping the longest range.
+// Used where a race and its sub-race both grant the same sense.
+function dedupeSenses(list) {
+  const best = new Map();
+  for (const s of (list || [])) {
+    if (!s || !s.type) continue;
+    const cur = best.get(s.type);
+    if (!cur || (Number(s.range) || 0) > (Number(cur.range) || 0)) best.set(s.type, s);
+  }
+  return Array.from(best.values());
+}
+
+// A background's equipment, in one shape whatever it came from.
+//
+// The curated entries model "package A or B"; the imported ones model "a base
+// kit everyone gets, plus a choice between alternatives" — which is what the
+// books actually say, and what lets Charlatan offer all four of its options
+// instead of the two an A/B split could hold.
+function bgEquipmentModel(bg) {
+  if (!bg) return { base: { items: [], gp: 0, sp: 0, cp: 0 }, options: [] };
+  if (bg.equipment_base || bg.equipment_options) {
+    return {
+      base: bg.equipment_base || { items: [], gp: 0, sp: 0, cp: 0 },
+      options: bg.equipment_options || [],
+    };
+  }
+  // Curated shape: A is items plus gold, B is the gold alternative.
+  const options = [];
+  const aItems = bg.equipment_a_items || [];
+  const aGp = Number(bg.equipment_a_gp) || 0;
+  const bGp = Number(bg.equipment_b_gp) || 0;
+  if (aItems.length || aGp) {
+    options.push({
+      id: 'a', items: aItems, gp: aGp, sp: 0, cp: 0,
+      label: [...aItems.map((i) => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`),
+        ...(aGp ? [`${aGp} GP`] : [])].join(', '),
+    });
+  }
+  if (bGp) {
+    options.push({ id: 'b', items: [], gp: bGp, sp: 0, cp: 0, label: `${bGp} GP` });
+  }
+  return { base: { items: [], gp: 0, sp: 0, cp: 0 }, options };
+}
+
+const STAT_BY_ABIL = {
+  STR: 'strength', DEX: 'dexterity', CON: 'constitution',
+  INT: 'intelligence', WIS: 'wisdom', CHA: 'charisma',
+};
+
+// Add or subtract a feature's ability grants. `sign` is +1 when the feature
+// arrives and -1 when it goes, so the two directions cannot drift apart —
+// they are the same arithmetic read once.
+export function applyAbilityDelta(obj, grants, sign) {
+  if (!Array.isArray(grants) || !grants.length) return obj;
+  const next = { ...obj };
+  for (const ab of grants) {
+    const field = STAT_BY_ABIL[String(ab?.ability || '').toUpperCase()];
+    const amt = Number(ab?.bonus) || 0;
+    if (!field || !amt) continue;
+    next[field] = (Number(next[field]) || 10) + sign * amt;
+  }
+  return next;
+}
+
+function appendFeaturesWithGrants(f, items) {
+  const list = Array.isArray(items) ? items : [];
+  // Stamped as it goes on, which is what makes the removal exact: the sheet
+  // does not have to work out later what a feature was worth, it reads back
+  // what it actually applied.
+  const stamped = list.map((it) => (
+    it?.abilities?.length ? { ...it, __applied_abilities: it.abilities } : it
+  ));
+  let next = { ...f, class_features: [...(f.class_features || []), ...stamped] };
+  for (const it of stamped) {
+    next = applyAbilityDelta(next, it.__applied_abilities, +1);
+  }
+  return next;
+}
+
+function ClassFeatures({ form, onAppendFeatures }) {
+  const entry = classEntry(form.char_class);
+  if (!entry) return null;
+  return (
+    <FeatureProgression
+      title={`${form.char_class} features`}
+      entry={entry}
+      level={Math.max(1, Number(form.char_level) || 1)}
+      existingNames={(form.class_features || []).map((f) => f?.name)}
+      onAppendFeatures={onAppendFeatures}
+    />
+  );
+}
+
+function SubclassFeatures({ form, onAppendFeatures }) {
+  const entry = subclassEntry(form.char_class, form.char_subclass);
+  if (!entry) return null;
+  const level = Math.max(1, Number(form.char_level) || 1);
+  return (
+    <FeatureProgression
+      title={form.char_subclass}
+      entry={entry}
+      level={level}
+      existingNames={(form.class_features || []).map((f) => f?.name)}
+      onAppendFeatures={(items) => onAppendFeatures(
+        items.map((it) => ({ ...it, subclass: form.char_subclass }))
+      )}
+      preparedSpells={subclassPreparedSpells(form.char_class, form.char_subclass, level)}
+    />
+  );
+}
+
+// Feat picker. Feats are stored on the sheet as free-text {name, desc} rows,
+// so this writes the same shape a hand-typed feat would — the catalogue is a
+// convenience, not a separate system. Feats above the character's level are
+// shown but not selectable, so a player can see what's coming.
+function FeatPickerModal({ level, existing, onAdd, onClose }) {
+  const [category, setCategory] = useState('origin');
+  const [search, setSearch] = useState('');
+  const have = new Set((existing || []).map((f) => String(f?.name || '').trim().toLowerCase()));
+  const q = search.trim().toLowerCase();
+
+  const shown = FEATS_2024.filter((f) => f.category === category)
+    .filter((f) => !q || f.name.toLowerCase().includes(q) || f.desc.toLowerCase().includes(q));
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-[90] flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl flex flex-col shadow-2xl"
+        style={{ maxHeight: '85vh' }}
+      >
+        <div className="px-4 py-3 border-b border-gray-700">
+          <div className="text-lg font-semibold text-gray-100">Add a feat</div>
+          <div className="text-[11px] text-gray-500">Character level {level}. Feats you can't take yet are dimmed.</div>
+        </div>
+
+        <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-2">
+          {FEAT_CATEGORIES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setCategory(c.id)}
+              title={c.hint}
+              className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                category === c.id ? 'bg-amber-700 text-amber-50' : 'text-gray-400 hover:text-white border border-gray-700'
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search feats…"
+            className="ml-auto flex-1 max-w-[220px] bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-100 outline-none focus:border-amber-500"
+          />
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+          {shown.length === 0 && (
+            <p className="text-xs text-gray-500 px-1 py-3">No feats match.</p>
+          )}
+          {shown.map((f) => {
+            const owned = have.has(f.name.trim().toLowerCase());
+            const tooLow = level < f.minLevel;
+            return (
+              <details key={f.id} className={`bg-gray-800/60 rounded border border-gray-700 ${tooLow ? 'opacity-50' : ''}`}>
+                <summary className="cursor-pointer px-3 py-2 flex items-center gap-2">
+                  <span className="text-sm text-gray-100 flex-1 truncate">{f.name}</span>
+                  {f.prereq && <span className="text-[10px] text-gray-500 truncate">{f.prereq}</span>}
+                  {owned ? (
+                    <span className="text-[11px] text-emerald-400 shrink-0">on sheet</span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={tooLow}
+                      onClick={(e) => { e.preventDefault(); onAdd({ name: f.name, desc: f.desc }); }}
+                      className="text-[11px] px-2 py-1 rounded bg-amber-700 hover:bg-amber-600 disabled:bg-gray-700 disabled:text-gray-500 text-amber-50 shrink-0"
+                    >
+                      Add
+                    </button>
+                  )}
+                </summary>
+                <p className="px-3 pb-2 text-[11px] text-gray-400 whitespace-pre-wrap leading-relaxed">{f.desc}</p>
+              </details>
+            );
+          })}
+        </div>
+
+        <div className="px-4 py-3 border-t border-gray-700 flex justify-end">
+          <button type="button" onClick={onClose} className="text-xs px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-100">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// GM-curated Wild Shape list. Deliberately not rule-derived: homebrew beasts,
+// Circle-specific forms and "I'll allow it" cases all just work, and the GM
+// stays the authority on what's available. The server re-checks this list on
+// every shift, so it's a permission list rather than a UI convenience.
+// Companions bound to a character — the owl a wizard HAS, rather than the owl
+// that happens to be standing on the current map.
+//
+// Written straight to the server as you edit rather than collected into the form
+// and saved with it. Two reasons: the binding lives in its own table (a token is
+// not the thing being edited here), and a player may be looking at their sheet on
+// their phone at the same time, where a summon button appears the moment a
+// companion is bound. A "Save" they never pressed is not something to make them
+// wait for.
+function BoundCompanions({ creatureId, ownerName }) {
+  const KINDS = ['familiar', 'companion', 'summon', 'mount', 'duplicate'];
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [picking, setPicking] = useState(false);
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState([]);
+
+  const load = useCallback(() => {
+    if (!creatureId) return;
+    setLoading(true);
+    fetch(`/api/creatures/${creatureId}/companions`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => setRows(Array.isArray(list) ? list : []))
+      .catch(() => setError('Could not read the companions.'))
+      .finally(() => setLoading(false));
+  }, [creatureId]);
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!picking) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ role: 'dm' });
+        if (search.trim()) params.set('search', search.trim());
+        const res = await fetch(`/api/creatures?${params}`);
+        const data = res.ok ? await res.json() : [];
+        // A character cannot be bound to itself, so it is not offered.
+        if (!cancelled) setResults(data.filter((c) => c.id !== creatureId).slice(0, 40));
+      } catch { if (!cancelled) setResults([]); }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [search, picking, creatureId]);
+
+  async function add(id) {
+    setError('');
+    try {
+      const r = await fetch(`/api/creatures/${creatureId}/companions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creature_id: id }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Failed (${r.status})`);
+      setPicking(false);
+      setSearch('');
+      load();
+    } catch (err) { setError(err.message); }
+  }
+
+  async function patch(rowId, body) {
+    setRows((p) => p.map((row) => (row.id === rowId ? { ...row, ...body } : row)));
+    try {
+      await fetch(`/api/creatures/${creatureId}/companions/${rowId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch { load(); }
+  }
+
+  async function remove(rowId) {
+    setRows((p) => p.filter((row) => row.id !== rowId));
+    try {
+      await fetch(`/api/creatures/${creatureId}/companions/${rowId}`, { method: 'DELETE' });
+    } finally { load(); }
+  }
+
+  if (!creatureId) {
+    return (
+      <div className="p-4">
+        <p className="text-sm text-gray-400">
+          Save this character first — a companion is bound to a character that exists.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-gray-400 leading-snug flex-1">
+          Anything bound here belongs to {ownerName || 'this character'} whether or not it is on a map.
+          It shows on their sheet with a <span className="text-emerald-300">Summon</span> button, and they
+          can call it in themselves when it is needed.
+        </p>
+        <button type="button" onClick={() => setPicking((v) => !v)}
+          className="shrink-0 text-xs bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700 text-emerald-200 px-2 py-1 rounded">
+          {picking ? 'Close' : '+ Bind a creature'}
+        </button>
+      </div>
+
+      {error && <p className="text-xs text-red-300">{error}</p>}
+
+      {picking && (
+        <div className="rounded-lg border border-gray-700 bg-gray-800/60 p-2 space-y-2">
+          <input
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search the creature library…"
+            className="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-dnd-gold"
+          />
+          <div className="max-h-56 overflow-y-auto divide-y divide-gray-800">
+            {results.length === 0 && (
+              <p className="text-xs text-gray-500 italic py-2">Nothing matching.</p>
+            )}
+            {results.map((c) => (
+              <button key={c.id} type="button" onClick={() => add(c.id)}
+                className="w-full flex items-center gap-2 py-1.5 text-left hover:bg-gray-700/50 px-1 rounded">
+                <span className="w-7 h-7 rounded bg-gray-900 overflow-hidden shrink-0">
+                  {c.image_path && <img src={`/uploads/${c.image_path}`} alt="" className="w-full h-full object-cover" />}
+                </span>
+                <span className="text-sm text-gray-200 truncate flex-1">{c.name}</span>
+                <span className="text-[10px] text-gray-500 shrink-0">
+                  {c.size} {c.creature_type}{c.hit_points ? ` · ${c.hit_points} hp` : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loading && rows.length === 0 && <p className="text-xs text-gray-500">Reading…</p>}
+      {!loading && rows.length === 0 && (
+        <p className="text-xs text-gray-500 italic">Nothing bound yet.</p>
+      )}
+
+      <div className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.id} className="rounded-lg border border-gray-700 bg-gray-800/50 p-2">
+            <div className="flex items-center gap-2">
+              <span className="w-9 h-9 rounded bg-gray-900 overflow-hidden shrink-0">
+                {row.image_path && <img src={`/uploads/${row.image_path}`} alt="" className="w-full h-full object-cover" />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-gray-100 truncate">{row.name}</div>
+                <div className="text-[10px] text-gray-500 truncate">
+                  {row.size} {row.creature_type}
+                  {row.hit_points ? ` · ${row.hit_points} hp` : ''}
+                  {row.armor_class ? ` · AC ${row.armor_class}` : ''}
+                </div>
+              </div>
+              <button type="button" onClick={() => remove(row.id)}
+                title="Unbind. Anything already summoned stays on the map."
+                className="shrink-0 text-xs text-red-300 hover:text-red-200 px-2 py-1">Unbind</button>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                value={row.nickname || ''}
+                onChange={(e) => patch(row.id, { nickname: e.target.value })}
+                placeholder={`Called… (defaults to ${row.name})`}
+                className="flex-1 min-w-0 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-dnd-gold"
+              />
+              <select
+                value={row.companion_kind || 'familiar'}
+                onChange={(e) => patch(row.id, { companion_kind: e.target.value })}
+                className="bg-gray-900 border border-gray-600 rounded px-1.5 py-1 text-xs text-gray-200"
+              >
+                {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WildShapeForms({ value, onChange, druidLevel, subclass, tempHp }) {
+  // Circle Forms caps the form's CR at druid level ÷ 3. Advisory only — the
+  // GM curates the list, and "I'll allow it" outranks the table.
+  const crCap = wildShapeCrCap(druidLevel, subclass);
+  const crValue = (cr) => {
+    const s = String(cr ?? '').trim();
+    if (s.includes('/')) {
+      const [a, b] = s.split('/').map(Number);
+      return b ? a / b : 0;
+    }
+    return Number(s) || 0;
+  };
+  const ids = Array.isArray(value) ? value.map(Number).filter(Boolean) : [];
+  const [picked, setPicked] = useState([]);     // resolved creature rows for `ids`
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  // Eligible-only by default — that's what the library flag is for. The
+  // override is there because "I'll allow it" is a real thing at a table.
+  const [eligibleOnly, setEligibleOnly] = useState(true);
+
+  // Resolve the stored ids to names/art. Re-runs when the list changes.
+  useEffect(() => {
+    let cancelled = false;
+    if (ids.length === 0) { setPicked([]); return; }
+    Promise.all(ids.map((id) =>
+      fetch(`/api/creatures/${id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+    )).then((rows) => {
+      if (!cancelled) setPicked(rows.filter(Boolean));
+    });
+    return () => { cancelled = true; };
+  }, [ids.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ filter: 'monsters', role: 'dm' });
+        if (search.trim()) params.set('search', search.trim());
+        const res = await fetch(`/api/creatures?${params}`);
+        const data = res.ok ? await res.json() : [];
+        const filtered = eligibleOnly ? data.filter((c) => c.wildshape_eligible) : data;
+        if (!cancelled) setResults(filtered.slice(0, 40));
+      } catch {
+        if (!cancelled) setResults([]);
+      }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [search, open, eligibleOnly]);
+
+  function add(id) {
+    if (ids.includes(Number(id))) return;
+    onChange([...ids, Number(id)]);
+  }
+  function remove(id) {
+    onChange(ids.filter((x) => x !== Number(id)));
+  }
+
+  return (
+    <div className="bg-gray-800 rounded-lg p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-dnd-gold">Wild Shape forms</h4>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-200"
+        >
+          {open ? 'Done' : '+ Add form'}
+        </button>
+      </div>
+      <p className="text-[11px] text-gray-500 leading-snug">
+        Forms this character may shift into from their own screen. Shifting grants
+        {tempHp ? ` ${tempHp}` : ''} temporary hit points
+        {subclass === 'Circle of the Moon' ? ' (3× druid level, Circle Forms)' : ' (druid level)'},
+        and the form's senses replace theirs.
+        {crCap != null && ` Circle Forms caps forms at CR ${crCap}.`}
+      </p>
+
+      {picked.length === 0 ? (
+        <p className="text-xs text-gray-500 italic">No forms yet — this character can't Wild Shape.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {picked.map((c) => (
+            <span key={c.id} className="flex items-center gap-1.5 bg-gray-700 rounded-lg pl-1 pr-2 py-1">
+              {c.image_path
+                ? <img src={`/uploads/${c.image_path}`} alt="" className="w-6 h-6 rounded object-cover" />
+                : <span className="w-6 h-6 rounded bg-gray-600" />}
+              <span className="text-xs text-gray-200">{c.name}</span>
+              <span className="text-[10px] text-gray-500">{c.hit_points} hp</span>
+              {crCap != null && crValue(c.challenge_rating) > crCap && (
+                <span className="text-[10px] text-amber-400" title={`CR ${c.challenge_rating} is above this druid's cap of ${crCap}`}>
+                  CR {c.challenge_rating}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => remove(c.id)}
+                className="text-gray-400 hover:text-red-300 text-xs leading-none"
+                title="Remove form"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div className="border border-gray-700 rounded-lg p-2 space-y-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search creatures — wolf, bear, giant spider…"
+            className="w-full px-2 py-1.5 rounded bg-gray-900 border border-gray-700 text-gray-100 text-xs outline-none focus:border-dnd-gold"
+          />
+          <label className="flex items-center gap-1.5 text-[11px] text-gray-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={eligibleOnly}
+              onChange={(e) => setEligibleOnly(e.target.checked)}
+              className="accent-emerald-500"
+            />
+            Only creatures marked as Wild Shape forms
+          </label>
+          <div className="max-h-40 overflow-y-auto grid grid-cols-2 gap-1">
+            {results.length === 0 && (
+              <p className="col-span-2 text-[11px] text-gray-500 px-1 py-2">
+                {eligibleOnly
+                  ? 'No eligible creatures. Tick "Available as a Wild Shape form" on a creature, or untick the filter above.'
+                  : 'No matches.'}
+              </p>
+            )}
+            {results.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => add(c.id)}
+                disabled={ids.includes(c.id)}
+                className={`flex items-center gap-1.5 px-1.5 py-1 rounded text-left ${
+                  ids.includes(c.id) ? 'opacity-40 cursor-default' : 'hover:bg-gray-700'
+                }`}
+              >
+                {c.image_path
+                  ? <img src={`/uploads/${c.image_path}`} alt="" className="w-6 h-6 rounded object-cover shrink-0" />
+                  : <span className="w-6 h-6 rounded bg-gray-600 shrink-0" />}
+                <span className="text-[11px] text-gray-200 truncate">
+                  {c.name}
+                  <span className="block text-[10px] text-gray-500">CR {c.challenge_rating} • {c.hit_points} hp</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const defaultForm = {
   name: '',
+  pronouns: '',
   size: 'medium',
+  // Footprint override in squares, for gargantuan creatures whose category
+  // sets only a minimum. null = use the size preset.
+  size_squares: null,
+  is_swarm: false,
+  swarm_creature_size: 'tiny',
+  hide_token_name: false,
+  hide_token_hp: false,
+  wildshape_forms: [],
+  wildshape_eligible: false,
+  wildshape_keep_hp: false,
   creature_type: 'Humanoid',
   subtype: '',
   alignment: 'Unaligned',
   armor_class: 10,
+  ac_misc_bonus: 0,
   armor_desc: '',
   shield_equipped: false,
   hit_points: 10,
   hit_dice: '2d8',
+  // Structured hit dice: [{ die, qty }] plus a flat bonus. `hit_dice` stays
+  // as the printed formula so the stat block, the library card and the export
+  // keep reading one string.
+  hit_dice_pool: [],
+  hit_dice_bonus: 0,
   hit_dice_qty: 0,
   hit_dice_type: '',
   hit_dice_used: 0,
@@ -266,6 +986,10 @@ const defaultForm = {
   spells: [],
   spell_slots: {},
   loot: [],
+  // Which rollable table this creature's remains are rolled on. Empty string
+  // rather than null: the submit loop below skips nulls, so a cleared select
+  // would never reach the server and the old table would stick.
+  loot_table_id: '',
   // Tracks what the race picker auto-applied so a future race-swap
   // can revert just those values without disturbing manually-added
   // ones. Persisted to creatures.race_state on save.
@@ -287,6 +1011,11 @@ function SpellEditor({
   getSpellDmgEntries, addSpellDmgEntry, updateSpellDmgEntry, removeSpellDmgEntry,
   borderClass = 'border-red-900/40', isUtility = false,
 }) {
+  // Cycle Combat → Healing → Utility → Combat, so one button still covers
+  // every category.
+  const curType = spellType(spell.type).key;
+  const nextType = SPELL_TYPE_KEYS[(SPELL_TYPE_KEYS.indexOf(curType) + 1) % SPELL_TYPE_KEYS.length];
+  const nextMeta = spellType(nextType);
   const smallInput = 'bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-dnd-gold';
   const [dragOver, setDragOver] = useState(false);
   return (
@@ -329,22 +1058,27 @@ function SpellEditor({
           type="button"
           onClick={() => swapSpellType?.(spell.id)}
           className={`text-[10px] px-1.5 py-1 rounded border shrink-0 transition-colors ${
-            isUtility
+            nextType === 'combat'
               ? 'border-red-900/60 text-red-300 hover:bg-red-900/30'
-              : 'border-blue-900/60 text-blue-300 hover:bg-blue-900/30'
+              : nextType === 'healing'
+                ? 'border-green-900/60 text-green-300 hover:bg-green-900/30'
+                : 'border-blue-900/60 text-blue-300 hover:bg-blue-900/30'
           }`}
-          title={isUtility ? 'Move to Combat' : 'Move to Utility'}
+          title={`Move to ${nextMeta.label}`}
         >
-          → {isUtility ? 'Combat' : 'Utility'}
+          → {nextMeta.label}
         </button>
-        <label className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer" title="Prepared">
+        <label
+          className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer"
+          title="Prepared — counts against the Spell Allowance shown at the top of this tab"
+        >
           <input
             type="checkbox"
             checked={!!spell.prepared}
             onChange={(e) => updateSpell(spell.id, 'prepared', e.target.checked)}
             className="accent-dnd-gold"
           />
-          Prep
+          Prepared
         </label>
         <button type="button" onClick={() => removeSpell(spell.id)} className="text-red-400 hover:text-red-300 pt-0.5 shrink-0"><XIcon /></button>
       </div>
@@ -472,7 +1206,7 @@ function SpellEditor({
   );
 }
 
-function SpellLibraryPicker({ onLearn, charClass }) {
+function SpellLibraryPicker({ onLearn, charClass, classEntries, ownedNames }) {
   const CLASSES = useAllClasses();
   const [open, setOpen] = useState(false);
   const [spells, setSpells] = useState([]);
@@ -487,11 +1221,68 @@ function SpellLibraryPicker({ onLearn, charClass }) {
   const [loaded, setLoaded] = useState(false);
   const labels = ['Cantrip','1st','2nd','3rd','4th','5th','6th','7th','8th','9th'];
 
+  // ── "Only what this character can learn" ──────────────────────────────────
+  //
+  // Two gates, and they're deliberately independent: the class gate needs only
+  // the sheet's class names, while the level gate needs a spell table we cover.
+  // A custom class still gets its spell list narrowed by name even though we
+  // have no slot progression to cap it with.
+  //
+  // The parent rebuilds `classEntries` on every render, so both memos key off a
+  // signature of its contents rather than the array identity — otherwise every
+  // keystroke in the search box would re-derive these and re-run the effects
+  // below.
+  const entriesSig = (classEntries || [])
+    .map(e => `${e?.className}|${e?.subclassName}|${e?.level}`)
+    .join(';');
+  const ownClasses = useMemo(
+    () => (classEntries || []).map(e => String(e?.className || '').trim()).filter(Boolean),
+    [entriesSig],
+  );
+  const learnable = useMemo(() => learnableSpellsFor(classEntries), [entriesSig]);
+  // Subclass spell lists cut across the class gate: a Forge Domain cleric's
+  // Searing Smite is flagged Paladin-only in the library, and Heat Metal is
+  // Bard/Druid — filtering on allowed_classes alone hides the entire domain
+  // list from the cleric it belongs to. These bypass the level cap too, since
+  // being granted a spell is itself the proof you can have it.
+  const grantedNames = useMemo(() => {
+    const set = new Set();
+    for (const e of classEntries || []) {
+      const names = [
+        ...subclassPreparedSpells(e?.className, e?.subclassName, e?.level),
+        // Circle of the Land's four land lists, which are reachable but not
+        // always prepared.
+        ...subclassLearnableSpells(e?.className, e?.subclassName, e?.level),
+      ];
+      for (const n of names) set.add(String(n).toLowerCase());
+    }
+    return set;
+  }, [entriesSig]);
+  const [onlyLearnable, setOnlyLearnable] = useState(true);
+  // What's already on the sheet. Marked rather than hidden by default: a player
+  // scanning the list needs to see that they already have Bless, not wonder why
+  // it's missing. `hideKnown` is there for the other mood — working through what
+  // is left to pick.
+  const [hideKnown, setHideKnown] = useState(false);
+  // Library row being previewed, or null. Read-only look at what a spell does
+  // before committing to Learn.
+  const [preview, setPreview] = useState(null);
+  const ownedSig = (ownedNames || []).join('|');
+  const knownNames = useMemo(
+    () => new Set((ownedNames || []).map(n => String(n || '').trim().toLowerCase()).filter(Boolean)),
+    [ownedSig],
+  );
+  // Nothing to gate on for a monster or an unclassed sheet, so the toggle goes
+  // inert rather than filtering the whole library away.
+  const gateOn = onlyLearnable && ownClasses.length > 0;
+
   async function load() {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     if (levelFilter !== '') params.set('level', levelFilter);
-    if (classFilter) params.set('klass', classFilter);
+    // While gating, the class match is applied below — a multiclass sheet needs
+    // to match any of several classes, which the single-value `klass` can't do.
+    if (classFilter && !gateOn) params.set('klass', classFilter);
     try {
       const res = await fetch(`/api/spell-library?${params}`);
       const data = await res.json();
@@ -507,7 +1298,54 @@ function SpellLibraryPicker({ onLearn, charClass }) {
     if (!open) return;
     const t = setTimeout(load, 250);
     return () => clearTimeout(t);
-  }, [open, search, levelFilter, classFilter]);
+  }, [open, search, levelFilter, classFilter, gateOn]);
+
+  const gated = useMemo(() => {
+    if (!gateOn) return spells;
+    return spells.filter((s) => {
+      if (grantedNames.has(String(s.name || '').toLowerCase())) return true;
+      const lvl = Number(s.level) || 0;
+      if (lvl === 0) {
+        // Only hide cantrips when we know the class has no cantrip budget
+        // (Paladin, Ranger). An unknown class shouldn't lose them.
+        if (learnable.maxLevel != null && !learnable.cantrips) return false;
+      } else if (learnable.maxLevel == null || lvl > learnable.maxLevel) {
+        return false;
+      }
+      const allowed = Array.isArray(s.allowed_classes) ? s.allowed_classes : [];
+      // A library entry with no class list is homebrew or unscanned — show it
+      // rather than silently dropping it.
+      if (allowed.length === 0) return true;
+      // `learnable.lists` — not the raw class names — so an Eldritch Knight
+      // matches Wizard spells and a Lore Bard matches its wider access.
+      return allowed.some(c => learnable.lists.some(o => o.toLowerCase() === String(c).toLowerCase()));
+    });
+  }, [spells, gateOn, learnable, grantedNames]);
+
+  const knownShown = useMemo(
+    () => gated.filter(s => knownNames.has(String(s.name || '').toLowerCase())).length,
+    [gated, knownNames],
+  );
+  const visible = useMemo(
+    () => (hideKnown ? gated.filter(s => !knownNames.has(String(s.name || '').toLowerCase())) : gated),
+    [gated, hideKnown, knownNames],
+  );
+
+  // Levels the character can reach, for trimming the level dropdown.
+  const levelOptions = useMemo(() => {
+    if (!gateOn || learnable.maxLevel == null) return labels.map((l, i) => [i, l]);
+    const out = [];
+    if (learnable.cantrips) out.push([0, labels[0]]);
+    for (let i = 1; i <= learnable.maxLevel; i++) out.push([i, labels[i]]);
+    return out;
+  }, [gateOn, learnable]);
+
+  // A cap that just dropped below the chosen level would otherwise leave the
+  // dropdown showing a level that's no longer offered.
+  useEffect(() => {
+    if (!gateOn || levelFilter === '') return;
+    if (!levelOptions.some(([v]) => v === Number(levelFilter))) setLevelFilter('');
+  }, [gateOn, levelOptions, levelFilter]);
 
   return (
     <div className="bg-gray-800/50 rounded-xl border border-gray-700 overflow-hidden">
@@ -534,47 +1372,178 @@ function SpellLibraryPicker({ onLearn, charClass }) {
               onChange={(e) => setLevelFilter(e.target.value)}
             >
               <option value="">All levels</option>
-              {labels.map((l, i) => <option key={i} value={i}>{l}</option>)}
+              {levelOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
             <select
-              className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white"
-              value={classFilter}
+              className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white disabled:opacity-40"
+              value={gateOn ? '' : classFilter}
               onChange={(e) => setClassFilter(e.target.value)}
-              title="Override to view spells from other classes"
+              disabled={gateOn}
+              title={gateOn
+                ? 'Untick "only what this character can learn" to browse other classes'
+                : 'Override to view spells from other classes'}
             >
               <option value="">All classes</option>
               {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
-          {initialClass && classFilter === initialClass && (
+          <label
+            className={`flex items-center gap-2 text-xs ${ownClasses.length ? 'text-gray-300' : 'text-gray-500'}`}
+            title={ownClasses.length
+              ? 'Hide spells this character has no way to learn'
+              : 'Needs a class on the sheet before it can tell what is learnable'}
+          >
+            <input
+              type="checkbox"
+              className="accent-dnd-gold"
+              checked={onlyLearnable}
+              disabled={!ownClasses.length}
+              onChange={(e) => setOnlyLearnable(e.target.checked)}
+            />
+            Only spells {ownClasses.length ? ownClasses.join(' / ') : 'this character'} can learn
+          </label>
+          <label
+            className={`flex items-center gap-2 text-xs ${knownNames.size ? 'text-gray-300' : 'text-gray-500'}`}
+            title="Drop spells already on this sheet out of the list instead of greying them out"
+          >
+            <input
+              type="checkbox"
+              className="accent-dnd-gold"
+              checked={hideKnown}
+              disabled={!knownNames.size}
+              onChange={(e) => setHideKnown(e.target.checked)}
+            />
+            {knownShown > 0
+              ? `Hide the ${knownShown} already on this sheet`
+              : 'Hide spells already on this sheet'}
+          </label>
+          {gateOn && (
+            <p className="text-[10px] text-gray-500 italic">
+              {learnable.maxLevel != null
+                ? <>Showing spells up to <span className="text-purple-300">{labels[learnable.maxLevel]}</span> level{learnable.cantrips ? '' : ' — no cantrips for this build'}.</>
+                : <>Filtering by class only — no spell slot table for {ownClasses.join(' / ')}, so spell level isn't capped.</>}
+              {grantedNames.size > 0 && ' Subclass list included.'}
+              {' '}Untick to browse the whole library.
+            </p>
+          )}
+          {!gateOn && initialClass && classFilter === initialClass && (
             <p className="text-[10px] text-gray-500 italic">
               Defaulted to <span className="text-purple-300">{initialClass}</span> spells. Switch the filter to override.
             </p>
           )}
-          {loaded && spells.length === 0 && (
-            <p className="text-xs text-gray-500 italic">No spells match. Switch class filter to "All classes" or ask your GM to scan a PDF.</p>
+          {loaded && visible.length === 0 && (
+            <p className="text-xs text-gray-500 italic">
+              {hideKnown && gated.length > 0
+                ? 'Every matching spell is already on this sheet.'
+                : gateOn
+                  ? 'No spells match. Untick the filter above to browse the whole library, or ask your GM to scan a PDF.'
+                  : 'No spells match. Switch class filter to "All classes" or ask your GM to scan a PDF.'}
+            </p>
           )}
           <div className="space-y-1 max-h-64 overflow-y-auto">
-            {spells.map(s => (
-              <div key={s.id} className="flex items-center gap-2 bg-gray-700/40 rounded px-2 py-1">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-white truncate">{s.name}</div>
-                  <div className="text-[10px] text-gray-400">
-                    {labels[s.level] || `lvl ${s.level}`}{s.school ? ` · ${s.school}` : ''}
-                    {Array.isArray(s.allowed_classes) && s.allowed_classes.length > 0 && (
-                      <span className="text-purple-300"> · {s.allowed_classes.join(', ')}</span>
-                    )}
+            {visible.map(s => {
+              const isKnown = knownNames.has(String(s.name || '').toLowerCase());
+              return (
+                <div
+                  key={s.id}
+                  className={`flex items-center gap-2 rounded px-2 py-1 ${isKnown ? 'bg-gray-800/40 opacity-60' : 'bg-gray-700/40'}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm truncate flex items-center gap-1.5">
+                      <span className={isKnown ? 'text-gray-400 line-through' : 'text-white'}>{s.name}</span>
+                      <EditionTag edition={s.edition} source={s.source} />
+                      {isKnown && (
+                        <span className="shrink-0 text-[9px] uppercase tracking-wide bg-gray-700 text-emerald-300 px-1 py-0.5 rounded">
+                          on sheet
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-gray-400">
+                      {labels[s.level] || `lvl ${s.level}`}{s.school ? ` · ${s.school}` : ''}
+                      {Array.isArray(s.allowed_classes) && s.allowed_classes.length > 0 && (
+                        <span className="text-purple-300"> · {s.allowed_classes.join(', ')}</span>
+                      )}
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setPreview(s)}
+                    title={`What does ${s.name} do?`}
+                    className="text-xs px-2 py-1 rounded font-semibold bg-gray-700 hover:bg-gray-600 text-gray-200 shrink-0"
+                  >
+                    View
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onLearn(s)}
+                    disabled={isKnown}
+                    title={isKnown ? 'Already on this character\'s sheet' : undefined}
+                    className={`text-xs px-2 py-1 rounded font-semibold shrink-0 ${isKnown
+                      ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                      : 'bg-dnd-gold hover:bg-yellow-500 text-gray-900'}`}
+                  >
+                    {isKnown ? 'Added' : 'Learn'}
+                  </button>
                 </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Spell preview. Same shape as the player sheet's spell popup so the two
+          read identically, and above the editor's own z-50 chrome. Learn is
+          repeated here so a preview can be acted on without hunting back down
+          the list for the row. */}
+      {preview && (
+        <div
+          className="fixed inset-0 z-[90] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setPreview(null)}
+        >
+          <div
+            className="bg-dnd-panel border border-dnd-gold/40 rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-700 sticky top-0 bg-dnd-panel">
+              <span className="text-sm font-semibold text-dnd-gold">
+                {Number(preview.level) === 0 ? 'Cantrip' : `Level ${preview.level} Spell`}
+              </span>
+              <div className="flex items-center gap-2">
+                {knownNames.has(String(preview.name || '').toLowerCase()) ? (
+                  <span className="text-[10px] uppercase tracking-wide bg-gray-700 text-emerald-300 px-1.5 py-0.5 rounded">
+                    on sheet
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { onLearn(preview); setPreview(null); }}
+                    className="text-xs bg-dnd-gold hover:bg-yellow-500 text-gray-900 px-2 py-1 rounded font-semibold"
+                  >
+                    Learn
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => onLearn(s)}
-                  className="text-xs bg-dnd-gold hover:bg-yellow-500 text-gray-900 px-2 py-1 rounded font-semibold"
+                  onClick={() => setPreview(null)}
+                  className="text-gray-400 hover:text-white text-sm"
                 >
-                  Learn
+                  ✕
                 </button>
               </div>
-            ))}
+            </div>
+            <div className="p-3">
+              <SpellBox
+                spell={preview}
+                typeLabel={spellType(preview.type).badge}
+                typeColor={spellType(preview.type).dark}
+                darkTheme
+              />
+              {Array.isArray(preview.allowed_classes) && preview.allowed_classes.length > 0 && (
+                <p className="text-[10px] text-purple-300 pt-2">
+                  {preview.allowed_classes.join(', ')}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -613,11 +1582,25 @@ function AbilityList({ label, items, onAdd, onRemove, onChange }) {
   );
 }
 
-export default function CreatureForm({ creature, onSave, onCancel, extraFields, submitLabel, isPlayerCharacter = false }) {
+export default function CreatureForm({ creature, onSave, onCancel, extraFields, submitLabel, isPlayerCharacter = false, asGm = false }) {
   const allClasses = useAllClasses();
   // Subclass list re-derives whenever the selected class changes.
   // form.char_class is captured below — pull it indirectly via the form
   // state once it's defined.
+  // The rollable tables, for the loot picker. Fetched once; an empty list just
+  // means none have been made yet and the select says so.
+  const [lootTables, setLootTables] = useState([]);
+  useEffect(() => {
+    let gone = false;
+    // Loot tables only — the GM's rumour and encounter tables have no business
+    // in a loot picker.
+    fetch('/api/tables?kind=loot')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) => { if (!gone) setLootTables(Array.isArray(rows) ? rows : []); })
+      .catch(() => {});
+    return () => { gone = true; };
+  }, []);
+
   const [form, setForm] = useState(() => {
     let senses = [];
     if (creature) {
@@ -642,6 +1625,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     if (creature?.spells) {
       spells = Array.isArray(creature.spells) ? creature.spells
         : (typeof creature.spells === 'string' ? (() => { try { return JSON.parse(creature.spells); } catch { return []; } })() : []);
+      spells = dedupeSpells(spells);
     }
     let spell_slots = {};
     if (creature?.spell_slots) {
@@ -708,8 +1692,25 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     // would re-upload it as a multipart text field, exceeding multer's
     // default 1MB text-field cap and crashing the save with an HTML error.
     const { image_data: _imgData, ...creatureWithoutImage } = creature;
+    // Hit dice: stored as JSONB, so it can arrive as an array or as text.
+    let hit_dice_pool = [];
+    if (creature?.hit_dice_pool) {
+      const raw = Array.isArray(creature.hit_dice_pool)
+        ? creature.hit_dice_pool
+        : (typeof creature.hit_dice_pool === 'string'
+            ? (() => { try { return JSON.parse(creature.hit_dice_pool); } catch { return []; } })()
+            : []);
+      hit_dice_pool = normalizeHitDicePool(raw);
+    }
     return {
       ...defaultForm, ...creatureWithoutImage, senses, inventory, spells, spell_slots, loot, movement_actions,
+      hit_dice_pool,
+      // A sheet written before the structured field still carries its flat
+      // modifier inside the formula ("6d10 + 12"). Read it back out, or
+      // editing the dice would drop the +12 the monster's HP depends on.
+      hit_dice_bonus: Number(creature.hit_dice_bonus)
+        || parseHitDiceString(creature.hit_dice).bonus
+        || 0,
       passive_perception: creature.passive_perception ?? 10,
       currency_cp: creature.currency_cp ?? 0,
       currency_sp: creature.currency_sp ?? 0,
@@ -735,6 +1736,337 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         ? `/uploads/${creature.image_path}`
         : isPlayerCharacter ? '/uploads/creatures/default_player.png' : null
   );
+  // ── Alternate token art ────────────────────────────────────────────────
+  // The portrait above stays the creature's primary image; these are extras
+  // the GM can pick from when dropping a token on the map. Uploads attach to
+  // a creature id, so on a brand-new sheet the strip only says to save first
+  // rather than trying to hold files in limbo.
+  const creatureId = creature?.id ?? null;
+  const [altImages, setAltImages] = useState([]);
+  const [altBusy, setAltBusy] = useState(false);
+  const [altError, setAltError] = useState('');
+
+  // Returns the fresh list as well as storing it, so a caller that needs to
+  // react to what came back doesn't have to wait a render for state.
+  const reloadAltImages = useCallback(async () => {
+    if (!creatureId) { setAltImages([]); return []; }
+    try {
+      const res = await fetch(`/api/creatures/${creatureId}/images`);
+      if (!res.ok) throw new Error(`Load failed (${res.status})`);
+      const list = await res.json();
+      setAltImages(list);
+      return list;
+    } catch (err) {
+      setAltError(err.message);
+      return [];
+    }
+  }, [creatureId]);
+
+  useEffect(() => { reloadAltImages(); }, [reloadAltImages]);
+
+  // ── Presentation art ───────────────────────────────────────────────────
+  // Everything above is token art: square, cropped tight, read at map scale.
+  // This is the full picture "Show image to players" pushes onto everyone's
+  // screen instead. Uploaded raw — no framer — because the point is the whole
+  // image, and it's never drawn as a token.
+  const [displayArt, setDisplayArt] = useState(creature?.display_image_path || null);
+  const [displayBusy, setDisplayBusy] = useState(false);
+
+  async function handleDisplayArtUpload(e) {
+    const file = (e.target.files || [])[0];
+    e.target.value = '';
+    if (!file || !creatureId) return;
+    setDisplayBusy(true);
+    setAltError('');
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      const res = await fetch(`/api/creatures/${creatureId}/display-image`, { method: 'PUT', body: fd });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Upload failed (${res.status})`);
+      setDisplayArt((await res.json()).display_image_path);
+    } catch (err) {
+      setAltError(err.message);
+    } finally {
+      setDisplayBusy(false);
+    }
+  }
+
+  async function handleDisplayArtRemove() {
+    if (!creatureId) return;
+    setDisplayBusy(true);
+    setAltError('');
+    try {
+      const res = await fetch(`/api/creatures/${creatureId}/display-image`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`Remove failed (${res.status})`);
+      setDisplayArt(null);
+    } catch (err) {
+      setAltError(err.message);
+    } finally {
+      setDisplayBusy(false);
+    }
+  }
+
+  // ── 3D standing art ───────────────────────────────────────────────────
+  // Used ONLY by the 3D view, which stands a token up facing the camera. The
+  // flat map always keeps the top-down face above, so this can be a full
+  // figure without spoiling how the creature reads from overhead.
+  const [standeeArt, setStandeeArt] = useState(creature?.standee_image_path || null);
+  const [standeeBusy, setStandeeBusy] = useState(false);
+  // The wardrobe: every standing look this creature has, the live one first.
+  // Shape matches the face-alternates list — { id, image_path, is_primary },
+  // with a null id marking the live one.
+  const [standeeGallery, setStandeeGallery] = useState([]);
+
+  const reloadStandees = useCallback(async () => {
+    if (!creatureId) return [];
+    try {
+      const res = await fetch(`/api/creatures/${creatureId}/standees`);
+      if (!res.ok) return [];
+      const list = await res.json();
+      setStandeeGallery(Array.isArray(list) ? list : []);
+      // The live one is the server's answer, not ours — promoting swaps two
+      // rows, and guessing the outcome here is how the preview drifts.
+      const live = (Array.isArray(list) ? list : []).find((i) => i.is_primary);
+      setStandeeArt(live ? live.image_path : null);
+      return list;
+    } catch { return []; }
+  }, [creatureId]);
+
+  useEffect(() => { reloadStandees(); }, [reloadStandees]);
+
+  // Make a shelved look the one that stands on the board. A swap, so the
+  // outgoing art drops into the slot this one just left and a second click
+  // puts it back.
+  async function useStandee(imageId) {
+    if (!creatureId || imageId == null) return;
+    setStandeeBusy(true);
+    setAltError('');
+    try {
+      const res = await fetch(`/api/creatures/${creatureId}/standees/${imageId}/primary`, { method: 'PUT' });
+      if (!res.ok) throw new Error(`Switch failed (${res.status})`);
+      await reloadStandees();
+    } catch (err) {
+      setAltError(err.message);
+    } finally {
+      setStandeeBusy(false);
+    }
+  }
+
+  async function removeShelvedStandee(imageId) {
+    if (!creatureId || imageId == null) return;
+    setStandeeBusy(true);
+    setAltError('');
+    try {
+      const res = await fetch(`/api/creatures/${creatureId}/standees/${imageId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`Remove failed (${res.status})`);
+      await reloadStandees();
+    } catch (err) {
+      setAltError(err.message);
+    } finally {
+      setStandeeBusy(false);
+    }
+  }
+
+  // Picking several at once. Each goes through the framer in turn, exactly as
+  // the face alternates do — a standee is a cut-out figure and an unframed
+  // photo is almost never the right crop.
+  const standeeQueueRef = useRef([]);
+  const standeeFramedRef = useRef([]);
+
+  function handleStandeeGalleryUpload(e) {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';
+    if (!files.length || !creatureId) return;
+    setAltError('');
+    standeeQueueRef.current = files;
+    standeeFramedRef.current = [];
+    frameNextStandee();
+  }
+
+  function frameNextStandee() {
+    const next = standeeQueueRef.current.shift();
+    if (!next) {
+      setFramerMode('primary');
+      uploadFramedStandees();
+      return;
+    }
+    setFramerMode('standee-new');
+    openFramer(URL.createObjectURL(next), true);
+  }
+
+  async function uploadFramedStandees() {
+    const files = standeeFramedRef.current;
+    standeeFramedRef.current = [];
+    if (!files.length || !creatureId) return;
+    setStandeeBusy(true);
+    setAltError('');
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('images', f);
+      const res = await fetch(`/api/creatures/${creatureId}/standees`, { method: 'POST', body: fd });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Upload failed (${res.status})`);
+      await reloadStandees();
+    } catch (err) {
+      setAltError(err.message);
+    } finally {
+      setStandeeBusy(false);
+    }
+  }
+
+  async function uploadStandee(file) {
+    if (!file || !creatureId) return;
+    setStandeeBusy(true);
+    setAltError('');
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      const res = await fetch(`/api/creatures/${creatureId}/standee-image`, { method: 'PUT', body: fd });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Upload failed (${res.status})`);
+      setStandeeArt((await res.json()).standee_image_path);
+    } catch (err) {
+      setAltError(err.message);
+    } finally {
+      setStandeeBusy(false);
+    }
+  }
+
+  // Framed before upload, same as the token face — but in a tall frame with no
+  // circle, so the gesture is the familiar one while the result is the right
+  // shape for something that stands up.
+  function handleStandeeUpload(e) {
+    const file = (e.target.files || [])[0];
+    e.target.value = '';
+    if (!file) return;
+    setFramerMode('standee');
+    openFramer(URL.createObjectURL(file), true);
+  }
+
+  // Re-frame what is already saved. The framing is baked into the file, so each
+  // pass works on the current copy rather than the original — the same
+  // trade-off "Adjust framing" makes for the portrait.
+  function startStandeeReframe() {
+    if (!standeeArt) return;
+    setFramerMode('standee');
+    openFramer(`/uploads/${standeeArt}`, false);
+  }
+
+  async function handleStandeeRemove() {
+    if (!creatureId) return;
+    setStandeeBusy(true);
+    setAltError('');
+    try {
+      const res = await fetch(`/api/creatures/${creatureId}/standee-image`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`Remove failed (${res.status})`);
+      // Reload rather than just clearing: the slot is empty now, so the next
+      // shelved look should move to the front of the strip as the obvious
+      // thing to promote. Guessing that locally would drift from the server.
+      await reloadStandees();
+    } catch (err) {
+      setAltError(err.message);
+    } finally {
+      setStandeeBusy(false);
+    }
+  }
+
+  // Picking alternates no longer uploads straight away — each file goes
+  // through the framer first, one after another, exactly like the primary
+  // portrait does. Token art is cropped to a circle on the map, so an
+  // unframed image is usually the wrong bit of the picture.
+  function handleAltUpload(e) {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';
+    if (!files.length || !creatureId) return;
+    setAltError('');
+    altQueueRef.current = files;
+    altFramedRef.current = [];
+    frameNextAlt();
+  }
+
+  async function uploadFramedAlts() {
+    const files = altFramedRef.current;
+    altFramedRef.current = [];
+    if (!files.length || !creatureId) return;
+    setAltBusy(true);
+    setAltError('');
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('images', f);
+      const res = await fetch(`/api/creatures/${creatureId}/images`, { method: 'POST', body: fd });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Upload failed (${res.status})`);
+      const list = await reloadAltImages();
+      // Uploading onto a creature with no portrait promotes the first file
+      // server-side; mirror that into the big preview so the two don't
+      // disagree until the sheet is reopened.
+      if (!imagePreview) {
+        const promoted = (list || []).find(i => i.is_primary);
+        if (promoted) setImagePreview(`/uploads/${promoted.image_path}`);
+      }
+    } catch (err) {
+      setAltError(err.message);
+    } finally {
+      setAltBusy(false);
+    }
+  }
+
+  // Re-frame an alternate that's already uploaded. Replaces the file in place
+  // so the tile keeps its position in the strip.
+  async function replaceAltFile(imageId, file) {
+    if (!creatureId) return;
+    setAltBusy(true);
+    setAltError('');
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      const res = await fetch(`/api/creatures/${creatureId}/images/${imageId}/file`, { method: 'PUT', body: fd });
+      if (!res.ok) throw new Error(`Re-frame failed (${res.status})`);
+      await reloadAltImages();
+    } catch (err) {
+      setAltError(err.message);
+    } finally {
+      setAltBusy(false);
+    }
+  }
+
+  function startAltReframe(img) {
+    setFramerMode({ replaceId: img.id });
+    // Existing art is served from /uploads, not an object URL — nothing to
+    // revoke, hence isObjectUrl=false.
+    openFramer(`/uploads/${img.image_path}`, false);
+  }
+
+  async function handleAltMakePrimary(img) {
+    if (!creatureId || img.is_primary) return;
+    setAltBusy(true);
+    setAltError('');
+    try {
+      const res = await fetch(`/api/creatures/${creatureId}/images/${img.id}/primary`, { method: 'PUT' });
+      if (!res.ok) throw new Error(`Failed (${res.status})`);
+      await reloadAltImages();
+      // Keep the big portrait in step — it reads from local state, not the row.
+      setImagePreview(`/uploads/${img.image_path}`);
+      setImageFile(null);
+    } catch (err) {
+      setAltError(err.message);
+    } finally {
+      setAltBusy(false);
+    }
+  }
+
+  async function handleAltDelete(img) {
+    if (!creatureId || img.is_primary) return;
+    setAltBusy(true);
+    setAltError('');
+    try {
+      const res = await fetch(`/api/creatures/${creatureId}/images/${img.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+      await reloadAltImages();
+    } catch (err) {
+      setAltError(err.message);
+    } finally {
+      setAltBusy(false);
+    }
+  }
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('basic');
@@ -744,7 +2076,26 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   // Class-level "build choices" — Cleric Divine Order, Fighter Weapon
   // Mastery, Rogue Expertise, etc. Merges static SRD-2024 with any
   // plugin-supplied choices for this class.
-  const classChoices = useClassChoices(form.char_class, { subclass: form.char_subclass });
+  // Which edition's rules this character's CLASS is built on.
+  //
+  // It decides which option pool the class offers, and for the Warlock that
+  // is a real difference rather than a label: 54 invocations in 2014 against
+  // 28 in 2024, and the Pact Boon is its own pick in 2014 but an invocation
+  // in 2024. Subclasses are deliberately NOT filtered by it — see the
+  // subclass dropdown.
+  //
+  // Declared HERE, above useClassChoices, because that hook reads it. Kept
+  // beside the race-edition state further down, it was a `const` used two
+  // hundred lines before its own declaration — which is a temporal dead zone,
+  // and threw "Cannot access 'classEdition' before initialization" the moment
+  // the character form rendered.
+  const [classEdition, setClassEdition] = useState('srd2024');
+
+  const classChoices = useClassChoices(form.char_class, {
+    subclass: form.char_subclass,
+    edition: classEdition,
+    level: form.char_level,
+  });
 
   // Auto-grant choices (Ranger's Hunter's Mark, custom-class
   // class-kit, custom-class per-level features) apply the moment
@@ -788,15 +2139,16 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     // already saved survive the re-apply.
     applyClassChoices(classChoices, prevState.choices || {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.char_class, form.char_subclass, form.char_level, classChoices.length]);
+  }, [form.char_class, form.char_subclass, form.char_level, classEdition, classChoices.length]);
 
   const tabs = isPlayerCharacter
-    ? ['basic', 'combat', 'abilities', 'skills', 'traits', 'spells', 'inventory', 'weapons', 'backstory']
-    : ['basic', 'combat', 'abilities', 'skills', 'traits', 'spells', 'inventory', 'loot'];
+    ? ['basic', 'abilities', 'combat', 'skills', 'traits', 'spells', 'inventory', 'weapons', 'companions', 'backstory']
+    : ['basic', 'abilities', 'combat', 'skills', 'traits', 'spells', 'inventory', 'loot'];
   const tabLabel = {
     basic: 'Basic', combat: 'Combat', abilities: 'Ability Scores',
     skills: 'Skills & Saves', traits: 'Traits & Actions',
     spells: 'Spells', inventory: 'Inventory', loot: 'Loot', weapons: 'Weapons',
+    companions: 'Companions',
     backstory: 'Backstory',
   };
 
@@ -817,10 +2169,59 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     () => (form.char_class ? getClassBuild(form.char_class) : null),
     [form.char_class],
   );
-  const cachedHitDicePool = useMemo(
-    () => (isPlayerCharacter ? (computeHitDicePool(form) || []) : []),
-    [isPlayerCharacter, form.is_player_character, form.char_class, form.char_level, form.multiclasses],
+  // What the class table alone says this character's dice are. Kept apart
+  // from the pool actually in force so the editor can show "auto" until the
+  // GM overrides it, and offer the way back afterwards.
+  const derivedHitDicePool = useMemo(
+    () => (isPlayerCharacter
+      ? (computeHitDicePool({ ...form, hit_dice_pool: [] }) || [])
+      : (parseHitDiceString(form.hit_dice).pool.map(({ die, qty }) => ({ type: die, qty })))),
+    [isPlayerCharacter, form.is_player_character, form.char_class, form.char_level,
+      form.multiclasses, form.hit_dice],
   );
+  // The pool in force: the explicit rows when there are any, else the derived
+  // ones. This is what the rest tracker below ticks against.
+  const cachedHitDicePool = useMemo(
+    () => computeHitDicePool(form) || [],
+    [form.is_player_character, form.char_class, form.char_level, form.multiclasses,
+      form.hit_dice_pool, form.hit_dice],
+  );
+
+  // One place that writes hit dice, so the three things that have to agree
+  // cannot drift: the structured rows, the printed formula every stat block
+  // reads, and the spent-dice map the rest trackers tick.
+  const applyHitDice = useCallback(({ pool, bonus }) => {
+    setForm((f) => {
+      const rows = normalizeHitDicePool(pool);
+      const nextBonus = Math.trunc(Number(bonus) || 0);
+      const next = { ...f, hit_dice_pool: rows, hit_dice_bonus: nextBonus };
+      // With the rows cleared a player character goes back to the class
+      // table; a monster keeps whatever its formula already said.
+      const effective = rows.length
+        ? rows
+        : (computeHitDicePool({ ...next }) || []).map((r) => ({ die: r.type, qty: r.qty }));
+      next.hit_dice = formatHitDiceFormula(effective, nextBonus);
+      next.hit_dice_used_by_type = clampHitDiceUsed(effective, f.hit_dice_used_by_type);
+      return next;
+    });
+  }, []);
+
+  // A class or level change moves the derived pool, and the printed formula
+  // has to follow it — otherwise a Fighter who reached level 5 still reads
+  // "4d10" on their stat block. Only while the pool is on auto: explicit rows
+  // are the GM's, and are left alone.
+  useEffect(() => {
+    if (!isPlayerCharacter) return;
+    if (normalizeHitDicePool(form.hit_dice_pool).length) return;
+    const rows = derivedHitDicePool.map(({ type, qty }) => ({ die: type, qty }));
+    const formula = formatHitDiceFormula(rows, form.hit_dice_bonus);
+    if (!formula || formula === form.hit_dice) return;
+    setForm((f) => ({
+      ...f,
+      hit_dice: formula,
+      hit_dice_used_by_type: clampHitDiceUsed(rows, f.hit_dice_used_by_type),
+    }));
+  }, [isPlayerCharacter, derivedHitDicePool, form.hit_dice_pool, form.hit_dice_bonus, form.hit_dice]);
   const cachedWeaponProfsExpanded = useMemo(
     () => Array.from(expandWeaponProficiency(form.weapon_proficiencies || '')),
     [form.weapon_proficiencies],
@@ -844,16 +2245,95 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     framerObjectUrlRef.current = null;
     setFramerSrc(null);
   }
+  // Which slot the open framer is editing. The primary portrait defers to the
+  // form's save; alternates upload immediately, so they need their own paths.
+  //   'primary'            — existing behaviour, swaps the pending upload
+  //   'alt-new'            — framing a queue of freshly picked alternates
+  //   { replaceId: <id> }  — re-framing an alternate that already exists
+  const [framerMode, setFramerMode] = useState('primary');
+  const altQueueRef = useRef([]);   // files still to be framed
+  const altFramedRef = useRef([]);  // framed results awaiting upload
+
   function handleFramed(file) {
+    if (framerMode === 'alt-new') {
+      altFramedRef.current.push(file);
+      closeFramer();
+      frameNextAlt();
+      return;
+    }
+    if (framerMode && framerMode.replaceId) {
+      const id = framerMode.replaceId;
+      closeFramer();
+      replaceAltFile(id, file);
+      return;
+    }
+    if (framerMode === 'standee-new') {
+      standeeFramedRef.current.push(file);
+      closeFramer();
+      frameNextStandee();
+      return;
+    }
+    if (framerMode === 'standee') {
+      closeFramer();
+      setFramerMode('primary');
+      uploadStandee(file);
+      return;
+    }
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
     closeFramer();
+  }
+
+  // Cancelling mid-batch abandons the whole batch rather than silently
+  // uploading a half-framed subset — less surprising than a partial result,
+  // and re-picking the files is cheap.
+  function handleFramerCancel() {
+    if (framerMode === 'alt-new') {
+      altQueueRef.current = [];
+      altFramedRef.current = [];
+    }
+    if (framerMode === 'standee-new') {
+      standeeQueueRef.current = [];
+      standeeFramedRef.current = [];
+    }
+    setFramerMode('primary');
+    closeFramer();
+  }
+
+  function frameNextAlt() {
+    const next = altQueueRef.current.shift();
+    if (!next) {
+      setFramerMode('primary');
+      uploadFramedAlts();
+      return;
+    }
+    setFramerMode('alt-new');
+    openFramer(URL.createObjectURL(next), true);
   }
 
   function handleImageChange(e) {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
+    setFramerMode('primary');
+    openFramer(URL.createObjectURL(file), true);
+  }
+
+  // A token built in the embedded 2-Minute editor. It joins the pipeline at
+  // exactly the point a file picked from disk does, so framing, saving and the
+  // 3D standee all treat it as an ordinary portrait — there is no second,
+  // parallel path that could behave differently.
+  // Which slot the editor is filling: the map token face, or the 3D standee.
+  const [tokenEditorOpen, setTokenEditorOpen] = useState(false);
+  const [tokenEditorTarget, setTokenEditorTarget] = useState('primary');
+  function handleTokenEditorPick(file) {
+    setTokenEditorOpen(false);
+    if (tokenEditorTarget === 'standee') {
+      setFramerMode('standee');
+      openFramer(URL.createObjectURL(file), true);
+      return;
+    }
+    setFramerMode('primary');
     openFramer(URL.createObjectURL(file), true);
   }
 
@@ -921,7 +2401,10 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   // Cascade: edition → (Type from form.creature_type) → race → sub-race.
   // Type is reused from the existing form field above so the picker
   // always reflects whatever the user already chose.
-  const [raceEdition, setRaceEdition] = useState('srd2024');
+  // Defaults to every edition. Left on 2024 it hid every race that only ever
+  // appeared in the 2014 books — the Tortle among them — and a race you cannot
+  // see in the list reads as a race the app does not have.
+  const [raceEdition, setRaceEdition] = useState('all');
   const [raceId, setRaceId] = useState('');
   const [subraceId, setSubraceId] = useState('');
 
@@ -935,7 +2418,18 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   const [bgAsiKind, setBgAsiKind]   = useState('2-1');        // '2-1' | '1-1-1'
   const [bgAsiPlus2, setBgAsiPlus2] = useState('');           // stat key
   const [bgAsiPlus1, setBgAsiPlus1] = useState('');           // stat key
-  const [bgEquipment, setBgEquipment] = useState('a');         // 'a' | 'b'
+  // A 2014 background grants no ability scores of its own, so the +1/+1/+1
+  // spread needs a THIRD pick from the player. Listed (2024) backgrounds take
+  // their three from the background itself and never use this.
+  const [bgAsiPlus1b, setBgAsiPlus1b] = useState('');         // stat key
+  // Picker filters.
+  const [bgSearch, setBgSearch] = useState('');
+  const [bgEditionFilter, setBgEditionFilter] = useState('all');   // all|srd2024|srd2014
+  const [bgStatFilter, setBgStatFilter] = useState('');            // '' | ability field
+  const [bgEquipment, setBgEquipment] = useState('a');
+  // Chosen kind when a background grants "one kind of" a tool family.
+  const [bgToolChoice, setBgToolChoice] = useState('');
+  const [showFeatPicker, setShowFeatPicker] = useState(false);         // 'a' | 'b'
 
   const [showItemLibrary, setShowItemLibrary] = useState(false);
 
@@ -984,14 +2478,27 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     if (list.length === 0) return;
     let mutated = false;
     const next = list.map((s) => {
-      const isPlaceholder = s && s.name && !s.description && !s.school;
-      if (!isPlaceholder) return s;
-      const lib = spellLibraryByName.get(String(s.name).toLowerCase());
+      const lib = s && s.name ? spellLibraryByName.get(String(s.name).toLowerCase()) : null;
+      // Anything still missing its description counts, not just bare
+      // {name, level} stubs. A spell granted while its library row was a
+      // half-empty scrape kept the few fields that row did have (school, say)
+      // and so never re-merged once the row was filled in later.
+      const isPlaceholder = !!(s && s.name && lib && !s.description && lib.description);
+      // Repair pass: a GRANTED spell (race, background, class) stuck at level 0
+      // when the library says it isn't a cantrip was mis-added before the fix
+      // above. Hand-written entries have no __source and are left alone.
+      if (!isPlaceholder) {
+        if (lib && s.__source && Number(s.level) === 0 && Number(lib.level) > 0) {
+          mutated = true;
+          return { ...s, level: lib.level };
+        }
+        return s;
+      }
       if (!lib) return s;
       mutated = true;
       return {
         ...s,
-        level: s.level ?? lib.level ?? 0,
+        level: (s.level === 0 || s.level == null) ? (lib.level ?? 0) : s.level,
         type: s.type || lib.type || '',
         school: s.school || lib.school || '',
         casting_time: s.casting_time || lib.casting_time || '',
@@ -1040,14 +2547,69 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   const [itemLibraryRows, setItemLibraryRows] = useState([]);
   const [itemLibrarySearch, setItemLibrarySearch] = useState('');
   const [itemLibraryType, setItemLibraryType] = useState('');
+  // The library carries both printings of most items. Default to 2024 so the
+  // picker matches the ruleset the class and background kits are built on;
+  // '' shows everything.
+  const [itemLibraryEdition, setItemLibraryEdition] = useState('2024');
   const [itemLibraryLoaded, setItemLibraryLoaded] = useState(false);
+  // Item library cache — keyed by lowercase name, newest edition winning,
+  // exactly like the spell cache above. Fetched on mount rather than when the
+  // picker opens, because the enricher below needs it for class/background
+  // kits the moment they're granted.
+  const [itemLibraryByName, setItemLibraryByName] = useState(null);
   useEffect(() => {
-    if (!showItemLibrary || itemLibraryLoaded) return;
-    fetch('/api/item-library')
+    let cancelled = false;
+    fetch('/api/item-library?role=dm')
       .then(r => (r.ok ? r.json() : []))
-      .then(rows => { setItemLibraryRows(rows); setItemLibraryLoaded(true); })
+      .then(rows => {
+        if (cancelled) return;
+        const list = Array.isArray(rows) ? rows : [];
+        const editionRank = (e) => (e === '2024' ? 2 : (e === '2014' ? 1 : 0));
+        const map = new Map();
+        for (const r of list) {
+          const k = String(r.name || '').toLowerCase();
+          if (!k) continue;
+          const prev = map.get(k);
+          if (!prev || editionRank(r.edition) > editionRank(prev.edition)) map.set(k, r);
+          // Spacing varies between the kit lists and the library
+          // ("Chainmail" vs "Chain Mail"), so key a squashed form too.
+          const squashed = k.replace(/[\s'-]/g, '');
+          if (squashed !== k && !map.has(squashed)) map.set(squashed, r);
+        }
+        setItemLibraryRows(list);
+        setItemLibraryByName(map);
+        setItemLibraryLoaded(true);
+      })
       .catch(() => setItemLibraryLoaded(true));
-  }, [showItemLibrary, itemLibraryLoaded]);
+    return () => { cancelled = true; };
+  }, []);
+
+  // Kit entries are written the way the rules phrase them, which doesn't
+  // always match the library's row name: plurals ("Daggers"), trailing
+  // qualifiers ("Spear (2)"), and leading articles all have to be tried.
+  function lookupLibraryItem(name) {
+    if (!itemLibraryByName) return null;
+    const raw = String(name || '').trim().toLowerCase();
+    if (!raw) return null;
+    // "Arcane Focus (Crystal)" is stocked as plain "Crystal", so the
+    // parenthetical is worth trying on its own.
+    const paren = raw.match(/\(([^)]+)\)/)?.[1] || '';
+    const tries = [
+      raw,
+      raw.replace(/\s*\(.*\)\s*$/, ''),
+      raw.replace(/\s*x\s*\d+$/, ''),
+      raw.replace(/^(a|an|the)\s+/, ''),
+      raw.replace(/e?s$/, ''),
+      raw.replace(/\s*\(.*\)\s*$/, '').replace(/e?s$/, ''),
+      paren,
+      raw.replace(/[\s'-]/g, ''),
+    ];
+    for (const t of tries) {
+      const hit = itemLibraryByName.get(t.trim());
+      if (hit) return hit;
+    }
+    return null;
+  }
 
   // Convert a library row into an inventory item shape, then push.
   // Field names must match the inventory editor's expectations
@@ -1056,7 +2618,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   // `damage_dice` / `damage_type` scalar pair. Earlier picker copied
   // into the wrong fields, so weapons came in with no damage,
   // properties or mastery showing.
-  function pickItemFromLibrary(row) {
+  function libraryRowToItem(row) {
     // Only weapons should land as item_type='weapon' so the editor's
     // weapon-specific block (Range / Damage / Properties / Mastery)
     // appears for them. Magic ammunition has no damage of its own,
@@ -1098,6 +2660,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       weapon_range: row.weapon_range || '',
       attack_stat: row.attack_stat || 'STR',
       attack_bonus_misc: Number(row.attack_bonus_misc) || 0,
+      damage_bonus_misc: Number(row.damage_bonus_misc) || 0,
       properties: row.properties || '',
       mastery: row.mastery || '',
 
@@ -1113,11 +2676,56 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       attunement_required: !!row.attunement,
       attunement_req: row.attunement_req || '',
 
+      // A homebrew item's hidden clause travels with it, still unrevealed: the
+      // party has just found the thing, so they have not found out about it.
+      ...(String(row.gm_secret || '').trim()
+        ? { gm_secret: row.gm_secret, secret_revealed: false }
+        : {}),
+
       _source: `library:${row.edition}:${row.name}`,
     };
-    setForm(prev => ({ ...prev, inventory: [...(prev.inventory || []), next] }));
+    return next;
+  }
+
+  function pickItemFromLibrary(row) {
+    setForm(prev => ({ ...prev, inventory: [...(prev.inventory || []), libraryRowToItem(row)] }));
     setShowItemLibrary(false);
   }
+
+  // Class / background / race kits grant equipment by name only
+  // ({name, qty, item_type:'item'}), so a Rapier arrived as a generic line
+  // with no damage, properties or AC. Fill those in from the library the
+  // moment it's available — same treatment granted spells get. Only entries
+  // tagged with __source are touched, so hand-typed items are left alone.
+  useEffect(() => {
+    if (!itemLibraryByName || itemLibraryByName.size === 0) return;
+    const list = Array.isArray(form.inventory) ? form.inventory : [];
+    if (list.length === 0) return;
+    let mutated = false;
+    const next = list.map((it) => {
+      if (!it || !it.__source || !it.name) return it;
+      // Already carries real data — either enriched before, or edited by hand.
+      const hasStats = (it.item_type && it.item_type !== 'item')
+        || !!it.desc
+        || (Array.isArray(it.damage_entries) && it.damage_entries.some((d) => d?.damage));
+      if (hasStats) return it;
+      const row = lookupLibraryItem(it.name);
+      if (!row) return it;
+      mutated = true;
+      // The kit's own name, quantity and grant tag survive; everything else
+      // comes from the library row.
+      return {
+        ...libraryRowToItem(row),
+        id: it.id ?? `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: it.name,
+        qty: Number(it.qty) || 1,
+        equipped: !!it.equipped,
+        __source: it.__source,
+      };
+    });
+    if (mutated) setForm((f) => ({ ...f, inventory: next }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemLibraryByName, form.inventory]);
 
   // Custom GM-authored races + backgrounds — fetched once on mount,
   // merged with the static SRD lists so the existing picker sees them
@@ -1180,26 +2788,120 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     customBackgrounds.map((row) => ({ id: row.id, name: row.name, ...(row.data || {}) }))
   , [customBackgrounds]);
 
-  const allBackgroundsMerged = useMemo(() =>
-    [...BACKGROUNDS_2024, ...customBackgroundsShaped]
-  , [customBackgroundsShaped]);
+  const allBackgroundsMerged = useMemo(() => {
+    // Curated first, then the bulk import, then anything hand-authored in the
+    // Origins panel. First id wins, so the sixteen curated 2024 backgrounds —
+    // which carry real equipment packages — are never displaced by an
+    // imported entry of the same id.
+    const out = [];
+    const seen = new Set();
+    for (const b of [...BACKGROUNDS_2024, ...IMPORTED_BACKGROUNDS, ...customBackgroundsShaped]) {
+      const id = String(b?.id || '');
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(b);
+    }
+    return out;
+  }, [customBackgroundsShaped]);
 
+  // What the picker actually lists: the merged set, narrowed by the search box
+  // and the filters.
+  const backgroundsFiltered = useMemo(() => {
+    const q = bgSearch.trim().toLowerCase();
+    return allBackgroundsMerged.filter((b) => {
+      if (bgEditionFilter !== 'all' && (b.edition || 'srd2024') !== bgEditionFilter) return false;
+      // Stat filter. A 2014 background affects nothing by itself but lets the
+      // player choose, so it matches any stat rather than none — filtering it
+      // out would hide exactly the entries the choice is for.
+      if (bgStatFilter && !affectedAbilities(b).includes(bgStatFilter)) return false;
+      if (!q) return true;
+      return `${b.name} ${b.description || ''} ${(b.feat?.name) || ''}`
+        .toLowerCase().includes(q);
+    });
+  }, [allBackgroundsMerged, bgSearch, bgEditionFilter, bgStatFilter]);
+
+  // Look the id up in the same merged set the picker lists. Searching only
+  // the curated sixteen meant an imported background resolved to null, so its
+  // detail panel — ability spread included — never rendered and Apply stayed
+  // disabled.
   const findBackgroundMerged = (id) =>
-    findBackground(id) || customBackgroundsShaped.find((b) => b.id === id) || null;
+    allBackgroundsMerged.find((b) => b.id === id) || null;
 
+  // ── Where each ability score's bonuses came from ──────────────────
+  // The form stores one number per ability — the final score — because every
+  // derived value (saves, skills, AC, spell save DC) reads it. The Ability
+  // Scores tab still has to show the player what they typed apart from what a
+  // background, class or feature added, so rebuild the attribution from the
+  // same `added` records the revert paths already keep.
+  const abilityBonusSources = useMemo(() => {
+    const out = {
+      strength: [], dexterity: [], constitution: [],
+      intelligence: [], wisdom: [], charisma: [],
+    };
+    const push = (field, label, amount) => {
+      if (!field || !out[field] || !amount) return;
+      out[field].push({ label, amount });
+    };
+
+    const bgAdded = form.background_state?.added?.abilities;
+    if (bgAdded && typeof bgAdded === 'object') {
+      const bg = allBackgroundsMerged.find((b) => b.id === form.background);
+      const label = `Background${bg?.name ? ` (${bg.name})` : ''}`;
+      for (const [field, n] of Object.entries(bgAdded)) push(field, label, Number(n) || 0);
+    }
+
+    const classBumps = (state, label) => {
+      for (const ab of (state?.added?.abilities || [])) {
+        push(STAT_BY_ABIL[String(ab?.ability || '').toUpperCase()], label, Number(ab?.bonus) || 0);
+      }
+    };
+    classBumps(form.class_state, `Class${form.char_class ? ` (${form.char_class})` : ''}`);
+    for (const m of (form.multiclasses || [])) {
+      classBumps(m.class_state, `Class${m.class ? ` (${m.class})` : ''}`);
+    }
+
+    // Features that raise a score by themselves (Primal Champion, …) stamp
+    // what they applied onto the stored row when they land.
+    for (const row of [
+      ...(form.class_features || []),
+      ...(form.feats || []),
+      ...(form.special_abilities || []),
+    ]) {
+      for (const ab of (row?.__applied_abilities || [])) {
+        push(
+          STAT_BY_ABIL[String(ab?.ability || '').toUpperCase()],
+          row?.name || 'Feature',
+          Number(ab?.bonus) || 0,
+        );
+      }
+    }
+    return out;
+  }, [
+    form.background, form.background_state, form.class_state, form.char_class,
+    form.multiclasses, form.class_features, form.feats, form.special_abilities,
+    allBackgroundsMerged,
+  ]);
+
+  // Flat, feature-granted skill bonuses on the form as it stands right now,
+  // so applying Primal Order updates the Skills tab without a save first.
+  const skillFeatureBonuses = useMemo(
+    () => featureSkillBonuses(form),
+    [form.class_state, form.multiclasses, form.wisdom, form.intelligence,
+      form.strength, form.dexterity, form.constitution, form.charisma],
+  );
+
+  // The list is NOT filtered by the sheet's Type dropdown. Every catalogue
+  // race is a Humanoid, so setting Type to anything else emptied the picker
+  // and looked like the races had vanished. Applying a race sets Type from
+  // the race instead.
   const racePickerRaces = useMemo(() => {
-    const stat = racesForType(form.creature_type, raceEdition);
+    const stat = racesForEdition(raceEdition);
     const custom = allRacesMerged.filter((r) =>
-      (r.creature_type || 'Humanoid') === form.creature_type &&
-      (raceEdition === 'custom' || r.edition === raceEdition || r.edition === 'custom')
+      raceEdition === 'custom' || raceEdition === 'all'
+        || r.edition === raceEdition || r.edition === 'custom'
     );
     return [...stat, ...custom];
-  }, [form.creature_type, raceEdition, allRacesMerged]);
-
-  const racePickerHasTypes = useMemo(() => {
-    if (raceTypesForEdition(raceEdition).includes(form.creature_type)) return true;
-    return allRacesMerged.some((r) => (r.creature_type || 'Humanoid') === form.creature_type);
-  }, [raceEdition, form.creature_type, allRacesMerged]);
+  }, [raceEdition, allRacesMerged]);
 
   const selectedRaceObj = raceId ? findRaceMerged(raceId) : null;
   const selectedSubraceObj = (selectedRaceObj && subraceId)
@@ -1207,7 +2909,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     : null;
 
   // Reset chained selections when the upstream dropdown changes.
-  useEffect(() => { setRaceId(''); setSubraceId(''); }, [raceEdition, form.creature_type]);
+  useEffect(() => { setRaceId(''); setSubraceId(''); }, [raceEdition]);
   useEffect(() => { setSubraceId(''); }, [raceId]);
 
   // Apply the picked race + sub-race to the form. Two layers of
@@ -1250,7 +2952,14 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     // still to come, and spells (the names actually written into
     // creature.spells right now) so revert can strip exactly those.
     const added = {
-      senses:         [...(race.setsSenses || []), ...(sub?.setsSenses || [])],
+      // One entry per sense, at the best range on offer.
+      //
+      // Concatenating the two put Darkvision on the sheet twice for every
+      // lineage that restates it — a Drow has it from being an Elf and again
+      // from being a Drow. Keeping the LARGER range is also the rule: a
+      // Drow sees 120 feet, not the Elf's 60, and which line happened to be
+      // listed second should not decide that.
+      senses:         dedupeSenses([...(race.setsSenses || []), ...(sub?.setsSenses || [])]),
       spells:         fetchedSpells.map((s) => s.name),
       spells_pending: allSpellRefs,
       resistances:    [...(race.addsResistances || []), ...(sub?.addsResistances || [])],
@@ -1272,6 +2981,14 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       size:  (sub && sub.setsSize)  || race.setsSize  || null,
       // Dragonborn — sub-race tells us the breath weapon damage type.
       breath_weapon_type: (sub && sub.breathWeaponType) || null,
+      // Natural armour — a Tortle's shell, a Lizardfolk's scales. Carried on
+      // race_state so the AC calculation (and the equip guards that stop a
+      // Tortle putting on chain mail) can read it from the sheet alone,
+      // without loading the race catalogue. Sub-race wins when it declares
+      // its own.
+      natural_armor: (sub && sub.naturalArmor) || race.naturalArmor || null,
+      // A flat always-on AC bonus from a trait (Troglodyte's thick hide).
+      ac_bonus: Number((sub && sub.acBonus) || race.acBonus || 0) || 0,
     };
     const newRaceState = { race_id: race.id, sub_id: sub?.id || null, added };
 
@@ -1319,6 +3036,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         ];
       };
       appendTraits('special_abilities', traits.filter((t) => t.category === 'specialAbility').map(({ name, desc }) => ({ name, desc })));
+      appendTraits('class_features',    traits.filter((t) => t.category === 'classFeature').map(({ name, desc, subclass }) => ({ name, desc, ...(subclass ? { subclass } : {}) })));
       appendTraits('actions',           traits.filter((t) => t.category === 'action').map(({ name, desc }) => ({ name, desc })));
       appendTraits('bonus_actions',     traits.filter((t) => t.category === 'bonusAction').map(({ name, desc }) => ({ name, desc })));
       appendTraits('reactions',         traits.filter((t) => t.category === 'reaction').map(({ name, desc }) => ({ name, desc })));
@@ -1514,13 +3232,21 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   // because that path leaves the manual armor_class alone for non-PC
   // creatures and edge cases like Unarmored Defense.
   useEffect(() => {
-    const calc = computeAcFromGear(form);
+    const calc = computeAcFromGear(form, isPlayerCharacter);
     if (!calc) return;
     if (Number(form.armor_class) === calc.total) return;
     setField('armor_class', calc.total);
   }, [
+    form.ac_misc_bonus,
     form.dexterity,
     form.shield_equipped,
+    // Natural armour arrives with the race and changes the AC on its own —
+    // without these the shell a Tortle just gained showed in the readout but
+    // never reached the stored armor_class the token and stat block read.
+    JSON.stringify(form.race_state?.added?.natural_armor || null),
+    form.race_state?.added?.ac_bonus,
+    // Loxodon's natural armour adds CON, so the score has to be watched too.
+    form.constitution,
     // The inventory drives the bulk of the change; encode just the
     // bits that affect AC math so we don't recompute when the user
     // edits an item's description / qty / weight.
@@ -1637,10 +3363,14 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     INT: 'intelligence', WIS: 'wisdom', CHA: 'charisma',
   };
 
-  function applyBackground(bg, asi /* { kind, plus2, plus1 } */, equipKey /* 'a' | 'b' */) {
+  function applyBackground(bg, asi /* { kind, plus2, plus1 } */, equipKey /* 'a' | 'b' */, toolChoice /* specific kind, when the background offers a choice */) {
     if (!bg) return;
     const sourceTag = `background:${bg.id}`;
     const profBonus = form.proficiency_bonus ?? 2;
+    // "Artisan's Tools (choose one kind)" becomes the actual kind the player
+    // picked, both on the proficiency line and in the equipment list.
+    const toolChoices = toolChoicesFor(bg.tool);
+    const resolvedTool = (toolChoices && toolChoice) ? toolChoice : bg.tool;
 
     // Build the ability-bump map up front so prev/next are symmetric.
     const newBumps = {};
@@ -1648,8 +3378,16 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       newBumps[asi.plus2] = 2;
       newBumps[asi.plus1] = 1;
     } else {
-      // +1 / +1 / +1 across all three listed abilities.
-      for (const a of bg.abilities) newBumps[a] = 1;
+      // +1 / +1 / +1.
+      //
+      // A 2024 background spreads it across its own three listed scores. A
+      // 2014 one lists none — the player named three in the picker instead —
+      // so fall back to those. Without this the free spread iterated an empty
+      // array and granted nothing at all, silently.
+      const three = (bg.abilities && bg.abilities.length)
+        ? bg.abilities
+        : [asi.plus2, asi.plus1, asi.plus1b].filter(Boolean);
+      for (const a of three) newBumps[a] = 1;
     }
 
     setForm((f) => {
@@ -1691,8 +3429,12 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         next.currency_gp = Math.max(0, (f.currency_gp || 0) - prevAdded.currency_gp);
       }
 
-      // Apply new background.
-      next.feats = [...next.feats, { ...bg.feat, __source: sourceTag }];
+      // Apply new background. Most imported (2014) backgrounds carry no
+      // origin feat at all, and spreading `undefined` wrote a nameless row
+      // onto the sheet.
+      next.feats = bg.feat
+        ? [...next.feats, { ...bg.feat, __source: sourceTag }]
+        : next.feats;
 
       // Tool prof — append to the CSV. Strip the previous-background
       // tool entry first so a swap doesn't leave the old one behind.
@@ -1703,8 +3445,8 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       const cleanTools = prevAdded.tool
         ? toolCsvParts.filter((p) => p.toLowerCase() !== String(prevAdded.tool).toLowerCase())
         : toolCsvParts;
-      if (bg.tool && !cleanTools.some((p) => p.toLowerCase() === bg.tool.toLowerCase())) {
-        cleanTools.push(bg.tool);
+      if (resolvedTool && !cleanTools.some((p) => p.toLowerCase() === resolvedTool.toLowerCase())) {
+        cleanTools.push(resolvedTool);
       }
       next.tool_proficiencies = cleanTools.join(', ');
 
@@ -1729,16 +3471,32 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       next.skill_expertise = newExpertise;
 
       // Equipment + starting currency.
-      const gpAdded = equipKey === 'a' ? bg.equipment_a_gp : bg.equipment_b_gp;
-      next.currency_gp = (next.currency_gp || 0) + gpAdded;
-      if (equipKey === 'a') {
-        for (const it of bg.equipment_a_items) {
+      // Base kit plus whichever option was chosen, in every coin column the
+      // sheet has. A background with no equipment at all contributes nothing
+      // rather than throwing, which is what reading the item list unguarded
+      // used to do.
+      const eqModel = bgEquipmentModel(bg);
+      const chosenOpt = eqModel.options.find((o) => o.id === equipKey)
+        || eqModel.options[0] || { items: [], gp: 0, sp: 0, cp: 0 };
+      const coinAdd = {
+        gp: (Number(eqModel.base.gp) || 0) + (Number(chosenOpt.gp) || 0),
+        sp: (Number(eqModel.base.sp) || 0) + (Number(chosenOpt.sp) || 0),
+        cp: (Number(eqModel.base.cp) || 0) + (Number(chosenOpt.cp) || 0),
+      };
+      next.currency_gp = (next.currency_gp || 0) + coinAdd.gp;
+      next.currency_sp = (next.currency_sp || 0) + coinAdd.sp;
+      next.currency_cp = (next.currency_cp || 0) + coinAdd.cp;
+      const chosenItems = [...(eqModel.base.items || []), ...(chosenOpt.items || [])];
+      {
+        for (const it of chosenItems) {
           next.inventory = [
             ...next.inventory,
             {
               id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
               item_type: 'item',
-              name: it.name,
+              // The kit in the equipment list is the same generic entry as the
+              // proficiency, so it takes the chosen kind too.
+              name: (toolChoices && toolChoice && it.name === toolChoices.base) ? toolChoice : it.name,
               qty: it.qty,
               desc: '',
               weight: '',
@@ -1761,9 +3519,13 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           feat: bg.feat?.name || '',
           skills: [...bg.skills],
           abilities: newBumps,
-          tool: bg.tool,
+          tool: resolvedTool,
           equipment: equipKey,
-          currency_gp: gpAdded,
+          // `coinAdd.gp` — this was left behind as `gpAdded` when the single
+          // gold figure grew into the gp/sp/cp trio above. The name resolved
+          // to nothing, so picking a background threw a ReferenceError and
+          // took the character sheet down with it.
+          currency_gp: coinAdd.gp,
         },
       };
       return next;
@@ -1876,13 +3638,55 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       }
 
       // Apply new choices.
-      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0, saves: [], languages: [] };
+      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0, saves: [], languages: [], abilities: [], skill_bonuses: [] };
       const expert = { ...(next.skill_expertise || {}) };
 
       // Helper: apply an `adds` block onto `next`, recording into `added`.
       // Used by both single-pick and auto-grant choices.
       function applyAdds(adds, tag) {
         if (!adds) return;
+        // Ability score bonuses, BEFORE anything derived from a stat.
+        //
+        // A feature that raises a stat outright (a Barbarian's Primal
+        // Champion, say) has to land before the save and skill bonuses below,
+        // which read next[stat] to compute a modifier — applied after them,
+        // the stat would go up while every number derived from it stayed
+        // behind.
+        //
+        // Recorded as {ability, bonus} so the revert can subtract exactly what
+        // was granted. Reverting by recomputing from a base is not available
+        // here: by then the sheet no longer knows what the stat was before.
+        for (const ab of (adds.abilities || [])) {
+          const statField = STAT_FIELD[String(ab.ability || '').toUpperCase()];
+          const amt = Number(ab.bonus) || 0;
+          if (!statField || !amt) continue;
+          next[statField] = (Number(next[statField]) || 10) + amt;
+          added.abilities.push({ ability: String(ab.ability).toUpperCase(), bonus: amt });
+        }
+        // Flat bonuses to named skills, scaled off an ability modifier —
+        // a Druid's Primal Order (Magician), a Cleric's Divine Order
+        // (Thaumaturge). These are NOT proficiency: they apply whether or
+        // not the character is trained, so they cannot be folded into the
+        // stored skill_X column (which is null when untrained). They live
+        // in class_state.added.skill_bonuses and are added at roll time by
+        // skillRows(). Recording the ability rather than a number keeps the
+        // bonus correct when Wisdom later changes.
+        for (const sb of (adds.skill_bonuses || [])) {
+          const skills = (sb.skills || []).filter((k) => STAT_OF_SKILL[k]);
+          if (!skills.length || !sb.ability) continue;
+          added.skill_bonuses.push({
+            skills,
+            ability: String(sb.ability).toLowerCase(),
+            min: Number(sb.min) || 0,
+            label: sb.label || '',
+          });
+        }
+        // Extra cantrips a choice grants (Primal Order: Magician). A count,
+        // not a named spell — the player still chooses which one — so it is
+        // recorded as a number and read by the capacity bar.
+        if (Number(adds.cantrip_bonus)) {
+          added.cantrip_bonus = (Number(added.cantrip_bonus) || 0) + Number(adds.cantrip_bonus);
+        }
         for (const a of (adds.armor || [])) {
           if (a === 'light')   next.prof_light_armor  = true;
           if (a === 'medium')  next.prof_medium_armor = true;
@@ -1964,9 +3768,19 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             String(s.name || '').toLowerCase() === sp.name.toLowerCase()
           );
           if (!has) {
+            // Granted spells often arrive as just a name. Take the level from
+            // the library rather than defaulting to 0 — that default is what
+            // made every subclass spell land as a cantrip.
+            const lib = spellLibraryByName?.get(String(sp.name).toLowerCase());
             next.spells = [
               ...(next.spells || []),
-              { id: Date.now() + Math.random(), name: sp.name, level: sp.level ?? 0, prepared: sp.prepared !== false, __source: tag },
+              {
+                id: Date.now() + Math.random(),
+                name: sp.name,
+                level: sp.level ?? lib?.level ?? 0,
+                prepared: sp.prepared !== false,
+                __source: tag,
+              },
             ];
             added.spells.push(sp.name);
           }
@@ -2011,15 +3825,53 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           next.weapon_proficiencies = have.join(', ');
         }
 
+        if (choice.kind === 'multi-options') {
+          // Invocations, metamagic, manoeuvres. Each picked option becomes a
+          // trait on the sheet — that is what a player reads mid-session —
+          // and carries through any spell it grants, tagged like every other
+          // class grant so the revert takes it back off again.
+          for (const id of (pick.picks || [])) {
+            const opt = (choice.options || []).find((o) => o.id === id);
+            if (!opt) continue;
+            applyAdds({
+              traits: [{ name: opt.name, desc: opt.desc, category: 'specialAbility' }],
+              ...(opt.spells?.length
+                ? { spells: opt.spells.map((n) => ({ name: n, prepared: true })) }
+                : {}),
+            }, sourceTagFor(choice, id));
+          }
+        }
+
         if (choice.kind === 'multi-skills') {
+          // Two flavours share this kind: a class's STARTING proficiencies
+          // (grant: 'proficient') and Expertise (the default), which doubles
+          // the Proficiency Bonus on a skill you already have.
+          const asProficiency = choice.grant === 'proficient';
           for (const sk of (pick.picks || [])) {
             if (!sk || !STAT_OF_SKILL[sk]) continue;
             const m = Math.floor(((next[STAT_OF_SKILL[sk]] ?? 10) - 10) / 2);
-            // Expertise here — Rogue/Bard Expertise doubles PB.
-            next[sk] = m + profBonus * 2;
-            expert[sk] = true;
+            next[sk] = asProficiency ? m + profBonus : m + profBonus * 2;
+            if (!asProficiency) expert[sk] = true;
             added.skills.push(sk);
           }
+        }
+      }
+
+      // ── Subclass always-prepared spells ──────────────────────────────
+      // Life Domain's Aid/Bless, Oath of Devotion's Shield of Faith, a
+      // patron's spell table: these are granted, not chosen, so they're
+      // applied here rather than being another pick. Only rows at or below
+      // the character's level land, and they're tagged like every other
+      // class contribution so re-applying strips the old set first.
+      // Entries carry just the name — the library enricher fills in level,
+      // school and components once it has loaded.
+      {
+        const subSpells = subclassPreparedSpells(f.char_class, f.char_subclass, effLevel);
+        if (subSpells.length) {
+          applyAdds(
+            { spells: subSpells.map((name) => ({ name, prepared: true })) },
+            `cls:primary:${f.char_class}:subclass-spells`,
+          );
         }
       }
 
@@ -2075,6 +3927,17 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           if (field) next[field] = null;
         }
       }
+      // Ability bonuses the previous kit granted, taken back off. Subtracted
+      // rather than reset, so a stat the player raised by hand keeps that part
+      // and only the granted portion goes.
+      if (Array.isArray(prevAdded.abilities) && prevAdded.abilities.length) {
+        for (const ab of prevAdded.abilities) {
+          const statField = STAT_FIELD[String(ab.ability || '').toUpperCase()];
+          const amt = Number(ab.bonus) || 0;
+          if (!statField || !amt) continue;
+          next[statField] = (Number(next[statField]) || 10) - amt;
+        }
+      }
       // Languages granted by the previous class kit (Druidic, the
       // homebrew class's class-language) — strip ONLY the entries
       // recorded as kit-granted. Manually-added languages keep their
@@ -2105,13 +3968,12 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   // once one has been claimed. We DON'T auto-revert on class swap —
   // items may have been consumed or sold by then; cleaner to leave
   // the inventory alone and let the user prune manually.
-  function applyStartingEquipment(option /* 'A' | 'B' */) {
+  function applyStartingEquipment(option /* 'A' | 'B' | 'C' */) {
     setForm((f) => {
       const cls = f.char_class;
       const build = getClassBuild(cls);
       if (!build) return f;
-      const sa = build.startingEquipment || {};
-      const claim = option === 'A' ? sa.optionA : sa.optionB;
+      const claim = startingEquipmentOptions(build).find((o) => o.id === option);
       if (!claim) return f;
       const next = { ...f };
       // Stack identical item names into a single inventory row
@@ -2231,6 +4093,17 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           if (field) next[field] = null;
         }
       }
+      // Ability bonuses the previous kit granted, taken back off. Subtracted
+      // rather than reset, so a stat the player raised by hand keeps that part
+      // and only the granted portion goes.
+      if (Array.isArray(prevAdded.abilities) && prevAdded.abilities.length) {
+        for (const ab of prevAdded.abilities) {
+          const statField = STAT_FIELD[String(ab.ability || '').toUpperCase()];
+          const amt = Number(ab.bonus) || 0;
+          if (!statField || !amt) continue;
+          next[statField] = (Number(next[statField]) || 10) - amt;
+        }
+      }
       // Languages granted by the previous class kit (Druidic, the
       // homebrew class's class-language) — strip ONLY the entries
       // recorded as kit-granted. Manually-added languages keep their
@@ -2250,11 +4123,53 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         );
       }
 
-      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0, saves: [], languages: [] };
+      const added = { skills: [], weapons: [], armor: [], spells: [], traits_count: 0, saves: [], languages: [], abilities: [], skill_bonuses: [] };
       const expert = { ...(next.skill_expertise || {}) };
 
       function applyAdds(adds, tag) {
         if (!adds) return;
+        // Ability score bonuses, BEFORE anything derived from a stat.
+        //
+        // A feature that raises a stat outright (a Barbarian's Primal
+        // Champion, say) has to land before the save and skill bonuses below,
+        // which read next[stat] to compute a modifier — applied after them,
+        // the stat would go up while every number derived from it stayed
+        // behind.
+        //
+        // Recorded as {ability, bonus} so the revert can subtract exactly what
+        // was granted. Reverting by recomputing from a base is not available
+        // here: by then the sheet no longer knows what the stat was before.
+        for (const ab of (adds.abilities || [])) {
+          const statField = STAT_FIELD[String(ab.ability || '').toUpperCase()];
+          const amt = Number(ab.bonus) || 0;
+          if (!statField || !amt) continue;
+          next[statField] = (Number(next[statField]) || 10) + amt;
+          added.abilities.push({ ability: String(ab.ability).toUpperCase(), bonus: amt });
+        }
+        // Flat bonuses to named skills, scaled off an ability modifier —
+        // a Druid's Primal Order (Magician), a Cleric's Divine Order
+        // (Thaumaturge). These are NOT proficiency: they apply whether or
+        // not the character is trained, so they cannot be folded into the
+        // stored skill_X column (which is null when untrained). They live
+        // in class_state.added.skill_bonuses and are added at roll time by
+        // skillRows(). Recording the ability rather than a number keeps the
+        // bonus correct when Wisdom later changes.
+        for (const sb of (adds.skill_bonuses || [])) {
+          const skills = (sb.skills || []).filter((k) => STAT_OF_SKILL[k]);
+          if (!skills.length || !sb.ability) continue;
+          added.skill_bonuses.push({
+            skills,
+            ability: String(sb.ability).toLowerCase(),
+            min: Number(sb.min) || 0,
+            label: sb.label || '',
+          });
+        }
+        // Extra cantrips a choice grants (Primal Order: Magician). A count,
+        // not a named spell — the player still chooses which one — so it is
+        // recorded as a number and read by the capacity bar.
+        if (Number(adds.cantrip_bonus)) {
+          added.cantrip_bonus = (Number(added.cantrip_bonus) || 0) + Number(adds.cantrip_bonus);
+        }
         for (const a of (adds.armor || [])) {
           if (a === 'light')   next.prof_light_armor  = true;
           if (a === 'medium')  next.prof_medium_armor = true;
@@ -2337,9 +4252,19 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             String(s.name || '').toLowerCase() === sp.name.toLowerCase()
           );
           if (!has) {
+            // Granted spells often arrive as just a name. Take the level from
+            // the library rather than defaulting to 0 — that default is what
+            // made every subclass spell land as a cantrip.
+            const lib = spellLibraryByName?.get(String(sp.name).toLowerCase());
             next.spells = [
               ...(next.spells || []),
-              { id: Date.now() + Math.random(), name: sp.name, level: sp.level ?? 0, prepared: sp.prepared !== false, __source: tag },
+              {
+                id: Date.now() + Math.random(),
+                name: sp.name,
+                level: sp.level ?? lib?.level ?? 0,
+                prepared: sp.prepared !== false,
+                __source: tag,
+              },
             ];
             added.spells.push(sp.name);
           }
@@ -2376,6 +4301,23 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           }
           next.weapon_proficiencies = have.join(', ');
         }
+        if (choice.kind === 'multi-options') {
+          // Invocations, metamagic, manoeuvres. Each picked option becomes a
+          // trait on the sheet — that is what a player reads mid-session —
+          // and carries through any spell it grants, tagged like every other
+          // class grant so the revert takes it back off again.
+          for (const id of (pick.picks || [])) {
+            const opt = (choice.options || []).find((o) => o.id === id);
+            if (!opt) continue;
+            applyAdds({
+              traits: [{ name: opt.name, desc: opt.desc, category: 'specialAbility' }],
+              ...(opt.spells?.length
+                ? { spells: opt.spells.map((n) => ({ name: n, prepared: true })) }
+                : {}),
+            }, sourceTagFor(choice, id));
+          }
+        }
+
         if (choice.kind === 'multi-skills') {
           for (const sk of (pick.picks || [])) {
             if (!sk || !STAT_OF_SKILL[sk]) continue;
@@ -2446,6 +4388,17 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         for (const ab of prevAdded.saves) {
           const field = SAVE_FIELD[ab];
           if (field) next[field] = null;
+        }
+      }
+      // Ability bonuses the previous kit granted, taken back off. Subtracted
+      // rather than reset, so a stat the player raised by hand keeps that part
+      // and only the granted portion goes.
+      if (Array.isArray(prevAdded.abilities) && prevAdded.abilities.length) {
+        for (const ab of prevAdded.abilities) {
+          const statField = STAT_FIELD[String(ab.ability || '').toUpperCase()];
+          const amt = Number(ab.bonus) || 0;
+          if (!statField || !amt) continue;
+          next[statField] = (Number(next[statField]) || 10) - amt;
         }
       }
       // Languages granted by the previous class kit (Druidic, the
@@ -2538,7 +4491,16 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     setForm((f) => ({ ...f, [key]: [...(f[key] || []), { name: '', desc: '' }] }));
   }
   function listRemove(key, i) {
-    setForm((f) => ({ ...f, [key]: f[key].filter((_, idx) => idx !== i) }));
+    setForm((f) => {
+      const row = (f[key] || [])[i];
+      const next = { ...f, [key]: f[key].filter((_, idx) => idx !== i) };
+      // A feature that raised a stat when it was added gives it back when it
+      // goes. Driven off the stamp written at add time, so only the granted
+      // portion comes off — a score the player raised by hand on top of it
+      // keeps that part. Rows without a stamp are unaffected, which is every
+      // row in every other list this function serves.
+      return applyAbilityDelta(next, row?.__applied_abilities, -1);
+    });
   }
   function listChange(key, i, field, value) {
     setForm((f) => {
@@ -2589,7 +4551,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
   }
 
   function addInventoryItem() {
-    setForm((f) => ({ ...f, inventory: [...(f.inventory || []), { item_type: 'item', name: '', qty: 1, weight: '', desc: '', equipped: false, sheds_light: false, bright_ft: 20, dim_ft: 40, weapon_range: '', attack_stat: 'STR', attack_bonus_misc: 0, damage_entries: [{ damage: '', damage_type: '' }], properties: '' }] }));
+    setForm((f) => ({ ...f, inventory: [...(f.inventory || []), { item_type: 'item', name: '', qty: 1, weight: '', desc: '', equipped: false, sheds_light: false, bright_ft: 20, dim_ft: 40, weapon_range: '', attack_stat: 'STR', attack_bonus_misc: 0, damage_bonus_misc: 0, damage_entries: [{ damage: '', damage_type: '' }], properties: '' }] }));
   }
 
   function addDamageEntry(itemIdx) {
@@ -2610,6 +4572,30 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       return { ...f, inventory };
     });
   }
+  // Turn an inferred mode (the Thrown line we synthesise from the weapon's
+  // properties) into a stored row, so its dice, range and ability can be
+  // edited like any other.
+  function materialiseDamageMode(itemIdx, mode) {
+    setForm((f) => {
+      const inventory = [...f.inventory];
+      const item = inventory[itemIdx];
+      const entries = getDamageEntries(item);
+      inventory[itemIdx] = {
+        ...item,
+        damage_entries: [...entries, {
+          label: mode.label,
+          damage: mode.damage || '',
+          damage_type: mode.damage_type || '',
+          range: mode.range || '',
+          attack_stat: '',
+        }],
+        damage: undefined,
+        damage_type: undefined,
+      };
+      return { ...f, inventory };
+    });
+  }
+
   function updateDamageEntry(itemIdx, entryIdx, field, value) {
     setForm((f) => {
       const inventory = [...f.inventory];
@@ -2668,7 +4654,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
     setForm((f) => ({
       ...f,
       spells: (f.spells || []).map((s) => s.id === id
-        ? { ...s, type: s.type === 'combat' ? 'utility' : 'combat' }
+        ? { ...s, type: SPELL_TYPE_KEYS[(SPELL_TYPE_KEYS.indexOf(spellType(s.type).key) + 1) % SPELL_TYPE_KEYS.length] }
         : s),
     }));
   }
@@ -2715,10 +4701,20 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       return { ...f, spell_slots: { ...f.spell_slots, [level]: { total, used } } };
     });
   }
-  function setSlotUsed(level, used) {
+  // `total` is the effective total the boxes were drawn from, which may be the
+  // class-table value rather than anything saved on the sheet. Writing it back
+  // alongside `used` stops a tick on a derived level from persisting total: 0.
+  function setSlotUsed(level, used, total) {
     setForm((f) => {
       const prev = f.spell_slots[level] || { total: 0, used: 0 };
-      return { ...f, spell_slots: { ...f.spell_slots, [level]: { ...prev, used } } };
+      const cap = Number(total) || prev.total || 0;
+      return {
+        ...f,
+        spell_slots: {
+          ...f.spell_slots,
+          [level]: { ...prev, total: cap, used: Math.max(0, Math.min(cap, used)) },
+        },
+      };
     });
   }
 
@@ -2760,7 +4756,21 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         }
       }
 
-      const url = creature?.id ? `/api/creatures/${creature.id}` : '/api/creatures';
+      // WHO IS SAVING DECIDES WHAT COMES BACK.
+      //
+      // This asked as the GM unconditionally, which was right for the library
+      // — the form needs the secrets echoed back or the next save wipes them —
+      // and wrong everywhere else, because the same form is a player's own
+      // character sheet. A player's save claimed to be the GM, so the server
+      // treated their pack as authoritative: GM-only item text was sent to
+      // their browser, and anything the GM had hidden in their pack would have
+      // been deleted the first time they equipped a shield.
+      //
+      // Saving as a player instead is safe in both directions: the server
+      // reattaches the secrets and puts the hidden items back, which is what
+      // mergeSecrets and restoreHidden are for.
+      const gmQuery = asGm ? '?role=dm' : '';
+      const url = creature?.id ? `/api/creatures/${creature.id}${gmQuery}` : '/api/creatures';
       const method = creature?.id ? 'PUT' : 'POST';
       const res = await fetch(url, { method, body: fd });
       const text = await res.text();
@@ -2807,7 +4817,8 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         {/* ── BASIC TAB ─────────────────────────────── */}
         {activeTab === 'basic' && (
           <div className="space-y-4">
-            {/* Image upload */}
+            {/* Image upload — primary portrait, plus the alternate token art
+                strip below it. */}
             <div className="flex items-start gap-4">
               <div className="shrink-0">
                 <div
@@ -2822,6 +4833,12 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 </div>
                 <input id="creature-img" type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
                 <p className="text-xs text-gray-500 text-center mt-1">Click to upload</p>
+                <button
+                  type="button"
+                  onClick={() => { setTokenEditorTarget('primary'); setTokenEditorOpen(true); }}
+                  className="w-24 mt-1 text-[11px] text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded py-1"
+                  title="Build a token in the 2-Minute Tabletop editor without leaving this sheet"
+                >Token editor</button>
                 {imagePreview && (
                   <button
                     type="button"
@@ -2873,6 +4890,47 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                   <label className={labelClass}>Name *</label>
                   <input className={inputClass} placeholder="Goblin" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
                 </div>
+                {/* Free text with suggestions rather than a fixed dropdown —
+                    the common sets are one click away, anything else is just
+                    typed. Blank simply omits it from the stat block. */}
+                <div>
+                  <label className={labelClass}>Pronouns</label>
+                  {/* Free text, and visibly so. This was already a plain input
+                      with a datalist, but a datalist renders as a dropdown in
+                      some browsers and barely exists on iOS — players read it
+                      as a fixed list they had to pick from. The chips fill the
+                      field rather than constraining it, and the field itself
+                      takes anything. */}
+                  <input
+                    className={inputClass}
+                    placeholder="Type anything — e.g. they/them, xe/xem, name only"
+                    maxLength={50}
+                    value={form.pronouns || ''}
+                    onChange={(e) => setField('pronouns', e.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {PRONOUN_SUGGESTIONS.map((pr) => (
+                      <button
+                        key={pr}
+                        type="button"
+                        onClick={() => setField('pronouns', pr)}
+                        className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                          (form.pronouns || '') === pr
+                            ? 'bg-dnd-gold text-gray-900 border-dnd-gold font-semibold'
+                            : 'bg-gray-800 text-gray-300 border-gray-600 hover:border-dnd-gold/60'
+                        }`}
+                      >{pr}</button>
+                    ))}
+                    {!!(form.pronouns || '') && (
+                      <button
+                        type="button"
+                        onClick={() => setField('pronouns', '')}
+                        className="text-[11px] px-2 py-0.5 rounded-full border border-gray-700 text-gray-500 hover:text-gray-300"
+                        title="Leave blank to omit pronouns from the stat block"
+                      >clear</button>
+                    )}
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className={labelClass}>Size</label>
@@ -2892,7 +4950,18 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                         ? SIZES.filter((s) => allowed.includes(s.toLowerCase()))
                         : SIZES;
                       return (
-                        <select className={inputClass} value={form.size} onChange={(e) => setField('size', e.target.value)}>
+                        <select
+                          className={inputClass}
+                          value={form.size}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            setField('size', next);
+                            // Only gargantuan carries a footprint override, so
+                            // moving off it drops the value rather than leaving
+                            // a hidden number to reappear later.
+                            if (next !== 'gargantuan') setField('size_squares', null);
+                          }}
+                        >
                           {sizes.map((s) => <option key={s} value={s}>{SIZE_LABELS[s]}</option>)}
                         </select>
                       );
@@ -2905,8 +4974,524 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                     </select>
                   </div>
                 </div>
+
+                {/* Gargantuan is "20 feet or more", so its 4×4 is a floor, not a
+                    fixed footprint — a kraken and a tarrasque are both
+                    gargantuan and neither is 4 squares. Set here so every token
+                    spawned from this creature comes out the right size instead
+                    of being resized by hand each time it's placed. Blank falls
+                    back to the 4×4 default. */}
+                {form.size === 'gargantuan' && (
+                  <div className="mt-2">
+                    <label className={labelClass}>Footprint (squares)</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={4}
+                        max={40}
+                        step={0.5}
+                        className={`${inputClass} w-24`}
+                        value={form.size_squares ?? ''}
+                        placeholder="4"
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setField('size_squares', v === '' ? null : Number(v));
+                        }}
+                      />
+                      <span className="text-[11px] text-gray-500">
+                        {((Number(form.size_squares) || 4) * 5)} ft across
+                        {form.size_squares ? '' : ' (default)'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Swarm. `size` above stays the swarm's own footprint — a
+                    Medium swarm still occupies a Medium square — and this
+                    records how big the things inside it are. */}
+                <div className="mt-2">
+                  <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!form.is_swarm}
+                      onChange={(e) => setField('is_swarm', e.target.checked)}
+                      className="accent-dnd-gold"
+                    />
+                    Is a swarm
+                  </label>
+                  {form.is_swarm && (
+                    <div className="mt-1.5">
+                      <label className={labelClass}>Size of creatures in the swarm</label>
+                      <select
+                        className={inputClass}
+                        value={form.swarm_creature_size || 'tiny'}
+                        onChange={(e) => setField('swarm_creature_size', e.target.value)}
+                      >
+                        {SIZES.map((sz) => <option key={sz} value={sz}>{SIZE_LABELS[sz]}</option>)}
+                      </select>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        Reads as “{formatSizeType(form)}”. The Size field above is the swarm's own space.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Player-facing label defaults for tokens spawned from this
+                    creature. Set here so an unidentified horror is masked
+                    every time it's dropped, rather than hidden by hand on the
+                    map each session. Either can still be flipped per token
+                    afterwards, and combat reveals both regardless. */}
+                <div className="mt-3 pt-3 border-t border-gray-700">
+                  <div className="text-[11px] uppercase tracking-wider text-gray-400 mb-1.5">
+                    When placed on a map, hide from players
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!form.hide_token_name}
+                        onChange={(e) => setField('hide_token_name', e.target.checked)}
+                        className="accent-dnd-gold"
+                      />
+                      Name
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!form.hide_token_hp}
+                        onChange={(e) => setField('hide_token_hp', e.target.checked)}
+                        className="accent-dnd-gold"
+                      />
+                      Health bar
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1 leading-snug">
+                    Applies to new tokens only — ones already on a map keep what they have.
+                    A token in combat always shows both.
+                  </p>
+                </div>
+
+                {/* Wild Shape eligibility. A library-level tag rather than a
+                    permission: it filters the form picker on a druid's sheet
+                    down to things worth shifting into. Which forms a given
+                    druid may actually take is still their curated list. */}
+                {!isPlayerCharacter && (
+                  <div className="mt-3 pt-3 border-t border-gray-700">
+                    <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!form.wildshape_eligible}
+                        onChange={(e) => setField('wildshape_eligible', e.target.checked)}
+                        className="accent-emerald-500"
+                      />
+                      Available as a Wild Shape form
+                    </label>
+                    <p className="text-[11px] text-gray-500 mt-1 leading-snug">
+                      Shows this creature in the Wild Shape picker on druid sheets. You still choose
+                      which forms each druid gets.
+                    </p>
+                    {form.wildshape_eligible && (
+                      <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer mt-2">
+                        <input
+                          type="checkbox"
+                          checked={!!form.wildshape_keep_hp}
+                          onChange={(e) => setField('wildshape_keep_hp', e.target.checked)}
+                          className="accent-emerald-500"
+                        />
+                        Keeps the character's own hit points
+                      </label>
+                    )}
+                    {form.wildshape_eligible && (
+                      <p className="text-[11px] text-gray-500 mt-1 leading-snug">
+                        For forms like Circle of the Titan's Titan Forms, where your hit points don't
+                        change and the form only grants temporary hit points. Leave off for ordinary
+                        beasts, which replace your HP with the beast's.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* Alternate token art. The first tile is always the primary
+                portrait shown above; the rest are extras the GM picks between
+                when placing a token, so a pack of wolves isn't six copies of
+                one picture. */}
+            <div className="border border-gray-700 rounded-lg p-3 bg-gray-900/40">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div>
+                  <label className={labelClass}>Token images</label>
+                  <p className="text-[11px] text-gray-500 leading-tight">
+                    Pick between these when you drop a token on the map.
+                  </p>
+                </div>
+                {creatureId && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={altBusy}
+                      onClick={() => document.getElementById('creature-alt-imgs').click()}
+                      className="text-xs bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-600 rounded px-3 py-1.5 text-gray-200 shrink-0"
+                    >{altBusy ? 'Working…' : '+ Add images'}</button>
+                    <input
+                      id="creature-alt-imgs"
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleAltUpload}
+                    />
+                  </>
+                )}
+              </div>
+
+              {!creatureId ? (
+                <p className="text-[11px] text-gray-500">Save this creature first, then add extra token art.</p>
+              ) : altImages.length === 0 ? (
+                <p className="text-[11px] text-gray-500">No images yet.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {altImages.map((img) => (
+                    <div
+                      key={img.is_primary ? 'primary' : img.id}
+                      className={`relative w-16 h-16 rounded-lg overflow-hidden border-2 ${
+                        img.is_primary ? 'border-dnd-gold' : 'border-gray-700'
+                      }`}
+                      title={img.is_primary ? 'Primary — shown on the stat block' : 'Alternate token art'}
+                    >
+                      <img src={`/uploads/${img.image_path}`} alt="" className="w-full h-full object-cover" />
+                      {img.is_primary ? (
+                        <span className="absolute bottom-0 inset-x-0 bg-dnd-gold/90 text-gray-900 text-[9px] font-semibold text-center leading-tight">
+                          Primary
+                        </span>
+                      ) : (
+                        <div className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            disabled={altBusy}
+                            onClick={() => startAltReframe(img)}
+                            className="text-[9px] bg-gray-200 text-gray-900 rounded px-1.5 py-0.5 font-semibold disabled:opacity-50"
+                          >Adjust</button>
+                          <button
+                            type="button"
+                            disabled={altBusy}
+                            onClick={() => handleAltMakePrimary(img)}
+                            className="text-[9px] bg-dnd-gold text-gray-900 rounded px-1.5 py-0.5 font-semibold disabled:opacity-50"
+                          >Make primary</button>
+                          <button
+                            type="button"
+                            disabled={altBusy}
+                            onClick={() => handleAltDelete(img)}
+                            className="text-[9px] bg-red-700 hover:bg-red-600 text-white rounded px-1.5 py-0.5 disabled:opacity-50"
+                          >Remove</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {altError && <p className="text-[11px] text-red-400 mt-2">{altError}</p>}
+            </div>
+
+            {/* Presentation art — the full picture players get shown, as
+                opposed to the cropped token face above. */}
+            <div className="border border-gray-700 rounded-lg p-3 bg-gray-900/40">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div>
+                  <label className={labelClass}>Presentation art</label>
+                  <p className="text-[11px] text-gray-500 leading-tight">
+                    Shown full-screen by "Show image to players". Falls back to the token art when empty.
+                  </p>
+                </div>
+                {creatureId && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={displayBusy}
+                      onClick={() => document.getElementById('creature-display-img').click()}
+                      className="text-xs bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-600 rounded px-3 py-1.5 text-gray-200 shrink-0"
+                    >{displayBusy ? 'Working…' : displayArt ? 'Replace' : '+ Add artwork'}</button>
+                    <input
+                      id="creature-display-img"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleDisplayArtUpload}
+                    />
+                  </>
+                )}
+              </div>
+
+              {!creatureId ? (
+                <p className="text-[11px] text-gray-500">Save this creature first, then add its artwork.</p>
+              ) : !displayArt ? (
+                <p className="text-[11px] text-gray-500">None — players will be shown the token image.</p>
+              ) : (
+                <div className="flex items-start gap-3">
+                  <img
+                    src={`/uploads/${displayArt}`}
+                    alt=""
+                    className="max-h-40 rounded-lg border border-gray-700 object-contain"
+                  />
+                  <button
+                    type="button"
+                    disabled={displayBusy}
+                    onClick={handleDisplayArtRemove}
+                    className="text-[11px] bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white rounded px-2 py-1"
+                  >Remove</button>
+                </div>
+              )}
+            </div>
+
+            {/* 3D standing art — only the 3D view uses this. */}
+            <div className="border border-gray-700 rounded-lg p-3 bg-gray-900/40">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div>
+                  <label className={labelClass}>3D standing art</label>
+                  <p className="text-[11px] text-gray-500 leading-tight">
+                    Used only in the 3D view, where the token stands up facing the camera.
+                    The flat map always keeps the token face above. Falls back to it when empty.
+                    Add as many looks as you like — armoured, wounded, wild shaped — and click
+                    one to put it on the board.
+                  </p>
+                </div>
+                {creatureId && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      disabled={standeeBusy}
+                      onClick={() => { setTokenEditorTarget('standee'); setTokenEditorOpen(true); }}
+                      title="Build one in the 2-Minute Tabletop editor"
+                      className="text-xs bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-600 rounded px-3 py-1.5 text-gray-200"
+                    >Token editor</button>
+                    <button
+                      type="button"
+                      disabled={standeeBusy}
+                      onClick={() => document.getElementById('creature-standee-img').click()}
+                      title="Add one or more looks — you can switch between them at any time"
+                      className="text-xs bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-600 rounded px-3 py-1.5 text-gray-200"
+                    >{standeeBusy ? 'Working…' : '+ Add artwork'}</button>
+                    {standeeArt && (
+                      <button
+                        type="button"
+                        disabled={standeeBusy}
+                        onClick={startStandeeReframe}
+                        title="Pan and zoom — set how much of the frame the figure fills, and so how big it stands"
+                        className="text-xs bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-600 rounded px-3 py-1.5 text-gray-200"
+                      >Adjust</button>
+                    )}
+                    <input
+                      id="creature-standee-img"
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleStandeeGalleryUpload}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {!creatureId ? (
+                <p className="text-[11px] text-gray-500">Save this creature first, then add its standing art.</p>
+              ) : standeeGallery.length === 0 ? (
+                <p className="text-[11px] text-gray-500">None — the 3D view will stand up the token face.</p>
+              ) : (
+                <>
+                  {/* The wardrobe. The one on the board reads as selected; the
+                      rest are one click from taking its place. Ordered with the
+                      live one first, so "what is standing right now" is always
+                      the leftmost tile rather than something to hunt for. */}
+                  <div className="flex flex-wrap gap-2">
+                    {standeeGallery.map((img) => {
+                      const live = img.is_primary;
+                      return (
+                        <div
+                          key={img.id ?? 'live'}
+                          className={`relative rounded-lg border p-1 ${
+                            live ? 'border-dnd-gold ring-1 ring-dnd-gold/50' : 'border-gray-700'
+                          }`}
+                          style={{
+                            // Checkered behind it, because a standee usually has
+                            // a cut-out background and a transparent PNG on a
+                            // dark panel looks like a black rectangle.
+                            backgroundImage:
+                              'linear-gradient(45deg,#4b5563 25%,transparent 25%),linear-gradient(-45deg,#4b5563 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#4b5563 75%),linear-gradient(-45deg,transparent 75%,#4b5563 75%)',
+                            backgroundSize: '12px 12px',
+                            backgroundPosition: '0 0,0 6px,6px -6px,-6px 0',
+                          }}
+                        >
+                          <img src={`/uploads/${img.image_path}`} alt="" className="h-32 object-contain" />
+
+                          {live ? (
+                            <span className="absolute top-1 left-1 text-[9px] font-bold uppercase tracking-wide bg-dnd-gold text-gray-900 rounded px-1.5 py-0.5">
+                              On the board
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={standeeBusy}
+                              onClick={() => useStandee(img.id)}
+                              title="Stand this one up on the board"
+                              className="absolute inset-x-1 bottom-1 text-[10px] font-semibold bg-gray-900/90 hover:bg-dnd-gold hover:text-gray-900 disabled:opacity-50 text-gray-100 rounded py-1 transition-colors"
+                            >Use this</button>
+                          )}
+
+                          <button
+                            type="button"
+                            disabled={standeeBusy}
+                            onClick={() => (live ? handleStandeeRemove() : removeShelvedStandee(img.id))}
+                            title={live ? 'Remove the standing art entirely' : 'Delete this look'}
+                            className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center text-[11px] leading-none bg-red-700/90 hover:bg-red-600 disabled:opacity-50 text-white rounded"
+                          >×</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-2">
+                    Switching takes effect for everyone as soon as you click — no need to save the sheet.
+                  </p>
+                </>
+              )}
+            </div>
+
+            {/* Token height — 3D only. */}
+            <div className="border border-gray-700 rounded-lg p-3 bg-gray-900/40">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <label className={labelClass}>Token height (3D)</label>
+                  <p className="text-[11px] text-gray-500 leading-tight">
+                    How tall this token stands, in feet. Size category sets the
+                    footprint — a halfling and a human share one square — so this is
+                    what makes a short character look short. Leave blank to size it
+                    from the artwork.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <input
+                    type="number"
+                    min={0.5} max={60} step={0.5}
+                    placeholder="auto"
+                    value={form.token_height_ft ?? ''}
+                    onChange={(e) => setField('token_height_ft',
+                      e.target.value === '' ? '' : Number(e.target.value))}
+                    className={`w-20 ${inputClass}`}
+                    title="Height in feet"
+                  />
+                  <span className="text-xs text-gray-500">ft</span>
+                </div>
+              </div>
+              {/* The heights people actually reach for, so nobody has to look
+                  up how tall a gnome is mid-session. */}
+              <div className="flex flex-wrap gap-1 mt-2">
+                {[['Gnome / halfling', 3], ['Dwarf', 4], ['Human', 6], ['Half-orc', 6.5],
+                  ['Goliath', 8], ['Ogre', 10]].map(([label, ft]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setField('token_height_ft', ft)}
+                    className={`text-[10px] px-2 py-1 rounded border transition-colors ${
+                      Number(form.token_height_ft) === ft
+                        ? 'bg-dnd-gold/20 border-dnd-gold text-dnd-gold'
+                        : 'bg-gray-800 border-gray-600 text-gray-300 hover:text-white hover:border-gray-500'
+                    }`}
+                  >{label} · {ft}ft</button>
+                ))}
+                {form.token_height_ft !== '' && form.token_height_ft != null && (
+                  <button
+                    type="button"
+                    /* Empty string, not null: handleSubmit skips nulls, so a
+                       null would leave the saved height in place. */
+                    onClick={() => setField('token_height_ft', '')}
+                    className="text-[10px] px-2 py-1 rounded border border-gray-600 bg-gray-800 text-gray-400 hover:text-white"
+                  >Auto</button>
+                )}
+              </div>
+            </div>
+
+            {/* Base ring — 3D only, like the standing art above it. */}
+            {(() => {
+            // An unset ring is `undefined` on a creature that never had one and
+            // `''` on one that has just been reset — the save skips nulls, so
+            // clearing has to travel as an empty string, which the API turns
+            // back into NULL. Both mean "use the default".
+            const ringUnset = (v) => v === '' || v === null || v === undefined;
+            const ringColor = ringUnset(form.base_color)
+              ? (isPlayerCharacter ? '#4f8fff' : '#ff6b6b')
+              : form.base_color;
+            const ringOpacity = ringUnset(form.base_opacity) ? 70 : Number(form.base_opacity);
+            const ringCustom = !ringUnset(form.base_color) || !ringUnset(form.base_opacity);
+            return (
+            <div className="border border-gray-700 rounded-lg p-3 bg-gray-900/40">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <label className={labelClass}>Base ring</label>
+                  <p className="text-[11px] text-gray-500 leading-tight">
+                    The ring drawn on the floor under this token in the 3D view.
+                    Leave it unset for the default — blue for a player, red otherwise.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <label className="flex flex-col items-center gap-1">
+                    <span className="text-[10px] text-gray-400">Colour</span>
+                    <input
+                      type="color"
+                      value={ringColor}
+                      onChange={(e) => setField('base_color', e.target.value)}
+                      className="w-10 h-8 bg-gray-800 border border-gray-600 rounded cursor-pointer p-0.5"
+                      title="Ring colour"
+                    />
+                  </label>
+                  <label className="flex flex-col items-center gap-1">
+                    <span className="text-[10px] text-gray-400">
+                      Opacity {ringOpacity}%
+                    </span>
+                    <input
+                      type="range"
+                      min={0} max={100} step={5}
+                      value={ringOpacity}
+                      onChange={(e) => setField('base_opacity', parseInt(e.target.value, 10))}
+                      className="w-28 accent-dnd-gold"
+                      title="How solid the ring is"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 mt-2">
+                {/* On a checkerboard, because the whole point of the control is
+                    how much of the floor shows through. */}
+                <div
+                  className="rounded p-1.5 border border-gray-700"
+                  style={{
+                    backgroundImage:
+                      'linear-gradient(45deg,#4b5563 25%,transparent 25%),linear-gradient(-45deg,#4b5563 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#4b5563 75%),linear-gradient(-45deg,transparent 75%,#4b5563 75%)',
+                    backgroundSize: '10px 10px',
+                    backgroundPosition: '0 0,0 5px,5px -5px,-5px 0',
+                  }}
+                >
+                  <div
+                    className="w-10 h-10 rounded-full"
+                    style={{
+                      backgroundColor: ringColor,
+                      opacity: ringOpacity / 100,
+                    }}
+                  />
+                </div>
+                {ringCustom && (
+                  <button
+                    type="button"
+                    /* Empty string, not null: handleSubmit skips null fields
+                       entirely, so a null would leave the saved value in place
+                       and the reset would appear to do nothing. */
+                    onClick={() => { setField('base_color', ''); setField('base_opacity', ''); }}
+                    className="text-[11px] text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded px-2 py-1"
+                  >Reset to default</button>
+                )}
+              </div>
+            </div>
+            );
+            })()}
 
             {/* For player characters the Subtype field is fed by the
                 Race Picker below — no freeform input needed. Non-PC
@@ -2968,16 +5553,20 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                       className={inputClass}
                       value={raceId}
                       onChange={(e) => setRaceId(e.target.value)}
-                      disabled={!racePickerHasTypes || racePickerRaces.length === 0}
+                      disabled={racePickerRaces.length === 0}
                     >
                       <option value="">
-                        {!racePickerHasTypes
-                          ? 'No races for this Type'
-                          : racePickerRaces.length === 0
-                            ? 'None imported yet'
-                            : 'Choose a race…'}
+                        {racePickerRaces.length === 0
+                          ? 'None imported yet'
+                          : 'Choose a race…'}
                       </option>
-                      {racePickerRaces.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      {racePickerRaces.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {raceEdition === 'all' && r.edition
+                            ? `${r.name} (${editionLabel(r.edition)})`
+                            : r.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -3052,6 +5641,28 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
               );
             })()}
 
+            {/* Speed — sits under the race because the race is what sets it.
+                Applying a race writes these fields, so seeing them here shows
+                the player what the choice just did. */}
+            <div>
+              <h4 className="text-sm font-semibold text-dnd-gold mb-2">Speed (feet)</h4>
+              <div className="grid grid-cols-5 gap-2">
+                {['walk','fly','swim','burrow','climb'].map((type) => (
+                  <div key={type}>
+                    <label className={labelClass}>{type.charAt(0).toUpperCase()+type.slice(1)}</label>
+                    <input
+                      type="number"
+                      className={smallInputClass + ' w-full'}
+                      value={form[`speed_${type}`]}
+                      min={0}
+                      step={5}
+                      onChange={(e) => setField(`speed_${type}`, parseInt(e.target.value) || 0)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {isPlayerCharacter && (
               <>
                 <div className="grid grid-cols-2 gap-3">
@@ -3108,11 +5719,14 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 {form.char_class && (() => {
                   const build = cachedClassBuild;
                   if (!build) return null;
-                  const sa = build.startingEquipment || {};
-                  const optA = sa.optionA?.items?.length
-                    ? `${sa.optionA.items.join(', ')}${sa.optionA.gp ? ` + ${sa.optionA.gp} gp` : ''}`
-                    : null;
-                  const optB = sa.optionB?.gp ? `${sa.optionB.gp} gp` : null;
+                  // Every option the class prints, not just two: the Fighter
+                  // offers a third, and an option can be gear AND gold.
+                  const options = startingEquipmentOptions(build).map((o) => ({
+                    id: o.id,
+                    text: o.items?.length
+                      ? `${o.items.join(', ')}${o.gp ? ` + ${o.gp} gp` : ''}`
+                      : `${o.gp} gp`,
+                  }));
                   const claimed = form.class_state?.starting_equipment || null;
                   return (
                     <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 text-xs space-y-1">
@@ -3122,31 +5736,23 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                       <div><span className="text-gray-400">Saving Throws: </span>{(build.saves || []).join(', ')}</div>
                       <div><span className="text-gray-400">Armor Training: </span>{(build.armor || []).join(', ') || '—'}</div>
                       <div><span className="text-gray-400">Weapons: </span>{(build.weapons || []).join(', ')}</div>
-                      {(optA || optB) && (
+                      {options.length > 0 && (
                         <div className="pt-1 mt-1 border-t border-gray-700 space-y-1">
-                          <div className="text-gray-400">Starting Equipment</div>
-                          {optA && (
-                            <div className="ml-2 flex items-start gap-2">
+                          <div className="text-gray-400">
+                            Starting Equipment
+                            <span className="text-gray-500"> — choose {options.map((o) => o.id).join(', ')}</span>
+                          </div>
+                          {options.map((o) => (
+                            <div key={o.id} className="ml-2 flex items-start gap-2">
                               <button type="button"
                                 disabled={!!claimed}
-                                onClick={() => applyStartingEquipment('A')}
+                                onClick={() => applyStartingEquipment(o.id)}
                                 className="text-[10px] bg-dnd-gold/30 hover:bg-dnd-gold/50 disabled:bg-gray-700 disabled:text-gray-500 border border-dnd-gold/50 px-2 py-0.5 rounded shrink-0">
-                                {claimed === 'A' ? 'Taken' : 'Take A'}
+                                {claimed === o.id ? 'Taken' : `Take ${o.id}`}
                               </button>
-                              <span><span className="text-gray-500">A:</span> {optA}</span>
+                              <span><span className="text-gray-500">{o.id}:</span> {o.text}</span>
                             </div>
-                          )}
-                          {optB && (
-                            <div className="ml-2 flex items-start gap-2">
-                              <button type="button"
-                                disabled={!!claimed}
-                                onClick={() => applyStartingEquipment('B')}
-                                className="text-[10px] bg-dnd-gold/30 hover:bg-dnd-gold/50 disabled:bg-gray-700 disabled:text-gray-500 border border-dnd-gold/50 px-2 py-0.5 rounded shrink-0">
-                                {claimed === 'B' ? 'Taken' : 'Take B'}
-                              </button>
-                              <span><span className="text-gray-500">B:</span> {optB}</span>
-                            </div>
-                          )}
+                          ))}
                           {claimed && (
                             <p className="text-[10px] text-gray-500 ml-2">
                               Equipment + gold added to inventory. Sell or drop unused items manually.
@@ -3157,6 +5763,68 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                     </div>
                   );
                 })()}
+
+                {/* Hit points — under the class, which is what decides the
+                    hit die they come from. */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelClass}>Hit Points (avg)</label>
+                    <input type="number" className={inputClass} value={form.hit_points} min={1} onChange={(e) => setField('hit_points', parseInt(e.target.value) || 1)} />
+                    {/* WHERE THE EXTRA HIT POINTS CAME FROM.
+                        This box takes a total and says nothing about how it was
+                        reached, so the hit points a feat or a species adds —
+                        quietly, every level — were worked out on paper or got
+                        forgotten. Shown beside the number rather than in a
+                        panel of its own: it is only ever read while typing
+                        here. */}
+                    {(() => {
+                      const hp = maxHitPoints(form, cachedHitDicePool, form.hit_dice_bonus);
+                      if (!hp.rows.length) return null;
+                      const matches = Number(form.hit_points) === hp.total;
+                      return (
+                        <div className="mt-1.5 rounded-lg bg-gray-800/60 border border-gray-700 px-2 py-1.5">
+                          <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">
+                            If every die rolled its best
+                          </div>
+                          {hp.rows.map((r) => (
+                            <div key={r.label} className="flex items-baseline justify-between gap-2 text-[11px]">
+                              <span className="text-gray-400 truncate">{r.label}</span>
+                              <span className={`shrink-0 ${r.value < 0 ? 'text-red-300' : 'text-emerald-300'}`}>
+                                {r.value >= 0 ? '+' : ''}{r.value}
+                              </span>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setField('hit_points', hp.total)}
+                            disabled={matches}
+                            // Sets the box rather than replacing it: the number
+                            // stays the GM's to overrule, and a character whose
+                            // player rolled their dice should keep what they
+                            // rolled.
+                            className={`mt-1.5 w-full py-1.5 rounded-lg text-[11px] font-semibold border transition-colors ${
+                              matches
+                                ? 'bg-gray-800/50 border-gray-700 text-gray-500'
+                                : 'bg-emerald-900/50 border-emerald-700 text-emerald-100 active:bg-emerald-800'
+                            }`}
+                          >
+                            {matches ? `Already ${hp.total}` : `Set to ${hp.total}`}
+                          </button>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <div>
+                    <HitDiceEditor
+                      pool={form.hit_dice_pool}
+                      bonus={form.hit_dice_bonus}
+                      derived={derivedHitDicePool}
+                      isPlayerCharacter
+                      onChange={applyHitDice}
+                      labelClass={labelClass}
+                    />
+                  </div>
+                </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -3266,6 +5934,29 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                     + mcs.reduce((acc, m) => acc + (Number(m.level) || 0), 0);
                   return (
                     <>
+                      {/* Which edition's rules the class is built on.
+                          Only shown when the class actually has options that
+                          differ between editions, so it does not become a
+                          question every character has to answer. */}
+                      {[...optionGroupsForClass(form.char_class), ...extraOptionGroupsForClass(form.char_class)].some(
+                        (g) => Object.keys(g.editions || {}).length > 1
+                      ) && (
+                        <label className="flex items-center gap-2 text-xs text-gray-300">
+                          <span className="shrink-0">Class rules</span>
+                          <select
+                            value={classEdition}
+                            onChange={(e) => setClassEdition(e.target.value)}
+                            className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                          >
+                            <option value="srd2024">2024</option>
+                            <option value="srd2014">2014</option>
+                          </select>
+                          <span className="text-[10px] text-gray-500 truncate">
+                            decides which options this class offers
+                          </span>
+                        </label>
+                      )}
+
                       <ClassChoicesPicker
                         charClass={form.char_class}
                         charLevel={form.char_level}
@@ -3339,6 +6030,34 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                   );
                 })()}
               </>
+            )}
+
+            {isPlayerCharacter && (
+              <ClassFeatures
+                form={form}
+                onAppendFeatures={(items) =>
+                  setForm((f) => appendFeaturesWithGrants(f, items))
+                }
+              />
+            )}
+
+            {isPlayerCharacter && (
+              <SubclassFeatures
+                form={form}
+                onAppendFeatures={(items) =>
+                  setForm((f) => appendFeaturesWithGrants(f, items))
+                }
+              />
+            )}
+
+            {isPlayerCharacter && (
+              <WildShapeForms
+                value={form.wildshape_forms}
+                onChange={(ids) => setField('wildshape_forms', ids)}
+                druidLevel={druidLevelOfForm(form)}
+                subclass={form.char_subclass}
+                tempHp={wildShapeTempHp(druidLevelOfForm(form), form.char_subclass)}
+              />
             )}
 
             {isPlayerCharacter && (
@@ -3528,12 +6247,31 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                               title="Grant the die to another character"
                             >Grant →</button>
                           )}
+                          {/* A pool (e.g. the Abjurer's Arcane Ward) soaks
+                              damage in chunks, so it gets a number box —
+                              clicking − eight times for an 8-damage hit is
+                              nobody's idea of a good time. */}
+                          {def.pool && (
+                            <input
+                              type="number"
+                              min={0}
+                              max={total}
+                              value={remaining === Infinity ? '' : remaining}
+                              onChange={(e) => {
+                                const left = Math.max(0, Math.min(total, Number(e.target.value) || 0));
+                                setUsed(def.id, total - left);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-16 bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-xs text-white text-center"
+                              title="Points left in the pool"
+                            />
+                          )}
                           <button
                             type="button"
                             disabled={total !== Infinity && used >= total}
                             onClick={() => setUsed(def.id, used + 1)}
                             className="w-7 h-7 rounded bg-red-900/40 hover:bg-red-800/60 disabled:opacity-30 border border-red-800 text-red-200 leading-none"
-                            title="Use one"
+                            title={def.pool ? 'Absorb 1 damage' : 'Use one'}
                           >−</button>
                           <span className="font-mono text-gray-100 min-w-[64px] text-center">
                             {remaining === Infinity ? '∞' : remaining} / {totalLabel}
@@ -3688,9 +6426,30 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className={labelClass}>Armor Class</label>
-                <input type="number" className={inputClass} value={form.armor_class} min={1} onChange={(e) => setField('armor_class', parseInt(e.target.value) || 10)} />
+                {isPlayerCharacter ? (
+                  // Derived from equipment + DEX, so it can't fall out of step
+                  // with what the character is wearing. Adjustments go in the
+                  // Bonus field beside it.
+                  <div className={`${inputClass} flex items-center justify-between bg-gray-800/70 cursor-not-allowed`} title="Calculated from equipped armor, shield and DEX. Use Bonus to adjust.">
+                    <span className="font-mono">{form.armor_class}</span>
+                    <span className="text-[10px] text-gray-500 uppercase tracking-wide">auto</span>
+                  </div>
+                ) : (
+                  <input type="number" className={inputClass} value={form.armor_class} min={1} onChange={(e) => setField('armor_class', parseInt(e.target.value) || 10)} />
+                )}
               </div>
-              <div className="col-span-2">
+              <div>
+                <label className={labelClass}>AC Bonus</label>
+                <input
+                  type="number"
+                  className={inputClass}
+                  placeholder="0"
+                  title="Flat adjustment added on top — cover, a class feature, a ruling."
+                  value={form.ac_misc_bonus ?? 0}
+                  onChange={(e) => setField('ac_misc_bonus', parseInt(e.target.value) || 0)}
+                />
+              </div>
+              <div>
                 <label className={labelClass}>AC Description</label>
                 <input className={inputClass} placeholder="natural armor" value={form.armor_desc} onChange={(e) => setField('armor_desc', e.target.value)} />
               </div>
@@ -3701,7 +6460,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 Class field via the useEffect below, so the stat
                 block / iOS stays in lockstep. */}
             {(() => {
-              const calc = computeAcFromGear(form);
+              const calc = computeAcFromGear(form, isPlayerCharacter);
               if (!calc) return null;
               return (
                 <div className="bg-gray-800 border border-emerald-700/40 rounded-lg p-3 space-y-1.5">
@@ -3712,33 +6471,67 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                   <div className="text-[11px] text-gray-400 font-mono">
                     {calc.parts.join(' + ')} = {calc.total}
                   </div>
+                  {(() => {
+                    const nat = naturalArmorOf(form);
+                    if (!nat) return null;
+                    return (
+                      <div className="text-[11px] text-amber-300/90 leading-snug">
+                        Natural armor: AC {nat.base}
+                        {nat.ability
+                          ? ` + ${nat.ability.slice(0, 3).toUpperCase()}`
+                          : ' (DEX does not apply)'}
+                        {nat.blocksArmor
+                          ? '. Body armor can\'t be worn — shields, helmets, gauntlets and worn magic items still count.'
+                          : '. Used when it beats what this character is wearing.'}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })()}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={labelClass}>Hit Points (avg)</label>
-                <input type="number" className={inputClass} value={form.hit_points} min={1} onChange={(e) => setField('hit_points', parseInt(e.target.value) || 1)} />
+            {/* Player characters set hit points on the Basic tab, right
+                under the class that decides the hit die. Monsters and NPCs
+                have no class picker there, so they keep the fields here. */}
+            {!isPlayerCharacter && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Hit Points (avg)</label>
+                  <input type="number" className={inputClass} value={form.hit_points} min={1} onChange={(e) => setField('hit_points', parseInt(e.target.value) || 1)} />
+                </div>
+                <div>
+                  <HitDiceEditor
+                    pool={form.hit_dice_pool}
+                    bonus={form.hit_dice_bonus}
+                    derived={derivedHitDicePool}
+                    onChange={applyHitDice}
+                    labelClass={labelClass}
+                  />
+                </div>
               </div>
-              <div>
-                <label className={labelClass}>Hit Dice {isPlayerCharacter ? '(freeform)' : ''}</label>
-                <input className={inputClass} placeholder="5d8+10" value={form.hit_dice} onChange={(e) => setField('hit_dice', e.target.value)} />
-              </div>
-            </div>
+            )}
 
-            {isPlayerCharacter && (() => {
+            {(isPlayerCharacter || cachedHitDicePool.length > 0) && (() => {
               const pool = cachedHitDicePool;
+              const onAuto = normalizeHitDicePool(form.hit_dice_pool).length === 0;
               const usedMap = (form.hit_dice_used_by_type && typeof form.hit_dice_used_by_type === 'object')
                 ? form.hit_dice_used_by_type : {};
               return (
                 <div className="bg-gray-800 rounded-lg p-3 space-y-2">
                   <div className="flex items-baseline justify-between gap-2">
                     <h4 className="text-sm font-semibold text-dnd-gold">Hit Dice Pool</h4>
-                    <span className="text-xs text-gray-500">Auto from class + multiclasses</span>
+                    <span className="text-xs text-gray-500">
+                      {onAuto
+                        ? (isPlayerCharacter ? 'Auto from class + multiclasses' : 'From the hit-dice formula')
+                        : 'Set by hand above'}
+                    </span>
                   </div>
                   {pool.length === 0 ? (
-                    <p className="text-xs text-gray-500">Pick a class to populate the pool.</p>
+                    <p className="text-xs text-gray-500">
+                      {isPlayerCharacter
+                        ? 'Pick a class, or add a die type above, to populate the pool.'
+                        : 'Add a die type above to populate the pool.'}
+                    </p>
                   ) : (
                     <div className="space-y-1">
                       {pool.map(({ type, qty }) => {
@@ -3769,25 +6562,6 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 </div>
               );
             })()}
-
-            <div>
-              <h4 className="text-sm font-semibold text-dnd-gold mb-2">Speed (feet)</h4>
-              <div className="grid grid-cols-5 gap-2">
-                {['walk','fly','swim','burrow','climb'].map((type) => (
-                  <div key={type}>
-                    <label className={labelClass}>{type.charAt(0).toUpperCase()+type.slice(1)}</label>
-                    <input
-                      type="number"
-                      className={smallInputClass + ' w-full'}
-                      value={form[`speed_${type}`]}
-                      min={0}
-                      step={5}
-                      onChange={(e) => setField(`speed_${type}`, parseInt(e.target.value) || 0)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -3826,7 +6600,12 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         {/* ── ABILITY SCORES TAB ─────────────────────── */}
         {activeTab === 'abilities' && (
           <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-dnd-gold">Ability Scores</h4>
+            <div className="flex items-baseline justify-between gap-2">
+              <h4 className="text-sm font-semibold text-dnd-gold">Ability Scores</h4>
+              <span className="text-[11px] text-gray-500">
+                Type your base score — bonuses are listed under it
+              </span>
+            </div>
             <div className="grid grid-cols-3 gap-4">
               {[
                 { key: 'strength', label: 'STR' },
@@ -3835,21 +6614,57 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 { key: 'intelligence', label: 'INT' },
                 { key: 'wisdom', label: 'WIS' },
                 { key: 'charisma', label: 'CHA' },
-              ].map(({ key, label }) => (
-                <div key={key} className="bg-gray-800 rounded-xl p-3 text-center border border-gray-700">
-                  <div className="text-xs text-gray-400 font-semibold mb-1">{label}</div>
-                  <input
-                    type="number"
-                    className="w-full bg-transparent text-center text-2xl font-bold text-white focus:outline-none"
-                    value={form[key]}
-                    min={1}
-                    max={30}
-                    onChange={(e) => setField(key, parseInt(e.target.value) || 10)}
-                  />
-                  <div className="text-sm text-dnd-gold mt-1">{fmtMod(mod(form[key]))}</div>
-                </div>
-              ))}
+              ].map(({ key, label }) => {
+                // The form column is the FINAL score, so the base the player
+                // rolled or bought is that total minus everything a
+                // background / class / feature put on top. Editing the base
+                // writes total = base + bonuses, which keeps the derived
+                // numbers (saves, skills, AC) reading one field as before.
+                const sources = abilityBonusSources[key] || [];
+                const bonus = sources.reduce((acc, s) => acc + s.amount, 0);
+                const total = Number(form[key]) || 0;
+                const base = total - bonus;
+                return (
+                  <div key={key} className="bg-gray-800 rounded-xl p-3 text-center border border-gray-700">
+                    <div className="text-xs text-gray-400 font-semibold mb-1">{label}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-gray-500">Base</div>
+                    <input
+                      type="number"
+                      className="w-full bg-transparent text-center text-2xl font-bold text-white focus:outline-none"
+                      value={base}
+                      min={1}
+                      max={30}
+                      onChange={(e) => {
+                        const nextBase = parseInt(e.target.value);
+                        setField(key, (isNaN(nextBase) ? 10 : nextBase) + bonus);
+                      }}
+                    />
+                    {sources.length > 0 && (
+                      <div className="mt-1 space-y-0.5 text-left">
+                        {sources.map((sdef, i) => (
+                          <div key={`${sdef.label}-${i}`}
+                            className="flex items-baseline justify-between gap-1 text-[10px] leading-tight">
+                            <span className="text-emerald-300 font-mono shrink-0">
+                              {sdef.amount > 0 ? `+${sdef.amount}` : sdef.amount}
+                            </span>
+                            <span className="text-gray-400 truncate" title={sdef.label}>{sdef.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-1 pt-1 border-t border-gray-700">
+                      <div className="text-[10px] uppercase tracking-wider text-gray-500">Total</div>
+                      <div className="text-lg font-bold text-white leading-tight">{total}</div>
+                      <div className="text-sm text-dnd-gold">{fmtMod(mod(total))}</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+            <p className="text-xs text-gray-500">
+              Background and class bonuses are applied by their pickers on the Basic tab.
+              Change a background there to move its points.
+            </p>
           </div>
         )}
 
@@ -3885,6 +6700,13 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 {SKILLS.map(({ key, label, stat }) => {
                   const proficient = form[key] !== null && form[key] !== undefined;
                   const expert = !!(form.skill_expertise && form.skill_expertise[key]);
+                  // Flat feature bonuses (Primal Order, Divine Order) are not
+                  // proficiency and are not stored in the column, so the number
+                  // on the right has to add them in — otherwise the editor
+                  // disagrees with the player's own sheet.
+                  const featureBonus = skillFeatureBonuses.get(key) || null;
+                  const shown = (proficient ? Number(form[key]) : mod(form[stat]))
+                    + (featureBonus ? featureBonus.total : 0);
                   return (
                     <div key={key} className="flex items-center gap-2 p-1.5 rounded hover:bg-gray-800">
                       <label className="flex items-center cursor-pointer" title="Proficient">
@@ -3904,10 +6726,17 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                           className="accent-purple-400"
                         />
                       </label>
-                      <span className="text-sm text-gray-200 flex-1">{label}{expert && <span className="text-xs text-purple-400 ml-1">(exp)</span>}</span>
+                      <span className="text-sm text-gray-200 flex-1">
+                        {label}{expert && <span className="text-xs text-purple-400 ml-1">(exp)</span>}
+                        {featureBonus && (
+                          <span className="block text-[10px] text-sky-300/80">
+                            {fmtMod(featureBonus.total)} {featureBonus.sources.map((x) => x.label).join(', ')}
+                          </span>
+                        )}
+                      </span>
                       <span className="text-xs text-gray-500">({stat.slice(0,3).toUpperCase()})</span>
                       <span className="text-sm text-dnd-gold font-mono w-8 text-right">
-                        {proficient ? fmtMod(form[key]) : fmtMod(mod(form[stat]))}
+                        {fmtMod(shown)}
                       </span>
                     </div>
                   );
@@ -3937,13 +6766,24 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                   onRemove={(i) => listRemove('class_features', i)}
                   onChange={(i, f, v) => listChange('class_features', i, f, v)}
                 />
-                <AbilityList
-                  label="Feats"
-                  items={form.feats || []}
-                  onAdd={() => listAdd('feats')}
-                  onRemove={(i) => listRemove('feats', i)}
-                  onChange={(i, f, v) => listChange('feats', i, f, v)}
-                />
+                <div className="space-y-1">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setShowFeatPicker(true)}
+                      className="text-xs px-2 py-1 rounded bg-amber-800 hover:bg-amber-700 text-amber-50"
+                    >
+                      + Choose from feat list
+                    </button>
+                  </div>
+                  <AbilityList
+                    label="Feats"
+                    items={form.feats || []}
+                    onAdd={() => listAdd('feats')}
+                    onRemove={(i) => listRemove('feats', i)}
+                    onChange={(i, f, v) => listChange('feats', i, f, v)}
+                  />
+                </div>
               </>
             )}
             {isPlayerCharacter && (
@@ -4006,8 +6846,11 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         {/* ── Spells tab ── */}
         {activeTab === 'spells' && (
           <div className="space-y-5">
+            <SpellCapacityBar form={form} />
             <SpellLibraryPicker
               charClass={form.char_class}
+              classEntries={classEntriesOf(form)}
+              ownedNames={(form.spells || []).map(s => s?.name).filter(Boolean)}
               onLearn={(libSpell) => {
                 // Avoid name collision in this character's spell list.
                 const existing = (form.spells || []).find(s => (s.name || '').toLowerCase() === (libSpell.name || '').toLowerCase());
@@ -4019,7 +6862,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                   id: Date.now() + Math.random(),
                   name: libSpell.name || '',
                   level: Number(libSpell.level) || 0,
-                  type: libSpell.type === 'combat' ? 'combat' : 'utility',
+                  type: spellType(libSpell.type).key,
                   school: libSpell.school || '',
                   casting_time: libSpell.casting_time || '',
                   range_area: libSpell.range_area || '',
@@ -4041,11 +6884,27 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 setForm(f => ({ ...f, spells: [...(f.spells || []), learned] }));
               }}
             />
-            {[0,1,2,3,4,5,6,7,8,9].map((level) => {
+            {/* Slot totals fall back to the class table when the sheet doesn't
+                carry one, matching PlayerView — otherwise the editor showed 0
+                for levels a caster demonstrably has. A saved total still wins,
+                and the class-table number is surfaced beside it when the two
+                disagree so a stale hand-entered value is visible rather than
+                silently authoritative. Warlocks keep everything at their Pact
+                Magic slot level. */}
+            {(() => {
+            const derivedSlots = spellSlotsForCreature(form);
+            const pact = pactMagicForCreature(form);
+            if (pact) derivedSlots[pact.slotLevel] = Math.max(derivedSlots[pact.slotLevel] || 0, pact.slots);
+            return [0,1,2,3,4,5,6,7,8,9].map((level) => {
               const levelSpells = (form.spells || []).filter((s) => s.level === level);
-              const slots = form.spell_slots?.[level] || { total: 0, used: 0 };
-              const combatSpells = levelSpells.filter((s) => s.type === 'combat');
-              const utilitySpells = levelSpells.filter((s) => s.type === 'utility');
+              const saved = form.spell_slots?.[level];
+              const fromTable = derivedSlots[level] || 0;
+              const slots = { total: saved?.total || fromTable, used: saved?.used || 0 };
+              const tableDiffers = fromTable > 0 && saved?.total > 0 && saved.total !== fromTable;
+              const byType = SPELL_TYPES.map((t) => ({
+                ...t,
+                spells: levelSpells.filter((s) => spellType(s.type).key === t.key),
+              }));
               const hasContent = levelSpells.length > 0 || (level > 0 && slots.total > 0);
               // Always show level 0; show others only if they have content or we always show them
               // Show all levels for discoverability
@@ -4066,102 +6925,119 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                           className="w-10 bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-white text-center focus:outline-none focus:border-dnd-gold"
                           value={slots.total}
                           onChange={(e) => setSlotTotal(level, Math.max(0, parseInt(e.target.value) || 0))}
-                          title="Total spell slots"
+                          title={`How many level ${level} slots this character has in total. Blank or 0 falls back to the class table.`}
                         />
-                        {slots.total > 0 && (
-                          <div className="flex gap-1" title="Check = slot used">
-                            {Array.from({ length: slots.total }).map((_, i) => (
-                              <input
-                                key={i}
-                                type="checkbox"
-                                checked={i < (slots.used || 0)}
-                                onChange={(e) => setSlotUsed(level, e.target.checked ? (slots.used || 0) + 1 : (slots.used || 0) - 1)}
-                                className="w-3.5 h-3.5 accent-dnd-red cursor-pointer"
-                                title={i < (slots.used || 0) ? 'Slot used' : 'Slot available'}
-                              />
-                            ))}
-                          </div>
+                        {tableDiffers && (
+                          <button
+                            type="button"
+                            onClick={() => setSlotTotal(level, fromTable)}
+                            className="text-[10px] text-amber-300 hover:text-amber-200 underline decoration-dotted"
+                            title={`The class table gives ${fromTable} at this level, but the sheet says ${saved.total}. Click to use ${fromTable}.`}
+                          >
+                            table: {fromTable}
+                          </button>
                         )}
                         {slots.total > 0 && (
-                          <span className="text-xs text-gray-500">
-                            {slots.total - (slots.used || 0)}/{slots.total}
-                          </span>
+                          <>
+                            <span className="text-xs text-gray-400">Used:</span>
+                            <div className="flex gap-1" title="One box per slot — tick a box to spend that slot">
+                              {Array.from({ length: slots.total }).map((_, i) => (
+                                <input
+                                  key={i}
+                                  type="checkbox"
+                                  checked={i < (slots.used || 0)}
+                                  onChange={(e) => setSlotUsed(
+                                    level,
+                                    e.target.checked ? (slots.used || 0) + 1 : (slots.used || 0) - 1,
+                                    slots.total,
+                                  )}
+                                  className="w-3.5 h-3.5 accent-dnd-red cursor-pointer"
+                                  title={i < (slots.used || 0) ? 'Spent — untick to restore' : 'Available — tick to spend'}
+                                />
+                              ))}
+                            </div>
+                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                              {slots.used || 0} spent · {slots.total - (slots.used || 0)} left
+                            </span>
+                          </>
                         )}
                       </div>
                     )}
                   </div>
 
                   <div className="p-3 space-y-3">
-                    {/* Combat spells */}
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-semibold text-red-400"><SwordIcon />Combat</span>
-                        <button
-                          type="button"
-                          onClick={() => addSpell(level, 'combat')}
-                          className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded text-gray-300 transition-colors"
-                        >+ Add</button>
+                    {byType.map((group) => (
+                      <div key={group.key}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className={`text-xs font-semibold ${group.dark}`}>
+                            {group.key === 'combat' ? <SwordIcon /> : group.key === 'healing' ? <CrossIcon /> : <OrbIcon />}
+                            {group.label}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => addSpell(level, group.key)}
+                            className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded text-gray-300 transition-colors"
+                          >+ Add</button>
+                        </div>
+                        {group.spells.length === 0 && (
+                          <p className="text-xs text-gray-600 italic pl-1">None</p>
+                        )}
+                        {group.spells.map((spell) => (
+                          <SpellEditor
+                            key={spell.id}
+                            spell={spell}
+                            updateSpell={updateSpell}
+                            removeSpell={removeSpell}
+                            swapSpellType={swapSpellType}
+                            reorderSpell={reorderSpell}
+                            getSpellDmgEntries={getSpellDmgEntries}
+                            addSpellDmgEntry={addSpellDmgEntry}
+                            updateSpellDmgEntry={updateSpellDmgEntry}
+                            removeSpellDmgEntry={removeSpellDmgEntry}
+                            borderClass={group.key === 'combat' ? 'border-red-900/40' : group.key === 'healing' ? 'border-green-900/40' : 'border-blue-900/40'}
+                            isUtility={group.key === 'utility'}
+                          />
+                        ))}
                       </div>
-                      {combatSpells.length === 0 && (
-                        <p className="text-xs text-gray-600 italic pl-1">None</p>
-                      )}
-                      {combatSpells.map((spell) => (
-                        <SpellEditor
-                          key={spell.id}
-                          spell={spell}
-                          updateSpell={updateSpell}
-                          removeSpell={removeSpell}
-                          swapSpellType={swapSpellType}
-                          reorderSpell={reorderSpell}
-                          getSpellDmgEntries={getSpellDmgEntries}
-                          addSpellDmgEntry={addSpellDmgEntry}
-                          updateSpellDmgEntry={updateSpellDmgEntry}
-                          removeSpellDmgEntry={removeSpellDmgEntry}
-                          borderClass="border-red-900/40"
-                        />
-                      ))}
-                    </div>
-
-                    {/* Utility spells */}
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-semibold text-blue-400"><OrbIcon />Utility</span>
-                        <button
-                          type="button"
-                          onClick={() => addSpell(level, 'utility')}
-                          className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded text-gray-300 transition-colors"
-                        >+ Add</button>
-                      </div>
-                      {utilitySpells.length === 0 && (
-                        <p className="text-xs text-gray-600 italic pl-1">None</p>
-                      )}
-                      {utilitySpells.map((spell) => (
-                        <SpellEditor
-                          key={spell.id}
-                          spell={spell}
-                          updateSpell={updateSpell}
-                          removeSpell={removeSpell}
-                          swapSpellType={swapSpellType}
-                          reorderSpell={reorderSpell}
-                          getSpellDmgEntries={getSpellDmgEntries}
-                          addSpellDmgEntry={addSpellDmgEntry}
-                          updateSpellDmgEntry={updateSpellDmgEntry}
-                          removeSpellDmgEntry={removeSpellDmgEntry}
-                          borderClass="border-blue-900/40"
-                          isUtility
-                        />
-                      ))}
-                    </div>
+                    ))}
                   </div>
                 </div>
               );
-            })}
+            });
+            })()}
           </div>
         )}
 
         {/* ── Loot tab ── */}
         {activeTab === 'loot' && (
           <div className="space-y-3">
+            {/* The rollable table: one roll on death, from the token's own
+                right-click menu. Separate from the fixed item list below,
+                which is specific items each with their own percentage. */}
+            <div className="p-3 rounded-lg bg-gray-900/60 border border-gray-700">
+              <label className="block text-xs text-gray-400 mb-1">
+                Loot table
+                <span className="text-gray-600"> — rolled from the token menu when one is slain</span>
+              </label>
+              <select
+                value={form.loot_table_id ?? ''}
+                onChange={(e) => setField('loot_table_id', e.target.value)}
+                className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-dnd-gold"
+              >
+                <option value="">None</option>
+                {lootTables.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}{t.row_count ? ` (${t.row_count} rows)` : ''}
+                  </option>
+                ))}
+              </select>
+              {lootTables.length === 0 && (
+                <p className="text-[11px] text-gray-500 mt-1">
+                  No tables yet — use “Import DMG treasure” on the Tables tab.
+                </p>
+              )}
+            </div>
+
             <div className="flex items-center justify-between">
               <p className="text-xs text-gray-400">Items this creature may drop on death. Chance is the percentage probability (0–100).</p>
               <button
@@ -4281,343 +7157,51 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                   </button>
                 </div>
               </div>
+              {/* Attunement is capped at 3, and which items are attuned is
+                  otherwise buried in the per-item rows. */}
+              {(() => {
+                const attunable = (form.inventory || []).filter(it => it?.attunement_required);
+                if (attunable.length === 0) return null;
+                const attuned = attunable.filter(it => it.attuned);
+                return (
+                  <div className={`mb-2 rounded-lg border p-2 ${attuned.length >= 3 ? 'border-amber-700/60 bg-amber-900/10' : 'border-purple-800/50 bg-purple-900/10'}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-purple-300">Attunement</span>
+                      <span className={`text-xs font-mono ${attuned.length >= 3 ? 'text-amber-300' : 'text-gray-400'}`}>
+                        {attuned.length}/3 slots used
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-gray-400 mt-1">
+                      {attuned.length === 0
+                        ? 'Nothing attuned.'
+                        : attuned.map(it => it.name || 'Unnamed item').join(' · ')}
+                    </div>
+                    {attuned.length >= 3 && (
+                      <div className="text-[11px] text-amber-400/90 mt-1">
+                        At the limit — un-attune something before attuning another item.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               {(form.inventory || []).length === 0 && (
                 <p className="text-xs text-gray-500 italic py-1">No items — click + Add Item</p>
               )}
               <div className="space-y-2">
-                {(form.inventory || []).map((item, i) => {
-                  const isKnownLight = !!knownLightPreset(item.name);
-                  const isWeapon = item.item_type === 'weapon';
-                  const isArmor = item.item_type === 'armor';
-                  const isMagicItem = item.item_type === 'magic_item';
-                  const isWondrous = item.item_type === 'wondrous_item';
-                  // Plain mundane items don't get attuned — show the flag
-                  // only on weapons / armor / magic + wondrous items where
-                  // it actually applies. Potions are consumed, never attuned.
-                  const canAttune = isWeapon || isMagicItem || isArmor || isWondrous;
-                  // Magic-bonus AC field appears on magic items AND on
-                  // armor (so a +1 plate is just an armor row with
-                  // ac_bonus=1, no need for a separate magic-item entry).
-                  // Wondrous items get it too — a Cloak of Protection is
-                  // an AC bonus with no armor slot of its own.
-                  const showAcBonus = isMagicItem || isArmor || isWondrous;
-                  return (
-                  <div key={i} className="bg-gray-800 rounded-lg p-3 space-y-2">
-                    <div className="flex gap-2">
-                      <select
-                        className="w-28 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-dnd-gold"
-                        value={item.item_type || 'item'}
-                        onChange={(e) => updateInventoryItem(i, 'item_type', e.target.value)}
-                      >
-                        <option value="item">Item</option>
-                        <option value="weapon">Weapon</option>
-                        <option value="armor">Armor</option>
-                        <option value="potion">Potion</option>
-                        <option value="magic_item">Magic Item</option>
-                        <option value="wondrous_item">Wondrous Item</option>
-                      </select>
-                      <input
-                        className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-dnd-gold"
-                        placeholder="Item name"
-                        value={item.name}
-                        onChange={(e) => updateInventoryItem(i, 'name', e.target.value)}
-                      />
-                      <input
-                        type="number"
-                        min={1}
-                        className="w-14 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white text-center focus:outline-none focus:border-dnd-gold"
-                        placeholder="Qty"
-                        title="Quantity"
-                        value={item.qty}
-                        onChange={(e) => updateInventoryItem(i, 'qty', Math.max(1, parseInt(e.target.value) || 1))}
-                      />
-                      <button type="button" onClick={() => removeInventoryItem(i)} className="text-red-400 hover:text-red-300 px-2"><XIcon /></button>
-                    </div>
-
-                    {isWeapon && (
-                      <div className="space-y-2 border-l-2 border-dnd-gold/40 pl-3">
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <label className="text-xs text-gray-400">Range</label>
-                            <input
-                              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-dnd-gold"
-                              placeholder="e.g. 5ft or 60/120ft"
-                              value={item.weapon_range || ''}
-                              onChange={(e) => updateInventoryItem(i, 'weapon_range', e.target.value)}
-                            />
-                          </div>
-                          <div className="w-24">
-                            <label className="text-xs text-gray-400">Atk Bonus Stat</label>
-                            <select
-                              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-dnd-gold"
-                              value={item.attack_stat || 'STR'}
-                              onChange={(e) => updateInventoryItem(i, 'attack_stat', e.target.value)}
-                            >
-                              {['STR','DEX','CON','INT','WIS','CHA'].map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          </div>
-                          <div className="w-16">
-                            <label className="text-xs text-gray-400">Misc Bonus</label>
-                            <input
-                              type="number"
-                              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white text-center focus:outline-none focus:border-dnd-gold"
-                              placeholder="+0"
-                              value={item.attack_bonus_misc ?? 0}
-                              onChange={(e) => updateInventoryItem(i, 'attack_bonus_misc', parseInt(e.target.value) || 0)}
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="text-xs text-gray-400">Damage</label>
-                            <button
-                              type="button"
-                              onClick={() => addDamageEntry(i)}
-                              className="text-xs text-indigo-400 hover:text-indigo-200 transition-colors"
-                            >
-                              + Add Damage
-                            </button>
-                          </div>
-                          <div className="space-y-1">
-                            {getDamageEntries(item).map((entry, ei) => (
-                              <div key={ei} className="flex gap-1.5 items-center">
-                                <input
-                                  className="w-24 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-dnd-gold"
-                                  placeholder="1d8+3"
-                                  value={entry.damage}
-                                  onChange={(e) => updateDamageEntry(i, ei, 'damage', e.target.value)}
-                                />
-                                <input
-                                  className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-dnd-gold"
-                                  placeholder="Slashing"
-                                  value={entry.damage_type}
-                                  onChange={(e) => updateDamageEntry(i, ei, 'damage_type', e.target.value)}
-                                />
-                                {getDamageEntries(item).length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => removeDamageEntry(i, ei)}
-                                    className="text-red-400 hover:text-red-300 px-1 shrink-0"
-                                  ><XIcon /></button>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400">Properties</label>
-                          <input
-                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-dnd-gold"
-                            placeholder="e.g. Versatile, Finesse"
-                            value={item.properties || ''}
-                            onChange={(e) => updateInventoryItem(i, 'properties', e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400">Mastery</label>
-                          <select
-                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-dnd-gold"
-                            value={item.mastery || ''}
-                            onChange={(e) => updateInventoryItem(i, 'mastery', e.target.value)}
-                          >
-                            <option value="">None</option>
-                            {['Cleave','Graze','Nick','Push','Sap','Slow','Topple','Vex'].map(m => (
-                              <option key={m} value={m}>{m}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    )}
-
-                    {isArmor && (
-                      <div className="space-y-2 border-l-2 border-emerald-700/40 pl-3">
-                        <div className="flex gap-2 flex-wrap">
-                          <div className="w-24">
-                            <label className="text-xs text-gray-400">Base AC</label>
-                            <input
-                              type="number"
-                              min={1}
-                              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white text-center focus:outline-none focus:border-emerald-400"
-                              placeholder="14"
-                              value={item.ac_base ?? ''}
-                              onChange={(e) => updateInventoryItem(i, 'ac_base', parseInt(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="w-32">
-                            <label className="text-xs text-gray-400">Category</label>
-                            <select
-                              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-emerald-400"
-                              value={item.armor_category || 'light'}
-                              onChange={(e) => updateInventoryItem(i, 'armor_category', e.target.value)}
-                            >
-                              <option value="light">Light (+ DEX)</option>
-                              <option value="medium">Medium (+ DEX, max 2)</option>
-                              <option value="heavy">Heavy (no DEX)</option>
-                              <option value="shield">Shield (+2 flat)</option>
-                            </select>
-                          </div>
-                          <div className="w-24">
-                            <label className="text-xs text-gray-400">STR Req</label>
-                            <input
-                              type="number"
-                              min={0}
-                              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white text-center focus:outline-none focus:border-emerald-400"
-                              placeholder="—"
-                              value={item.str_req ?? ''}
-                              onChange={(e) => updateInventoryItem(i, 'str_req', e.target.value === '' ? null : parseInt(e.target.value) || 0)}
-                            />
-                          </div>
-                          <label className="flex items-center gap-1.5 text-xs text-gray-300 self-end pb-1">
-                            <input
-                              type="checkbox"
-                              className="accent-emerald-500"
-                              checked={!!item.stealth_disadvantage}
-                              onChange={(e) => updateInventoryItem(i, 'stealth_disadvantage', e.target.checked)}
-                            />
-                            <span>Stealth disadvantage</span>
-                          </label>
-                        </div>
-                        <p className="text-[11px] text-emerald-300/70 leading-snug">
-                          When this armor is equipped, your AC is auto-computed from Base AC + DEX (capped per category) + any other equipped magic-item AC bonuses. Shields with this category contribute the same +2 the existing Shield flag does.
-                        </p>
-                      </div>
-                    )}
-
-                    {showAcBonus && (
-                      <div className="flex items-center gap-3 flex-wrap pl-3">
-                        <label className="flex items-center gap-1.5 text-xs text-gray-300">
-                          <span className="text-gray-400">Equipped AC bonus:</span>
-                          <input
-                            type="number"
-                            className="w-14 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white text-center focus:outline-none focus:border-emerald-400"
-                            placeholder="0"
-                            value={item.ac_bonus ?? ''}
-                            onChange={(e) => updateInventoryItem(i, 'ac_bonus', e.target.value === '' ? null : parseInt(e.target.value) || 0)}
-                          />
-                          <span className="text-gray-500">added to AC while equipped</span>
-                        </label>
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-3 flex-wrap">
-                      {canAttune && (
-                        <label className="flex items-center gap-1.5 text-xs text-gray-300">
-                          <span className="text-gray-400">Attunement:</span>
-                          <select
-                            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-dnd-gold"
-                            value={item.attunement_required ? 'yes' : 'no'}
-                            onChange={(e) => updateInventoryItem(i, 'attunement_required', e.target.value === 'yes')}
-                          >
-                            <option value="no">Not required</option>
-                            <option value="yes">Requires attunement</option>
-                          </select>
-                        </label>
-                      )}
-                      {canAttune && item.attunement_required && (
-                        <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={item.attuned || false}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                const already = (form.inventory || []).filter(it => it.attuned && it.attunement_required).length;
-                                if (already >= 3) {
-                                  alert('You can only attune to 3 items at a time.');
-                                  return;
-                                }
-                              }
-                              updateInventoryItem(i, 'attuned', e.target.checked);
-                            }}
-                            className="accent-purple-400"
-                          />
-                          <span className="text-purple-300">Attuned</span>
-                        </label>
-                      )}
-                    </div>
-
-
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={item.equipped || false}
-                          onChange={(e) => updateInventoryItem(i, 'equipped', e.target.checked)}
-                          className="accent-dnd-gold"
-                        />
-                        Equipped
-                      </label>
-                      {!isKnownLight && (
-                        <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={item.sheds_light || false}
-                            onChange={(e) => updateInventoryItem(i, 'sheds_light', e.target.checked)}
-                            className="accent-yellow-400"
-                          />
-                          <LightbulbIcon />Sheds Light
-                        </label>
-                      )}
-                      {isKnownLight && (
-                        <span className="text-xs text-yellow-400 flex items-center gap-1"><LightbulbIcon />Light source (auto)</span>
-                      )}
-                    </div>
-                    {(item.sheds_light || isKnownLight) && (
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <label className="flex items-center gap-1.5 text-xs text-gray-300">
-                          <span className="text-yellow-300">Bright light:</span>
-                          <input
-                            type="number"
-                            min={0}
-                            step={5}
-                            className="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white text-center focus:outline-none focus:border-yellow-400"
-                            value={item.bright_ft ?? 20}
-                            onChange={(e) => updateInventoryItem(i, 'bright_ft', Math.max(0, parseInt(e.target.value) || 0))}
-                          />
-                          <span className="text-gray-500">ft</span>
-                        </label>
-                        <label className="flex items-center gap-1.5 text-xs text-gray-300">
-                          <span className="text-yellow-600">Dim light:</span>
-                          <input
-                            type="number"
-                            min={0}
-                            step={5}
-                            className="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white text-center focus:outline-none focus:border-yellow-400"
-                            value={item.dim_ft ?? 40}
-                            onChange={(e) => updateInventoryItem(i, 'dim_ft', Math.max(0, parseInt(e.target.value) || 0))}
-                          />
-                          <span className="text-gray-500">ft beyond bright</span>
-                        </label>
-                        <label className="flex items-center gap-1.5 text-xs text-gray-300">
-                          <span className="text-gray-400">Color:</span>
-                          <input
-                            type="color"
-                            className="w-8 h-6 rounded border border-gray-600 cursor-pointer"
-                            value={item.light_color || '#fbbf24'}
-                            onChange={(e) => updateInventoryItem(i, 'light_color', e.target.value)}
-                          />
-                        </label>
-                        <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            className="accent-dnd-gold"
-                            checked={item.flicker !== false}
-                            onChange={(e) => updateInventoryItem(i, 'flicker', e.target.checked)}
-                          />
-                          <span>Flicker</span>
-                          <span className="text-gray-500">(off for magical/steady glow)</span>
-                        </label>
-                      </div>
-                    )}
-                    <textarea
-                      className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white resize-none focus:outline-none focus:border-dnd-gold"
-                      placeholder="Description (optional)"
-                      rows={2}
-                      value={item.desc || ''}
-                      onChange={(e) => updateInventoryItem(i, 'desc', e.target.value)}
-                    />
-                  </div>
-                  );
-                })}
+                {(form.inventory || []).map((item, i) => (
+                  <ItemStatsEditor
+                    key={i}
+                    item={item}
+                    creature={form}
+                    onChange={(field, value) => updateInventoryItem(i, field, value)}
+                    onRemove={() => removeInventoryItem(i)}
+                    onDamageAdd={() => addDamageEntry(i)}
+                    onDamageRemove={(entryIdx) => removeDamageEntry(i, entryIdx)}
+                    onDamageChange={(entryIdx, field, value) => updateDamageEntry(i, entryIdx, field, value)}
+                    onMaterialiseMode={(mode) => materialiseDamageMode(i, mode)}
+                    canHide={asGm}
+                  />
+                ))}
               </div>
             </div>
           </div>
@@ -4629,21 +7213,11 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           const combatSpells = (form.spells || []).filter(s => s.type === 'combat');
           const STAT_KEYS = { STR: 'strength', DEX: 'dexterity', CON: 'constitution', INT: 'intelligence', WIS: 'wisdom', CHA: 'charisma' };
           function atkBonus(item) {
-            const statKey = STAT_KEYS[item.attack_stat] || 'strength';
-            const statVal = form[statKey] || 10;
-            const mod = Math.floor((statVal - 10) / 2);
+            const mod = bestWeaponStat(item, form).mod;
             const pb = form.proficiency_bonus || 2;
             const misc = item.attack_bonus_misc || 0;
             const total = mod + pb + misc;
             return (total >= 0 ? '+' : '') + total;
-          }
-          // Damage modifier — STR/DEX (or whatever the weapon's
-          // attack_stat is) added to weapon damage per the standard
-          // 5e melee/ranged weapon attack rules.
-          function dmgMod(item) {
-            const statKey = STAT_KEYS[item.attack_stat] || 'strength';
-            const statVal = form[statKey] || 10;
-            return Math.floor((statVal - 10) / 2);
           }
           return (
             <div className="space-y-4">
@@ -4665,20 +7239,49 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                       </thead>
                       <tbody className="divide-y divide-gray-800">
                         {weapons.map((w, idx) => {
-                          const dmgEntries = getDamageEntries(w).filter(e => e.damage);
-                          const dm = dmgMod(w);
-                          const dmgStr = dmgEntries.length
-                            ? dmgEntries.map(e => `${formatDamageWithMod(e.damage, dm)}${e.damage_type ? ` ${formatDamageType(e.damage_type)}` : ''}`).join(' + ')
-                            : '—';
-                          return (
-                          <tr key={idx} className={w.equipped ? 'text-white' : 'text-gray-400'}>
-                            <td className="py-1.5 pr-2 font-medium">{w.name || '—'}{w.equipped && <span className="text-dnd-gold ml-1 text-xs">★</span>}</td>
-                            <td className="py-1.5 pr-2 text-center font-mono text-green-400">{atkBonus(w)}</td>
-                            <td className="py-1.5 pr-2 font-mono">{dmgStr}</td>
-                            <td className="py-1.5 pr-2">{w.weapon_range || '—'}</td>
-                            <td className="py-1.5 text-gray-500">{w.properties || '—'}</td>
-                          </tr>
-                          );
+                          // One row per attack mode: a thrown Spear and a
+                          // two-handed Spear have different dice AND different
+                          // ranges, so a single row can't state either clearly.
+                          const modes = weaponDamageModes({ ...w, damage_entries: getDamageEntries(w) });
+                          if (!modes.length) {
+                            return (
+                              <tr key={idx} className={w.equipped ? 'text-white' : 'text-gray-400'}>
+                                <td className="py-1.5 pr-2 font-medium">{w.name || '—'}{w.equipped && <span className="text-dnd-gold ml-1 text-xs">★</span>}</td>
+                                <td className="py-1.5 pr-2 text-center font-mono text-green-400">{atkBonus(w)}</td>
+                                <td className="py-1.5 pr-2 font-mono">—</td>
+                                <td className="py-1.5 pr-2">{w.weapon_range || '—'}</td>
+                                <td className="py-1.5 text-gray-500">{w.properties || '—'}</td>
+                              </tr>
+                            );
+                          }
+                          return modes.map((m, mi) => {
+                            // weaponDamageMod, not bestWeaponStat: the mode's
+                            // ability modifier AND the weapon's flat bonus.
+                            const pick = weaponDamageMod(w, form, m.stat);
+                            const dm = pick.total;
+                            return (
+                            <tr key={`${idx}-${m.key}`} className={w.equipped ? 'text-white' : 'text-gray-400'}>
+                              <td className={`py-1.5 pr-2 font-medium ${mi > 0 ? 'pl-3' : ''}`}>
+                                {mi === 0
+                                  ? <>{w.name || '—'}{w.equipped && <span className="text-dnd-gold ml-1 text-xs">★</span>}</>
+                                  : <span className="text-gray-500 font-normal">↳ {m.label}</span>}
+                              </td>
+                              <td className="py-1.5 pr-2 text-center font-mono text-green-400">{mi === 0 ? atkBonus(w) : ''}</td>
+                              <td className="py-1.5 pr-2 font-mono">
+                                {mi === 0 && modes.length > 1 && <span className="text-gray-500 font-sans mr-1">{m.label}:</span>}
+                                {formatDamageWithMod(m.damage, dm)}{m.damage_type ? ` ${formatDamageType(m.damage_type)}` : ''}
+                                {(() => {
+                                  const bd = damageParts(m.damage, pick.mod, pick.abbr, pick.misc);
+                                  return bd.parts.length > 0
+                                    ? <span className="text-gray-500 font-sans ml-1">({bd.dice} + {bd.parts.join(' + ')})</span>
+                                    : null;
+                                })()}
+                              </td>
+                              <td className="py-1.5 pr-2">{m.range || '—'}</td>
+                              <td className="py-1.5 text-gray-500">{mi === 0 ? (w.properties || '—') : ''}</td>
+                            </tr>
+                            );
+                          });
                         })}
                       </tbody>
                     </table>
@@ -4722,6 +7325,14 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           );
         })()}
 
+        {/* ── Companions tab ──
+            Familiars, summons and mounts that belong to this character. Kept in
+            their own table and written as you go, so nothing here depends on the
+            form being saved — see BoundCompanions. */}
+        {activeTab === 'companions' && (
+          <BoundCompanions creatureId={creature?.id ?? null} ownerName={form.name} />
+        )}
+
         {/* ── Backstory tab ── */}
         {activeTab === 'backstory' && (
           <div className="p-4 space-y-3">
@@ -4763,21 +7374,40 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
           abilities, and an equipment package (A or B = 50 GP).
           Skills + feat + tool prof + items are all written into the
           form on Apply, tagged so a future swap reverts them cleanly. */}
+      {showFeatPicker && (
+        <FeatPickerModal
+          level={Math.max(1, Number(form.char_level) || 1)}
+          existing={form.feats}
+          onAdd={(feat) => setForm((f) => ({ ...f, feats: [...(f.feats || []), feat] }))}
+          onClose={() => setShowFeatPicker(false)}
+        />
+      )}
+
       {showBackgroundModal && (() => {
         const bg = findBackgroundMerged(bgPickedId);
         const STAT_LABELS = {
           strength: 'STR', dexterity: 'DEX', constitution: 'CON',
           intelligence: 'INT', wisdom: 'WIS', charisma: 'CHA',
         };
+        // A background offering "one kind of" a tool can't be applied until the
+        // kind is chosen — otherwise the sheet keeps the generic placeholder.
+        const bgNeedsTool = !!bg && !!toolChoicesFor(bg.tool);
+        // A 2014 background lists no abilities of its own, so the player picks
+        // from all six; a 2024 one is held to its three.
+        const bgFreeAsi = !!bg && bg.abilityChoice === 'free';
+        const asiPool = bg ? (bgFreeAsi ? ALL_ABILITY_FIELDS : (bg.abilities || [])) : [];
         const canApply = !!bg && (
           bgAsiKind === '1-1-1'
-            ? true
+            // Listed: the three are the background's own, so nothing to check.
+            // Free: the player must have named three distinct scores.
+            ? (!bgFreeAsi || (bgAsiPlus2 && bgAsiPlus1 && bgAsiPlus1b
+                && new Set([bgAsiPlus2, bgAsiPlus1, bgAsiPlus1b]).size === 3))
             : (bgAsiPlus2 && bgAsiPlus1 && bgAsiPlus2 !== bgAsiPlus1
-                && bg.abilities.includes(bgAsiPlus2)
-                && bg.abilities.includes(bgAsiPlus1))
-        );
+                && asiPool.includes(bgAsiPlus2)
+                && asiPool.includes(bgAsiPlus1))
+        ) && (!bgNeedsTool || !!bgToolChoice);
         return (
-          <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          <div className="fixed inset-0 bg-black/70 z-[90] flex items-center justify-center p-4"
             onClick={() => setShowBackgroundModal(false)}>
             <div onClick={(e) => e.stopPropagation()}
               className="bg-gray-900 border border-amber-700 rounded-lg w-full max-w-2xl max-h-[88vh] flex flex-col">
@@ -4787,17 +7417,68 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                   className="text-gray-400 hover:text-gray-200 text-xl leading-none">×</button>
               </div>
               <div className="overflow-y-auto flex-1 p-4 space-y-4">
+                {/* Search and filters.
+                    With over a hundred and fifty backgrounds a flat grid is
+                    unusable, and the two things a player narrows by are the
+                    edition they are playing and the scores they want to
+                    raise. */}
+                <div className="flex flex-wrap items-center gap-2 sticky top-0 bg-gray-900 pb-2 -mt-1 pt-1 z-10">
+                  <input
+                    value={bgSearch}
+                    onChange={(e) => setBgSearch(e.target.value)}
+                    placeholder="Search backgrounds…"
+                    className="flex-1 min-w-[10rem] bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-gray-100"
+                  />
+                  <select
+                    value={bgEditionFilter}
+                    onChange={(e) => setBgEditionFilter(e.target.value)}
+                    className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                  >
+                    <option value="all">All editions</option>
+                    <option value="srd2024">2024 only</option>
+                    <option value="srd2014">2014 only</option>
+                  </select>
+                  <select
+                    value={bgStatFilter}
+                    onChange={(e) => setBgStatFilter(e.target.value)}
+                    title="Backgrounds that can raise this score"
+                    className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                  >
+                    <option value="">Any stat</option>
+                    {ALL_ABILITY_FIELDS.map((a) => (
+                      <option key={a} value={a}>{STAT_LABELS[a]}</option>
+                    ))}
+                  </select>
+                  <span className="text-[11px] text-gray-500 shrink-0">
+                    {backgroundsFiltered.length} of {allBackgroundsMerged.length}
+                  </span>
+                </div>
+
                 {/* Card row */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {allBackgroundsMerged.map((b) => (
+                  {backgroundsFiltered.length === 0 && (
+                    <div className="col-span-full text-xs text-gray-500 italic py-3 text-center">
+                      Nothing matches those filters.
+                    </div>
+                  )}
+                  {backgroundsFiltered.map((b) => (
                     <button key={b.id} type="button"
                       onClick={() => {
                         setBgPickedId(b.id);
-                        // Reset ASI defaults whenever the card changes.
+                        // Reset ASI defaults whenever the card changes. A free
+                        // (2014) background has no listed scores to default
+                        // to, so the selects start empty and the player picks.
+                        // Deliberately blank: a pre-filled +2/+1 got applied
+                        // untouched, which is what made the split look
+                        // automatic. Apply is disabled until both are named.
                         setBgAsiKind('2-1');
-                        setBgAsiPlus2(b.abilities[0]);
-                        setBgAsiPlus1(b.abilities[1]);
-                        setBgEquipment('a');
+                        setBgAsiPlus2('');
+                        setBgAsiPlus1('');
+                        setBgAsiPlus1b('');
+                        // Default to the first option this background offers,
+                        // whatever it is called. Assuming 'a' applied nothing
+                        // on a background whose only option was the gold one.
+                        setBgEquipment(bgEquipmentModel(b).options[0]?.id || '');
                       }}
                       className={`text-left p-2 rounded border ${
                         bgPickedId === b.id
@@ -4814,38 +7495,19 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
 
                 {bg && (
                   <div className="space-y-3">
-                    <p className="text-xs text-gray-300 leading-relaxed">{bg.description}</p>
-
-                    <div className="bg-gray-800/40 border border-gray-700 rounded p-2">
-                      <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Origin Feat</div>
-                      <div className="text-sm text-amber-200 font-semibold">{bg.feat?.name}</div>
-                      <div className="text-xs text-gray-300 mt-1 whitespace-pre-wrap">{bg.feat?.desc}</div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-gray-800/40 border border-gray-700 rounded p-2">
-                        <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Skill Proficiencies</div>
-                        <ul className="text-sm text-gray-200 space-y-0.5">
-                          {bg.skills.map((raw) => {
-                            const k = typeof raw === 'string' ? raw : raw.skill;
-                            const lvl = typeof raw === 'string' ? 'proficient' : (raw.level || 'proficient');
-                            return (
-                              <li key={k}>• {SKILL_LABELS[k] || k}{lvl === 'expertise' && <span className="text-amber-300"> (expertise)</span>}</li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                      <div className="bg-gray-800/40 border border-gray-700 rounded p-2">
-                        <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Tool Proficiency</div>
-                        <div className="text-sm text-gray-200">{bg.tool}</div>
-                      </div>
-                    </div>
-
                     {/* ASI selector */}
                     <div className="bg-gray-800/40 border border-gray-700 rounded p-2 space-y-2">
-                      <div className="text-xs uppercase tracking-wider text-gray-400">
-                        Ability Score Improvement
+                      <div className="text-xs uppercase tracking-wider text-amber-300">
+                        Ability Score Increase — choose where the points go
                       </div>
+                      {bgFreeAsi && (
+                        // Why this background asks the question at all.
+                        <div className="text-[11px] text-amber-300/90 bg-amber-900/20 border border-amber-800/60 rounded px-2 py-1 leading-snug">
+                          This is a 2014 background, which grants no ability
+                          scores of its own — under those rules the bonuses came
+                          from your race. Choose where they go, from any score.
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-3 text-sm text-gray-200">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input type="radio"
@@ -4869,7 +7531,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                             onChange={(e) => setBgAsiPlus2(e.target.value)}
                             className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white">
                             <option value="">—</option>
-                            {bg.abilities.map((a) => (
+                            {asiPool.map((a) => (
                               <option key={a} value={a}>{STAT_LABELS[a]}</option>
                             ))}
                           </select>
@@ -4878,42 +7540,154 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                             onChange={(e) => setBgAsiPlus1(e.target.value)}
                             className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white">
                             <option value="">—</option>
-                            {bg.abilities.filter((a) => a !== bgAsiPlus2).map((a) => (
+                            {asiPool.filter((a) => a !== bgAsiPlus2).map((a) => (
                               <option key={a} value={a}>{STAT_LABELS[a]}</option>
                             ))}
                           </select>
                         </div>
+                      ) : bgFreeAsi ? (
+                        // Free spread: three distinct scores, all chosen here.
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <span className="text-gray-400">+1 each to</span>
+                          {[[bgAsiPlus2, setBgAsiPlus2], [bgAsiPlus1, setBgAsiPlus1],
+                            [bgAsiPlus1b, setBgAsiPlus1b]].map(([val, set], i) => (
+                            <select key={i} value={val}
+                              onChange={(e) => set(e.target.value)}
+                              className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white">
+                              <option value="">—</option>
+                              {asiPool.filter((a) => (
+                                a === val
+                                || ![bgAsiPlus2, bgAsiPlus1, bgAsiPlus1b].includes(a)
+                              )).map((a) => (
+                                <option key={a} value={a}>{STAT_LABELS[a]}</option>
+                              ))}
+                            </select>
+                          ))}
+                        </div>
                       ) : (
                         <div className="text-xs text-gray-400">
-                          +1 each to {bg.abilities.map((a) => STAT_LABELS[a]).join(', ')}.
+                          +1 each to {(bg.abilities || []).map((a) => STAT_LABELS[a]).join(', ')}.
                         </div>
                       )}
                     </div>
 
-                    {/* Equipment selector */}
-                    <div className="bg-gray-800/40 border border-gray-700 rounded p-2 space-y-2">
-                      <div className="text-xs uppercase tracking-wider text-gray-400">Starting Equipment</div>
-                      <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-200">
-                        <input type="radio" checked={bgEquipment === 'a'}
-                          onChange={() => setBgEquipment('a')}
-                          className="accent-amber-500 mt-0.5" />
-                        <span>
-                          <span className="text-amber-200">A:</span>{' '}
-                          {bg.equipment_a_items.map((it) =>
-                            `${it.name}${it.qty > 1 ? ` ×${it.qty}` : ''}`
-                          ).join(', ')}
-                          {bg.equipment_a_gp > 0 && `, ${bg.equipment_a_gp} GP`}
-                        </span>
-                      </label>
-                      <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-200">
-                        <input type="radio" checked={bgEquipment === 'b'}
-                          onChange={() => setBgEquipment('b')}
-                          className="accent-amber-500 mt-0.5" />
-                        <span>
-                          <span className="text-amber-200">B:</span> {bg.equipment_b_gp} GP
-                        </span>
-                      </label>
+                    <p className="text-xs text-gray-300 leading-relaxed">{bg.description}</p>
+
+                    {bg.feat?.name && (
+                      <div className="bg-gray-800/40 border border-gray-700 rounded p-2">
+                        <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Origin Feat</div>
+                        <div className="text-sm text-amber-200 font-semibold">{bg.feat.name}</div>
+                        <div className="text-xs text-gray-300 mt-1 whitespace-pre-wrap">{bg.feat.desc}</div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-gray-800/40 border border-gray-700 rounded p-2">
+                        <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Skill Proficiencies</div>
+                        <ul className="text-sm text-gray-200 space-y-0.5">
+                          {bg.skills.map((raw) => {
+                            const k = typeof raw === 'string' ? raw : raw.skill;
+                            const lvl = typeof raw === 'string' ? 'proficient' : (raw.level || 'proficient');
+                            return (
+                              <li key={k}>• {SKILL_LABELS[k] || k}{lvl === 'expertise' && <span className="text-amber-300"> (expertise)</span>}</li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                      <div className="bg-gray-800/40 border border-gray-700 rounded p-2">
+                        <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Tool Proficiency</div>
+                        <div className="text-sm text-gray-200">{bg.tool || '—'}</div>
+                      </div>
                     </div>
+
+
+                    {/* Tool-kind picker — only when the background says
+                        "choose one kind". The choice lands on both the
+                        proficiency line and the equipment entry. */}
+                    {(() => {
+                      const choices = toolChoicesFor(bg.tool);
+                      if (!choices) return null;
+                      return (
+                        <div className="bg-gray-800/40 border border-gray-700 rounded p-2 space-y-1">
+                          <div className="text-xs uppercase tracking-wider text-gray-400">
+                            {choices.base} — choose one
+                          </div>
+                          <select
+                            value={bgToolChoice}
+                            onChange={(e) => setBgToolChoice(e.target.value)}
+                            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100"
+                          >
+                            <option value="">— Pick a kind —</option>
+                            {choices.options.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Equipment.
+                        The base kit is what everyone taking this background
+                        gets; the options below it are the choice the book
+                        offers. Rendered from the shared model so the curated
+                        A/B entries and the imported base-plus-choice ones both
+                        work here. */}
+                    {(() => {
+                      const eq = bgEquipmentModel(bg);
+                      const coinStr = (o) => ['gp', 'sp', 'cp']
+                        .filter((k) => Number(o[k]) > 0)
+                        .map((k) => `${o[k]} ${k.toUpperCase()}`).join(', ');
+                      const baseItems = eq.base.items || [];
+                      const baseCoin = coinStr(eq.base);
+                      const hasBase = baseItems.length > 0 || !!baseCoin;
+                      if (!hasBase && eq.options.length === 0) {
+                        return (
+                          <div className="bg-gray-800/40 border border-gray-700 rounded p-2 text-xs text-gray-500 italic">
+                            No starting equipment recorded for this background.
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="bg-gray-800/40 border border-gray-700 rounded p-2 space-y-2">
+                          <div className="text-xs uppercase tracking-wider text-gray-400">Starting Equipment</div>
+                          {hasBase && (
+                            <div className="text-sm text-gray-200">
+                              {baseItems.map((it) =>
+                                `${it.name}${it.qty > 1 ? ` ×${it.qty}` : ''}`
+                              ).join(', ')}
+                              {baseCoin && (baseItems.length ? `, ${baseCoin}` : baseCoin)}
+                            </div>
+                          )}
+                          {eq.options.length > 0 && (
+                            <>
+                              <div className="text-[11px] text-gray-400 pt-0.5">
+                                {hasBase ? 'And choose one:' : 'Choose one:'}
+                              </div>
+                              <div className="space-y-1">
+                                {eq.options.map((o) => (
+                                  <label key={o.id}
+                                    className={`flex items-start gap-2 cursor-pointer text-sm p-1.5 rounded border ${
+                                      bgEquipment === o.id
+                                        ? 'bg-amber-900/30 border-amber-600 text-gray-100'
+                                        : 'bg-gray-900/40 border-gray-700 text-gray-300 hover:border-gray-500'
+                                    }`}>
+                                    <input type="radio" checked={bgEquipment === o.id}
+                                      onChange={() => setBgEquipment(o.id)}
+                                      className="accent-amber-500 mt-0.5" />
+                                    <span>{o.label}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                          {bg.equipment_note && (
+                            <div className="text-[11px] text-gray-500 leading-snug">
+                              {bg.equipment_note}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -4928,8 +7702,9 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                   onClick={() => {
                     applyBackground(
                       bg,
-                      { kind: bgAsiKind, plus2: bgAsiPlus2, plus1: bgAsiPlus1 },
+                      { kind: bgAsiKind, plus2: bgAsiPlus2, plus1: bgAsiPlus1, plus1b: bgAsiPlus1b },
                       bgEquipment,
+                      bgToolChoice,
                     );
                     setShowBackgroundModal(false);
                   }}
@@ -4945,7 +7720,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       {/* Item-library picker modal — opened from "+ From library" in
           inventory. Click a row to push it onto the inventory list. */}
       {bardicGrant && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[90] flex items-center justify-center p-4"
           onClick={() => setBardicGrant(null)}>
           <div onClick={(e) => e.stopPropagation()}
             className="bg-gray-900 border border-purple-700 rounded-lg w-full max-w-md max-h-[80vh] flex flex-col">
@@ -5031,7 +7806,7 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
       )}
 
       {showItemLibrary && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[90] flex items-center justify-center p-4"
           onClick={() => setShowItemLibrary(false)}>
           <div onClick={e => e.stopPropagation()}
             className="bg-gray-900 border border-gray-700 rounded-lg w-full max-w-2xl max-h-[80vh] flex flex-col">
@@ -5058,6 +7833,16 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 <option value="magic_item">Magic item</option>
                 <option value="gear">Gear</option>
               </select>
+              <select
+                className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white"
+                title="Rules edition"
+                value={itemLibraryEdition}
+                onChange={e => setItemLibraryEdition(e.target.value)}
+              >
+                <option value="2024">2024 only</option>
+                <option value="2014">2014 only</option>
+                <option value="">Both editions</option>
+              </select>
             </div>
             <div className="overflow-y-auto flex-1 p-2">
               {!itemLibraryLoaded && (
@@ -5067,10 +7852,22 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
                 const q = itemLibrarySearch.trim().toLowerCase();
                 const list = itemLibraryRows.filter(r =>
                   (!q || r.name.toLowerCase().includes(q)) &&
-                  (!itemLibraryType || r.item_type === itemLibraryType)
+                  (!itemLibraryType || r.item_type === itemLibraryType) &&
+                  (!itemLibraryEdition || String(r.edition) === itemLibraryEdition)
                 );
                 if (list.length === 0) {
-                  return <div className="text-gray-500 italic p-2 text-sm">No matches.</div>;
+                  return (
+                    <div className="text-gray-500 italic p-2 text-sm">
+                      No matches{itemLibraryEdition ? ` in ${itemLibraryEdition}` : ''}.
+                      {itemLibraryEdition && (
+                        <button
+                          type="button"
+                          onClick={() => setItemLibraryEdition('')}
+                          className="ml-2 not-italic text-dnd-gold hover:underline"
+                        >Search both editions</button>
+                      )}
+                    </div>
+                  );
                 }
                 return (
                   <ul className="space-y-1">
@@ -5106,11 +7903,26 @@ export default function CreatureForm({ creature, onSave, onCancel, extraFields, 
         </div>
       )}
 
+      <TokenEditorModal
+        open={tokenEditorOpen}
+        onClose={() => setTokenEditorOpen(false)}
+        onPick={handleTokenEditorPick}
+      />
+
       {framerSrc && (
         <ImageFramer
           src={framerSrc}
-          title={imageFile || imagePreview ? 'Adjust framing' : 'Frame artwork'}
-          onCancel={closeFramer}
+          shape={(framerMode === 'standee' || framerMode === 'standee-new') ? 'standee' : 'token'}
+          title={
+            framerMode === 'standee-new'
+              ? `Frame the standing art${standeeQueueRef.current.length ? ` (${standeeQueueRef.current.length} more)` : ''}`
+              : framerMode === 'standee' ? 'Frame the standing art'
+              : framerMode === 'alt-new'
+              ? `Frame token art${altQueueRef.current.length ? ` (${altQueueRef.current.length} more)` : ''}`
+              : (framerMode && framerMode.replaceId) ? 'Adjust token art'
+              : (imageFile || imagePreview) ? 'Adjust framing' : 'Frame artwork'
+          }
+          onCancel={handleFramerCancel}
           onConfirm={handleFramed}
         />
       )}

@@ -17,6 +17,7 @@
 //     startingEquipment: {
 //       optionA: { items: [...], gp: 4 },
 //       optionB: { gp: 155 },
+//       optionC: { ... },             // only where a class prints a third
 //     },
 //     multiclass: {
 //       prereq:  { abilities: ['STR','DEX'], min: 13, mode: 'any' },
@@ -44,6 +45,28 @@ export const CLASS_BUILD = {
     multiclass: {
       prereq: { abilities: ['STR'], min: 13, mode: 'all' },
       grants: { armor: ['Shields'], weapons: ['Martial'] },
+    },
+  },
+
+  // Not an SRD class: the Blood Hunter is Matt Mercer's, published free by
+  // Critical Role. Encoded from its own class table (2020 revision) so the
+  // builder hands out the right kit rather than falling back to the d8
+  // default. Hemocraft is Intelligence or Wisdom, chosen at level 1, which is
+  // why the primary ability below lists the weapon stat and INT together.
+  'Blood Hunter': {
+    primary: { abilities: ['DEX', 'INT'], mode: 'any' },
+    hitDie: 'd10',
+    saves: ['DEX', 'INT'],
+    armor: ['Light', 'Medium', 'Shields'],
+    weapons: ['Simple', 'Martial'],
+    tools: ["Alchemist's Supplies"],
+    startingEquipment: {
+      optionA: { items: ['Longsword', 'Light Crossbow', 'Crossbow Bolts (20)', 'Studded Leather Armor', "Explorer's Pack", "Alchemist's Supplies"], gp: 0 },
+      optionB: { items: ['Shortsword', 'Shortsword', 'Hand Crossbow', 'Crossbow Bolts (20)', 'Scale Mail', "Explorer's Pack", "Alchemist's Supplies"], gp: 0 },
+    },
+    multiclass: {
+      prereq: { abilities: ['INT'], min: 13, mode: 'all', note: 'Intelligence 13, and Strength or Dexterity 13.' },
+      grants: { armor: ['Light', 'Medium', 'Shields'], weapons: ['Simple', 'Martial'] },
     },
   },
 
@@ -106,8 +129,14 @@ export const CLASS_BUILD = {
     armor: ['Light', 'Medium', 'Heavy', 'Shields'],
     weapons: ['Simple', 'Martial'],
     startingEquipment: {
+      // THREE options, not two. The Fighter is the only 2024 class printed
+      // with a second gear bundle — "(A) … ; (B) Studded Leather, Scimitar,
+      // Shortsword, Longbow, 20 Arrows, Quiver, Dungeoneer's Pack, and 11 GP;
+      // or (C) 155 GP" — and the whole middle option was missing here, so a
+      // Fighter was offered the heavy-armour kit or the cash and nothing else.
       optionA: { items: ['Chain Mail', 'Greatsword', 'Flail', 'Javelin', 'Javelin', 'Javelin', 'Javelin', 'Javelin', 'Javelin', 'Javelin', 'Javelin', "Dungeoneer's Pack"], gp: 4 },
-      optionB: { gp: 155 },
+      optionB: { items: ['Studded Leather Armor', 'Scimitar', 'Shortsword', 'Longbow', 'Arrows (20)', 'Quiver', "Dungeoneer's Pack"], gp: 11 },
+      optionC: { gp: 155 },
     },
     multiclass: {
       prereq: { abilities: ['STR', 'DEX'], min: 13, mode: 'any' },
@@ -261,6 +290,19 @@ const ABILITY_FIELD = {
 // register a thunk that resolves to the registry's current value.
 let _customLookup = null;
 export function _registerCustomClassBuildLookup(fn) { _customLookup = fn; }
+
+// The starting-equipment choices a class offers, in print order.
+//
+// Stored as optionA / optionB / … rather than an array because that is the
+// shape the custom-class editor writes and every existing entry already uses.
+// Read through here so a class with a third option is not silently truncated
+// to two, which is what happened to the Fighter.
+export function startingEquipmentOptions(build) {
+  const sa = build?.startingEquipment || {};
+  return ['A', 'B', 'C', 'D']
+    .map((id) => ({ id, ...(sa[`option${id}`] || {}) }))
+    .filter((o) => (o.items && o.items.length) || Number(o.gp) > 0);
+}
 
 export function getClassBuild(className) {
   if (!className) return null;

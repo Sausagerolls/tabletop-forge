@@ -16,13 +16,14 @@ function raySegIntersect(ox, oy, dx, dy, ax, ay, bx, by) {
 }
 
 // Convert one wall object to an array of { ax, ay, bx, by } segments.
-// Ledges never block LOS — they are handled separately as a dim overlay beyond
-// their line when observed from the "below" side.
+// Ledges and windows never block LOS — both are handled separately as a dim
+// overlay beyond their line. A ledge only dims when observed from its "below"
+// side; a window dims from either side.
 export function wallToSegments(wall) {
   const pts = wall.points;
   const segs = [];
 
-  if (wall.type === 'ledge') {
+  if (wall.type === 'ledge' || wall.type === 'window') {
     return [];
   }
 
@@ -78,6 +79,11 @@ function doorCentrelineSegments(door) {
   const pts = door.points;
   if (!pts || pts.length < 4) return [];
   const [x1, y1, x2, y2] = pts;
+
+  // A WINDOW never blocks sight, open or shut. It stops movement and it is
+  // drawn in the wall, but seeing through it is the entire point — treating one
+  // as a closed door walls off the room it looks into.
+  if (door.portal_kind === 'window') return [];
 
   // Closed: occlude along the doorway line (same for schematic and sprite).
   if (!door.is_open) {
@@ -271,6 +277,11 @@ export function ledgeFarSidePolygon(ledge, ox, oy, mapW, mapH) {
   const side = ledgeSide(ledge, ox, oy);
   if (side >= 0) return null; // above side or on the ledge: no dim effect
   const { ax, ay, bx, by } = ledge;
+  return farSideCone(ax, ay, bx, by, ox, oy, mapW, mapH);
+}
+
+// Shared by ledges and windows.
+function farSideCone(ax, ay, bx, by, ox, oy, mapW, mapH) {
   // Shadow cone from origin: cast rays from origin through A and B and
   // extend them past the ledge. Anything the origin can see through the
   // ledge falls inside this cone, so the dim overlay correctly covers the
@@ -287,6 +298,37 @@ export function ledgeFarSidePolygon(ledge, ox, oy, mapW, mapH) {
   const bFx = bx + (bDx / bLen) * L;
   const bFy = by + (bDy / bLen) * L;
   return [ax, ay, bx, by, bFx, bFy, aFx, aFy];
+}
+
+// Windows: like ledges in that they never block line of sight, but they
+// obscure BOTH ways rather than only from the below side — glass is glass
+// whichever side you stand on. The dim applied downstream is lighter than a
+// ledge's, so a window reads as "slightly obscured" rather than "dim only".
+export function windowData(wall) {
+  if (!wall || wall.type !== 'window' || !wall.points || wall.points.length < 4) return null;
+  const [ax, ay, bx, by] = wall.points;
+  return { ax, ay, bx, by };
+}
+
+// No side gate — the only case with no far side is an origin sitting exactly
+// on the window's line, where the cone would be degenerate.
+//
+// Returns the far-side cone plus the geometry needed to fade the view out with
+// distance past the glass: a point on the window line and the unit normal
+// pointing AWAY from the viewer. The caller runs a linear gradient along that
+// normal so sight through a window dies a few feet in rather than carrying on
+// to the far wall.
+export function windowFarSideData(win, ox, oy, mapW, mapH) {
+  const { ax, ay, bx, by } = win;
+  const c = (bx - ax) * (oy - ay) - (by - ay) * (ox - ax);
+  if (Math.abs(c) <= 1e-6) return null;
+  const poly = farSideCone(ax, ay, bx, by, ox, oy, mapW, mapH);
+  const dx = bx - ax, dy = by - ay;
+  const l = Math.hypot(dx, dy) || 1;
+  let nx = -dy / l, ny = dx / l;
+  const mx = (ax + bx) / 2, my = (ay + by) / 2;
+  if ((ox - mx) * nx + (oy - my) * ny > 0) { nx = -nx; ny = -ny; }
+  return { poly, mx, my, nx, ny };
 }
 
 // Points stored as map-pixel {x,y} — no grid conversion needed.

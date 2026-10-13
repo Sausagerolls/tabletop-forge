@@ -1,6 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db');
+const { doorDefaultFor } = require('../doorDefaults');
 
 const router = express.Router();
 
@@ -22,9 +23,12 @@ router.post('/', async (req, res) => {
   const { map_id, style, points } = req.body;
   if (!map_id || !points) return res.status(400).json({ error: 'Missing fields' });
   try {
+    const dd = await doorDefaultFor('door');
     const result = await db.query(
-      'INSERT INTO doors (id, map_id, style, points) VALUES ($1,$2,$3,$4) RETURNING *',
-      [uuidv4(), map_id, style || 'standard', JSON.stringify(points)]
+      `INSERT INTO doors (id, map_id, style, points, sprite_path, sprite_motion)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [uuidv4(), map_id, style || 'standard', JSON.stringify(points),
+       dd.spritePath, dd.spriteMotion]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {

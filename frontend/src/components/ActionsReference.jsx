@@ -83,8 +83,11 @@ function Section({ title, items }) {
 }
 
 export default function ActionsReference({ onClose }) {
+  // z-[95], above the 3D overlay's z-70. At z-50 this opened UNDER that
+  // overlay, so the Actions button in 3D dimmed nothing and showed nothing —
+  // it is a modal, and a modal belongs above whichever view is behind it.
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/80 z-[95] flex items-center justify-center p-4" onClick={onClose}>
       <div
         className="bg-dnd-panel border border-gray-700 rounded-xl w-full max-w-lg flex flex-col shadow-2xl"
         style={{ maxHeight: '75vh' }}

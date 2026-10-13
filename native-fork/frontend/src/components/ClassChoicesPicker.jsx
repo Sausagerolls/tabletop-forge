@@ -34,6 +34,96 @@ const SKILL_LABELS = {
   skill_survival: 'Survival (WIS)',
 };
 
+// A pool of class options — invocations, metamagic, manoeuvres.
+//
+// Prerequisites are checked where they can be: character level, and the Pact
+// Boon a 2014 Warlock has taken (several invocations require one). Anything
+// the app cannot evaluate — "you must know eldritch blast", "you must have a
+// pact weapon" — is shown as a note rather than enforced, because guessing
+// wrong would either hide a legal option or silently allow an illegal one,
+// and the player reading the line can judge it themselves.
+function OptionPoolPick({ choice, picks, charLevel, allPicks, onChange }) {
+  const max = choice.pick_count || 1;
+  const level = Math.max(1, Number(charLevel) || 1);
+
+  // Which pact this character has taken, if any. In 2014 that is its own
+  // choice; in 2024 the pacts live in the invocation list, so a pick in this
+  // very pool can satisfy another option's prerequisite.
+  const pactTaken = (() => {
+    const fromPactChoice = allPicks?.['warlock-pact']?.picks?.[0];
+    const own = (picks || []).find((p) => String(p).startsWith('pact-of-the-'));
+    const raw = fromPactChoice || own;
+    if (!raw) return null;
+    const m = String(raw).match(/pact-of-the-(\w+)/);
+    return m ? m[1].toLowerCase() : null;
+  })();
+
+  const blocked = (opt) => {
+    const pre = opt.prereq;
+    if (!pre) return null;
+    if (pre.level && level < pre.level) return `Level ${pre.level}`;
+    if (pre.pact && String(pre.pact).toLowerCase() !== pactTaken) {
+      return `Pact of the ${pre.pact}`;
+    }
+    return null;
+  };
+
+  const toggle = (id) => {
+    const has = picks.includes(id);
+    if (has) return onChange(picks.filter((p) => p !== id));
+    if (picks.length >= max) return;          // at the ceiling
+    onChange([...picks, id]);
+  };
+
+  return (
+    <div className="space-y-1">
+      <div className="text-[11px] text-gray-400">
+        {picks.length} of {max} chosen
+        {choice.optionEdition === 'srd2014' ? ' · 2014 rules' : ' · 2024 rules'}
+      </div>
+      <div className="max-h-64 overflow-y-auto space-y-1 pr-1">
+        {(choice.options || []).map((opt) => {
+          const checked = picks.includes(opt.id);
+          const why = blocked(opt);
+          const full = !checked && picks.length >= max;
+          const disabled = !!why || full;
+          return (
+            <label
+              key={opt.id}
+              title={opt.desc}
+              className={`flex gap-2 items-start p-2 rounded border ${
+                checked ? 'bg-purple-900/30 border-purple-500'
+                  : disabled ? 'bg-gray-900/30 border-gray-800 opacity-50 cursor-not-allowed'
+                  : 'bg-gray-900/40 border-gray-700 hover:border-gray-500 cursor-pointer'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={disabled}
+                onChange={() => toggle(opt.id)}
+                className="accent-purple-500 mt-0.5"
+              />
+              <div className="min-w-0">
+                <div className="text-sm text-gray-100 flex items-center gap-1.5">
+                  <span>{opt.name}</span>
+                  {why && <span className="text-[10px] text-amber-300">needs {why}</span>}
+                </div>
+                <div className="text-xs text-gray-400 line-clamp-3">{opt.desc}</div>
+                {opt.prereq?.note && (
+                  <div className="text-[10px] text-amber-300/80 mt-0.5">
+                    Prerequisite: {opt.prereq.note}
+                  </div>
+                )}
+              </div>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function ClassChoicesPicker({
   charClass,
   charLevel,
@@ -68,7 +158,23 @@ export default function ClassChoicesPicker({
     setPicks((p) => ({ ...p, [choiceId]: payload }));
   }
 
-  const allValid = dueChoices.every((c) => isValid(c, picks[c.id]));
+  // APPLY WHAT IS PICKED, NOT ONLY A COMPLETE SET.
+  //
+  // This used to require every due choice to be valid before the button
+  // would enable. That locks the whole panel for any character whose class
+  // choices were never fully recorded — and that is every character created
+  // before a new choice was added to their class. A level-1 Druid built
+  // before Primal Order existed has no skill picks stored, so `class-skills`
+  // is incomplete, so Apply stayed disabled and Primal Order could never be
+  // chosen at all: you select Magician, press a dead button, and nothing
+  // happens.
+  //
+  // Only the choices that ARE valid are sent. An incomplete one was never
+  // applied in the first place, so skipping it takes nothing away.
+  const validChoices = dueChoices.filter((c) => isValid(c, picks[c.id]));
+  const anyValid = validChoices.length > 0;
+  const pending = dueChoices.filter((c) => !isValid(c, picks[c.id]));
+  const validPicks = Object.fromEntries(validChoices.map((c) => [c.id, picks[c.id]]));
 
   return (
     <div className="bg-gray-800/40 border border-purple-700/50 rounded-lg p-3 space-y-3">
@@ -112,11 +218,25 @@ export default function ClassChoicesPicker({
               })}
             </div>
           )}
+          {c.kind === 'multi-options' && (
+            <OptionPoolPick
+              choice={c}
+              picks={picks[c.id]?.picks || []}
+              charLevel={charLevel}
+              allPicks={picks}
+              onChange={(arr) => setPick(c.id, { kind: 'multi-options', picks: arr })}
+            />
+          )}
           {c.kind === 'multi-skills' && (
             <SkillMultiPick
               picks={picks[c.id]?.picks || []}
               max={c.pick_count || 2}
-              available={proficientSkills}
+              // Expertise upgrades what you already have, so it offers only
+              // proficient skills. A class's STARTING proficiencies come from
+              // the class's own list (or any skill, for the Bard), which is
+              // what `from` carries.
+              available={c.grant === 'proficient' ? (c.from || null) : proficientSkills}
+              grant={c.grant || 'expertise'}
               onChange={(arr) => setPick(c.id, { kind: 'multi-skills', picks: arr })}
             />
           )}
@@ -131,10 +251,15 @@ export default function ClassChoicesPicker({
         </div>
       ))}
 
-      <div className="flex justify-end pt-1">
+      <div className="flex items-center justify-end gap-2 pt-1">
+        {pending.length > 0 && (
+          <span className="text-[10px] text-gray-500 text-right leading-snug">
+            Still to choose: {pending.map((c) => c.label).join(', ')}
+          </span>
+        )}
         <button type="button"
-          disabled={!allValid}
-          onClick={() => onApply(picks)}
+          disabled={!anyValid}
+          onClick={() => onApply(validPicks)}
           className="text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-1.5 rounded">
           Apply Class Choices
         </button>
@@ -146,13 +271,19 @@ export default function ClassChoicesPicker({
 function isValid(choice, pick) {
   if (!pick) return false;
   if (choice.kind === 'single') return !!pick.option_id;
+  // A pool is valid at or under its ceiling. Deliberately not "exactly" —
+  // a character mid-build should not be blocked from saving, and the class
+  // table is a maximum you know, not a quota you must spend.
+  if (choice.kind === 'multi-options') {
+    return (pick.picks || []).length <= (choice.pick_count || 99);
+  }
   if (choice.kind === 'multi-skills' || choice.kind === 'multi-weapons') {
     return Array.isArray(pick.picks) && pick.picks.filter(Boolean).length === (choice.pick_count || 2);
   }
   return false;
 }
 
-function SkillMultiPick({ picks, max, onChange, available }) {
+function SkillMultiPick({ picks, max, onChange, available, grant = 'expertise' }) {
   // Restrict to skills the character is already proficient with —
   // Expertise upgrades existing proficiency, it doesn't grant new
   // proficiency. Falls back to ALL skills only when the caller didn't
@@ -171,7 +302,9 @@ function SkillMultiPick({ picks, max, onChange, available }) {
   if (pool.length === 0) {
     return (
       <div className="text-[11px] text-amber-300 italic bg-amber-900/20 border border-amber-800 rounded px-2 py-1">
-        No skill proficiencies on this character yet. Add proficiencies on the Saves &amp; Skills tab first, then Expertise will be selectable here.
+        {grant === 'proficient'
+          ? 'No skills listed for this choice.'
+          : 'No skill proficiencies on this character yet. Add proficiencies on the Saves & Skills tab first, then Expertise will be selectable here.'}
       </div>
     );
   }

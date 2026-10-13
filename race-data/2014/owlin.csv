@@ -1,0 +1,8 @@
+Ability,Description,Category,Notes
+Creature Type,You are a Humanoid.,,
+Size,You are Medium or Small. You choose the size when you select this race.,,Restrict size choices to Small or Medium
+Speed,Your base walking speed is 30 feet.,,Set walking speed to 30ft
+Darkvision,"You can see in dim light within 120 feet of yourself as if it were bright light and in darkness as if it were dim light. You discern colors in that darkness only as shades of gray.",Special Abilities,Set Darkvision to 120ft
+Flight,"Thanks to your wings, you have a flying speed equal to your walking speed. You can't use this flying speed if you're wearing medium or heavy armor.",Special Abilities,Set fly speed to walking
+Silent Feathers,You have proficiency in the Stealth skill.,Special Abilities,Auto adds proficiency in Stealth
+Languages,"You can speak, read, and write Common and one other language that you and your DM agree is appropriate for your character.",,Auto adds Common to languages (player + DM pick the second)

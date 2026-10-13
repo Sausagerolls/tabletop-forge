@@ -1,0 +1,126 @@
+name,level,edition,action,old_type,new_type,source
+Blade Ward,0,2014,filled from 5etools,utility,utility,XPHB
+Friends,0,2014,filled from 5etools,utility,combat,XPHB
+Thunderclap,0,2014,filled from 5etools,utility,combat,XPHB
+Arms of Hadar,1,2014,filled from 5etools,utility,combat,XPHB
+Compelled Duel,1,2014,filled from 5etools,utility,utility,XPHB
+Detect Good And Evil,1,2014,filled from 5etools,utility,,via alias
+Divine Favour,1,2014,filled from 5etools,utility,,via alias
+Hail of Thorns,1,2014,filled from 5etools,utility,combat,XPHB
+Tenser's Floating Disk,1,2014,filled from 5etools,utility,utility,XPHB
+Thunderous Smite,1,2014,filled from 5etools,utility,combat,XPHB
+Witch Bolt,1,2014,filled from 5etools,utility,combat,XPHB
+Beast Sense,2,2014,filled from 5etools,utility,utility,XPHB
+Cloud of Daggers,2,2014,filled from 5etools,utility,combat,XPHB
+Cordon of Arrows,2,2014,filled from 5etools,utility,combat,XPHB
+Crown of Madness,2,2014,filled from 5etools,utility,combat,XPHB
+Nystul's Magic Aura,2,2014,filled from 5etools,utility,utility,XPHB
+Summon Beast,2,2014,filled from 5etools,utility,utility,XPHB
+Blinding Smite,3,2014,filled from 5etools,utility,combat,XPHB
+Conjure Barrage,3,2014,filled from 5etools,utility,combat,XPHB
+Crusader's Mantle,3,2014,filled from 5etools,utility,combat,XPHB
+Elemental Weapon,3,2014,filled from 5etools,utility,combat,XPHB
+Feign Death,3,2014,filled from 5etools,utility,utility,XPHB
+Lightning Arrow,3,2014,filled from 5etools,utility,combat,XPHB
+Summon Fey,3,2014,filled from 5etools,utility,utility,XPHB
+Summon Undead,3,2014,filled from 5etools,utility,utility,XPHB
+Aura of Purity,4,2014,filled from 5etools,utility,utility,XPHB
+Evard's Black Tentacles,4,2014,filled from 5etools,utility,combat,XPHB
+Fount of Moonlight,4,2014,filled from 5etools,utility,combat,XPHB
+Grasping Vine,4,2014,filled from 5etools,utility,combat,XPHB
+Greater Invisibility,4,2024,filled from 5etools,utility,utility,XPHB
+Leomund's Secret Chest,4,2014,filled from 5etools,utility,utility,XPHB
+Mordenkainen's Faithful Hound,4,2014,filled from 5etools,utility,combat,XPHB
+Mordenkainen's Private Sanctum,4,2014,filled from 5etools,utility,utility,XPHB
+Otiluke's Resilient Sphere,4,2014,filled from 5etools,utility,utility,XPHB
+Staggering Smite,4,2014,filled from 5etools,utility,combat,XPHB
+Summon Aberration,4,2014,filled from 5etools,utility,utility,XPHB
+Summon Construct,4,2014,filled from 5etools,utility,utility,XPHB
+Banishing Smite,5,2014,filled from 5etools,utility,combat,XPHB
+Bigby's Hand,5,2014,filled from 5etools,utility,combat,XPHB
+Circle of Power,5,2014,filled from 5etools,utility,utility,XPHB
+Conjure Volley,5,2014,filled from 5etools,utility,combat,XPHB
+Destructive Wave,5,2014,filled from 5etools,utility,combat,XPHB
+Jallarzi's Storm Of Radiance,5,2014,filled from 5etools,utility,combat,XPHB
+Steel Wind Strike,5,2014,filled from 5etools,utility,combat,XPHB
+Swift Quiver,5,2014,filled from 5etools,utility,utility,XPHB
+Synaptic Static,5,2014,filled from 5etools,utility,combat,XPHB
+Yolande's Regal Presence,5,2014,filled from 5etools,utility,combat,XPHB
+Drawmij's Instant Summons,6,2014,filled from 5etools,utility,utility,XPHB
+Otiluke's Freezing Sphere,6,2014,filled from 5etools,utility,combat,XPHB
+Otto's Irresistible Dance,6,2014,filled from 5etools,utility,combat,XPHB
+Summon Fiend,6,2014,filled from 5etools,utility,utility,XPHB
+Tasha's Bubbling Cauldron,6,2014,filled from 5etools,utility,healing,XPHB
+Forcecage,7,2024,filled from 5etools,utility,utility,XPHB
+Mordenkainen's Magnificent Mansion,7,2014,filled from 5etools,utility,utility,XPHB
+Mordenkainen's Sword,7,2014,filled from 5etools,utility,combat,XPHB
+Power Word Fortify,7,2014,filled from 5etools,utility,utility,XPHB
+Telepathy,8,2014,filled from 5etools,utility,utility,XPHB
+Aid,,,retyped,utility,healing,
+Animal Messenger,,,retyped,combat,utility,
+Animate Objects,,,retyped,utility,combat,
+Arcane Hand,,,retyped,utility,combat,
+Aura of Life,,,retyped,utility,healing,
+Bane,,,retyped,combat,utility,
+Beacon of Hope,,,retyped,combat,healing,
+Bless,,,retyped,combat,utility,
+Blur,,,retyped,combat,utility,
+Calm Emotions,,,retyped,combat,utility,
+Confusion,,,retyped,combat,utility,
+Conjure Celestial,,,retyped,utility,combat,
+Control Water,,,retyped,utility,combat,
+Counterspell,,,retyped,combat,utility,
+Cure Wounds,,,retyped,combat,healing,
+Detect Thoughts,,,retyped,combat,utility,
+Dispel Evil and Good,,,retyped,combat,utility,
+Enlarge/Reduce,,,retyped,combat,utility,
+Enthrall,,,retyped,combat,utility,
+Etherealness,,,retyped,utility,combat,
+Faerie Fire,,,retyped,combat,utility,
+Foresight,,,retyped,combat,utility,
+Freedom of Movement,,,retyped,combat,utility,
+Gaseous Form,,,retyped,combat,utility,
+Glyph of Warding,,,retyped,utility,combat,
+Goodberry,,,retyped,utility,healing,
+Gust of Wind,,,retyped,combat,utility,
+Haste,,,retyped,combat,utility,
+Heal,,,retyped,utility,healing,
+Healing Word,,,retyped,combat,healing,
+Heroes' Feast,,,retyped,combat,healing,
+Invisibility,,,retyped,combat,utility,
+Levitate,,,retyped,combat,utility,
+Magic Circle,,,retyped,combat,utility,
+Magic Jar,,,retyped,combat,utility,
+Magic Weapon,,,retyped,combat,utility,
+Mass Cure Wounds,,,retyped,combat,healing,
+Mass Heal,,,retyped,combat,healing,
+Mass Healing Word,,,retyped,combat,healing,
+Mirror Image,,,retyped,combat,utility,
+Mislead,,,retyped,combat,utility,
+Planar Binding,,,retyped,combat,utility,
+Polymorph,,,retyped,combat,utility,
+Power Word Heal,,,retyped,combat,healing,
+Prayer of Healing,,,retyped,combat,healing,
+Protection from Evil and Good,,,retyped,combat,utility,
+Raise Dead,,,retyped,utility,healing,
+Ray of Enfeeblement,,,retyped,combat,utility,
+Regenerate,,,retyped,combat,healing,
+Reincarnate,,,retyped,utility,healing,
+Resilient Sphere,,,retyped,combat,utility,
+Resistance,,,retyped,combat,utility,
+Resurrection,,,retyped,utility,healing,
+Reverse Gravity,,,retyped,combat,utility,
+Revivify,,,retyped,utility,healing,
+Sanctuary,,,retyped,combat,utility,
+Scrying,,,retyped,combat,utility,
+Seeming,,,retyped,combat,utility,
+Shillelagh,,,retyped,utility,combat,
+Simulacrum,,,retyped,combat,utility,
+Slow,,,retyped,combat,utility,
+Summon Elemental,,,retyped,combat,utility,
+Teleport,,,retyped,utility,combat,
+True Polymorph,,,retyped,combat,utility,
+True Resurrection,,,retyped,utility,healing,
+True Strike,,,retyped,utility,combat,
+Wall of Stone,,,retyped,combat,utility,
+Zone of Truth,,,retyped,combat,utility,

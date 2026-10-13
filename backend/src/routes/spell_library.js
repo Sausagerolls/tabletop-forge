@@ -222,7 +222,7 @@ Each spell object MUST match this exact schema:
   {
     "name": "string — the spell's title",
     "level": "0-9 integer (0 for cantrip)",
-    "type": "combat | utility (combat = does damage or directly attacks; utility = everything else)",
+    "type": "combat | healing | utility (combat = does damage or directly attacks; healing = restores Hit Points and deals no damage; utility = everything else)",
     "school": "Abjuration | Conjuration | Divination | Enchantment | Evocation | Illusion | Necromancy | Transmutation",
     "casting_time": "string (e.g. '1 action', '1 bonus action', '10 minutes')",
     "range_area": "string (e.g. '60 feet', 'Self (15-foot cone)', 'Touch')",
@@ -639,7 +639,7 @@ const FIELD_PROMPT_TEMPLATE = (name, body) => `Extract structured fields for the
 
 Schema:
 {
-  "type": "combat | utility (combat = directly attacks or deals damage; utility = everything else)",
+  "type": "combat | healing | utility (combat = directly attacks or deals damage; healing = restores Hit Points and deals no damage; utility = everything else)",
   "casting_time": "string (e.g. '1 action', '1 bonus action', '10 minutes')",
   "range_area": "string (e.g. '60 feet', 'Self (15-foot cone)')",
   "duration": "string (e.g. 'Instantaneous', 'Concentration, up to 1 minute')",
@@ -846,7 +846,11 @@ function open5eV2ToSpell(o) {
     comp_m_text: String(o.material_specified || '').trim(),
     allowed_classes,
     description: descParts.join(''),
-    type: damage_entries.length > 0 || attack_save ? 'combat' : 'utility',
+    // Healing spells deal no damage but restore Hit Points, so the damage
+    // test alone would file them as utility.
+    type: (damage_entries.length > 0 || attack_save)
+      ? 'combat'
+      : (/regains? .{0,40}Hit Points|restore .{0,30}Hit Points/i.test(descParts.join('')) ? 'healing' : 'utility'),
     attack_save,
     save_ability,
     damage_entries,
@@ -1029,7 +1033,7 @@ function normaliseSpell(raw) {
   if (!name) return null;
   const level = Math.max(0, Math.min(9, Number(raw.level) || 0));
   const typeStr = String(raw.type || '').toLowerCase();
-  const type = typeStr === 'combat' ? 'combat' : 'utility';
+  const type = ['combat', 'healing', 'utility'].includes(typeStr) ? typeStr : 'utility';
   const school = SCHOOLS.includes(raw.school) ? raw.school : '';
   const damage_entries = Array.isArray(raw.damage_entries)
     ? raw.damage_entries
@@ -1043,7 +1047,13 @@ function normaliseSpell(raw) {
   const allowed_classes = Array.isArray(raw.allowed_classes)
     ? Array.from(new Set(raw.allowed_classes.map(canonClass).filter(Boolean)))
     : [];
+  // The table is UNIQUE (name, edition), so the edition is part of a spell's
+  // identity and must travel with it. It was not carried at all, leaving every
+  // insert on the column default.
+  const ed = String(raw.edition || '').trim();
+  const edition = ['2014', '2024'].includes(ed) ? ed : '2014';
   return {
+    edition,
     name,
     level,
     type,
@@ -1159,15 +1169,16 @@ router.post('/import', spellImportUpload.single('file'), async (req, res) => {
       try {
         const row = (await db.query(
           `INSERT INTO spell_library (id, name, level, type, school, casting_time, range_area, duration,
-           comp_v, comp_s, comp_m, comp_m_text, attack_save, save_ability, damage_entries, extra_effects, description, source, allowed_classes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-           ON CONFLICT (name) DO NOTHING RETURNING id`,
+           comp_v, comp_s, comp_m, comp_m_text, attack_save, save_ability, damage_entries, extra_effects, description, source, allowed_classes, edition)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+           ON CONFLICT (name, edition) DO NOTHING RETURNING id`,
           [
             uuidv4(), s.name, s.level, s.type, s.school, s.casting_time, s.range_area, s.duration,
             s.comp_v, s.comp_s, s.comp_m, s.comp_m_text, s.attack_save, s.save_ability,
             JSON.stringify(s.damage_entries), s.extra_effects, s.description,
             String(raw.source || 'import'),
             JSON.stringify(s.allowed_classes),
+            s.edition,
           ]
         ));
         if (row.rows[0]) imported += 1; else skipped += 1;
@@ -1227,10 +1238,15 @@ router.post('/', async (req, res) => {
     // so the client can show "added" vs "overwrote existing" without an
     // extra round-trip.
     const row = (await db.query(
+      // ON CONFLICT has to name the columns the table is actually unique on —
+      // (name, edition). Conflicting on (name) alone matched no constraint, so
+      // every insert through this route failed outright with "no unique or
+      // exclusion constraint matching the ON CONFLICT specification": no spell
+      // could be added or edited at all.
       `INSERT INTO spell_library (id, name, level, type, school, casting_time, range_area, duration,
-       comp_v, comp_s, comp_m, comp_m_text, attack_save, save_ability, damage_entries, extra_effects, description, source, allowed_classes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-       ON CONFLICT (name) DO UPDATE SET
+       comp_v, comp_s, comp_m, comp_m_text, attack_save, save_ability, damage_entries, extra_effects, description, source, allowed_classes, edition)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+       ON CONFLICT (name, edition) DO UPDATE SET
          level=EXCLUDED.level, type=EXCLUDED.type, school=EXCLUDED.school,
          casting_time=EXCLUDED.casting_time, range_area=EXCLUDED.range_area, duration=EXCLUDED.duration,
          comp_v=EXCLUDED.comp_v, comp_s=EXCLUDED.comp_s, comp_m=EXCLUDED.comp_m, comp_m_text=EXCLUDED.comp_m_text,
@@ -1244,6 +1260,7 @@ router.post('/', async (req, res) => {
         JSON.stringify(s.damage_entries), s.extra_effects, s.description,
         String(req.body.source || 'manual'),
         JSON.stringify(s.allowed_classes),
+        s.edition,
       ]
     )).rows[0];
     res.status(row._created ? 201 : 200).json(row);

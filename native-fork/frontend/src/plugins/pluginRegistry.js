@@ -69,6 +69,45 @@ export const registries = {
   // disabled at the layer level, so plugin nodes never intercept clicks;
   // use mapClickHandlers below for click handling.
   mapDecorations: new Map(),
+  // Map<pluginId, (ctx) => Array<{ id, tokenId, text, color, phase }>>
+  // Short-lived numbers rising off a token and fading — damage, healing,
+  // temp HP. VIEW-AGNOSTIC on purpose: mapDecorations above returns Konva
+  // nodes, which the 3D renderer cannot run, so a plugin that only registered
+  // there was invisible the moment the GM switched view. This returns plain
+  // data instead and each view draws it in its own terms — Konva on the flat
+  // map, billboards in 3D.
+  //
+  // `phase` runs 0 → 1 across the pop's life and is computed by the PLUGIN, so
+  // both views animate off one clock and cannot drift apart. Entries outside
+  // that range are simply not returned. Polled every frame: keep it cheap, and
+  // return an empty array when nothing is popping.
+  mapFloaters: new Map(),
+  // Map<pluginId, (ctx) => WeatherSpec | null>
+  // Per-map weather, as PLAIN DATA rather than drawing instructions — same
+  // reasoning as mapFloaters above. mapDecorations hands back Konva nodes, so
+  // a plugin registered only there has no weather at all the moment the GM
+  // switches to 3D. This returns what the weather IS and lets each view say it
+  // in its own vocabulary: raw canvas particles on the flat map, an
+  // instanced GPU system in the 3D one.
+  //
+  // ctx: { mapId, isPlayer }
+  // Returns, or null for "no weather here":
+  //   {
+  //     layers:     [{ kind: 'rain'|'snow'|'fog', intensity: 0..1 }],
+  //     windAngle:  degrees, the direction it blows TOWARDS,
+  //     visibility: 0..1, how far the scene washes out,
+  //     masks:      [{ id, points: [x,y, x,y, …] }] in MAP PIXELS — areas
+  //                 that must stay dry (interiors, cave mouths, awnings),
+  //     feather:    map pixels of softening on those mask edges,
+  //   }
+  //
+  // The masks are the part a renderer must not skip. A GM who drew a roof
+  // over the tavern expects the tavern to be dry in every view, so a view
+  // that honours `layers` but ignores `masks` is worse than one with no
+  // weather — it silently contradicts what the GM set up.
+  //
+  // Polled every frame: keep it cheap and return a stable object.
+  mapWeather: new Map(),
   // Map<pluginId, { handler: ({ x, y, tool, isPlayer }) => boolean, role? }>
   // Lets a plugin intercept map clicks. handler returns true to consume
   // the click (skipping the host's built-in tool handling). `role` is
@@ -293,7 +332,14 @@ export async function loadPlugins({ context = {} } = {}) {
   for (const row of enabled) {
     if (loaded.has(row.id)) continue;     // already loaded
     try {
-      const url = `/api/plugins/${row.id}/asset/${row.manifest.frontend_entry || 'client.js'}?v=${row.installed_at || ''}`;
+      // Cache-buster. installed_at alone is NOT enough: reconcilePluginsTable
+      // refreshes a plugin's manifest on every boot but leaves installed_at at
+      // the original install, so a plugin whose code changed kept the exact
+      // same URL and clients went on running the version they first saw. The
+      // manifest version moves whenever the author ships a change, which is
+      // precisely when the URL needs to move too.
+      const ver = row.manifest?.version || row.installed_at || '';
+      const url = `/api/plugins/${row.id}/asset/${row.manifest.frontend_entry || 'client.js'}?v=${encodeURIComponent(ver)}`;
       // eslint-disable-next-line no-await-in-loop
       const mod = await import(/* @vite-ignore */ url);
       const reg = mod.default || mod;

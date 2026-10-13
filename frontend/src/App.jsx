@@ -18,6 +18,16 @@ const PlayerView      = lazy(() => import('./components/PlayerView.jsx'));
 const DMView          = lazy(() => import('./components/DMView.jsx'));
 const SpectatorView   = lazy(() => import('./components/SpectatorView.jsx'));
 const CharacterEditor = lazy(() => import('./components/CharacterEditor.jsx'));
+// The GM's tablet companion. Lazy like the rest: its own chunk is a few KB, and
+// it pulls in neither DMView (~550KB) nor the three.js chunk (~350KB).
+//
+// It does NOT escape everything — Konva currently lands in the shared entry
+// chunk, so every route pays for it whether it draws a map or not. Splitting
+// that out is a build-config change for another day, not something this route
+// can do from here.
+const StatBlockView   = lazy(() => import('./components/StatBlockView.jsx'));
+// The player's phone companion. Same reasoning as the GM's above.
+const PlayerSheetView = lazy(() => import('./components/PlayerSheetView.jsx'));
 
 // Suspense fallback while the route chunk is fetched + parsed.
 // Matches the dark backdrop the rest of the app uses so there's
@@ -39,6 +49,12 @@ export default function App() {
           <Route path="/play" element={<PlayerView />} />
           <Route path="/dm" element={<DMView />} />
           <Route path="/spectate" element={<SpectatorView />} />
+          {/* Stat blocks only, for a second screen beside the GM. Same session
+              and same GM password as /dm; no board, nothing writable. */}
+          <Route path="/blocks" element={<StatBlockView />} />
+          {/* A player's own sheet, controls and companions — no map. Joins by
+              name like /play does; needs no password. */}
+          <Route path="/sheet" element={<PlayerSheetView />} />
           {/* Mounted in the mobile apps' WebView from the Settings
               "Edit Stat Block" button. Browsers can hit the URL
               directly too, which is handy for debugging. */}

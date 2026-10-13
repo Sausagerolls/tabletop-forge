@@ -1,0 +1,706 @@
+{
+ "class": [
+  {
+   "name": "Blood Hunter",
+   "source": "CRBH",
+   "_img": "img/bestiary/EGW/Blood Hunter.webp",
+   "_lore": "Blood hunters are monster hunters who turned the methods of their quarry on themselves. The order's rites are alchemical and bloody: a hunter pays hit points to set a blade alight, and works curses on an enemy's own blood. Most are grim company, and most would tell you the trade was worth it.\n\nThis is the free Blood Hunter class by Matt Mercer and Critical Role (2020 revision), not part of the SRD. Its rules are summarised here for play at this table.",
+   "hd": {
+    "number": 1,
+    "faces": 10
+   },
+   "proficiency": [
+    "dex",
+    "int"
+   ],
+   "primaryAbility": [
+    {
+     "dex": true
+    },
+    {
+     "int": true
+    }
+   ],
+   "subclassTitle": "Blood Hunter Order",
+   "startingProficiencies": {
+    "armor": [
+     "light",
+     "medium",
+     "shields"
+    ],
+    "weapons": [
+     "simple",
+     "martial"
+    ],
+    "tools": [
+     "alchemist's supplies"
+    ],
+    "skills": [
+     {
+      "choose": {
+       "from": [
+        "acrobatics",
+        "arcana",
+        "athletics",
+        "history",
+        "insight",
+        "investigation",
+        "religion",
+        "survival"
+       ],
+       "count": 3
+      }
+     }
+    ]
+   },
+   "startingEquipment": {
+    "default": [
+     "a {@item martial weapon} or two {@item simple weapon|phb|simple weapons}",
+     "a {@item light crossbow|phb} and 20 bolts, or a {@item hand crossbow|phb} and 20 bolts",
+     "{@item studded leather armor|phb} or {@item scale mail|phb}",
+     "an {@item explorer's pack|phb} and {@item alchemist's supplies|phb}"
+    ]
+   },
+   "classTableGroups": [
+    {
+     "colLabels": [
+      "Hemocraft Die",
+      "Blood Curses Known"
+     ],
+     "rows": [
+      [
+       "1d4",
+       "1"
+      ],
+      [
+       "1d4",
+       "1"
+      ],
+      [
+       "1d4",
+       "1"
+      ],
+      [
+       "1d4",
+       "1"
+      ],
+      [
+       "1d6",
+       "1"
+      ],
+      [
+       "1d6",
+       "2"
+      ],
+      [
+       "1d6",
+       "2"
+      ],
+      [
+       "1d6",
+       "2"
+      ],
+      [
+       "1d6",
+       "2"
+      ],
+      [
+       "1d6",
+       "3"
+      ],
+      [
+       "1d8",
+       "3"
+      ],
+      [
+       "1d8",
+       "3"
+      ],
+      [
+       "1d8",
+       "4"
+      ],
+      [
+       "1d8",
+       "4"
+      ],
+      [
+       "1d8",
+       "4"
+      ],
+      [
+       "1d8",
+       "4"
+      ],
+      [
+       "1d10",
+       "4"
+      ],
+      [
+       "1d10",
+       "5"
+      ],
+      [
+       "1d10",
+       "5"
+      ],
+      [
+       "1d10",
+       "5"
+      ]
+     ]
+    }
+   ],
+   "entries": []
+  }
+ ],
+ "subclass": [
+  {
+   "name": "Order of the Ghostslayer",
+   "shortName": "Ghostslayer",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "_img": "img/bestiary/EGW/Blood Hunter.webp",
+   "_lore": "The oldest order, founded to put down the undead and anything else that walks where it should not. Its rite burns with daylight."
+  },
+  {
+   "name": "Order of the Lycan",
+   "shortName": "Lycan",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "_img": "img/bestiary/EGW/Blood Hunter.webp",
+   "_lore": "Hunters who carry the curse they hunt, and let it off the leash on purpose. The order teaches control; the blood does not always agree."
+  },
+  {
+   "name": "Order of the Mutant",
+   "shortName": "Mutant",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "_img": "img/bestiary/EGW/Blood Hunter.webp",
+   "_lore": "Alchemists of their own body, who brew what they will become before the fight starts and live with what it costs afterwards."
+  },
+  {
+   "name": "Order of the Profane Soul",
+   "shortName": "Profane Soul",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "_img": "img/bestiary/EGW/Blood Hunter.webp",
+   "_lore": "Hunters who decided the only thing strong enough to kill a monster was a bargain with something worse, and signed."
+  }
+ ],
+ "classFeature": [
+  {
+   "name": "Hunter's Bane",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 1,
+   "entries": [
+    "You have Advantage on Survival checks to track fey, fiends and undead, and on Intelligence checks to recall what you know about them.",
+    {
+     "type": "entries",
+     "name": "Hemocraft Ability",
+     "entries": [
+      "Choose Intelligence or Wisdom at level 1. That modifier drives your blood curses, your brands and several later features, and it does not change afterwards."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Save DC",
+     "entries": [
+      "8 + your proficiency bonus + your hemocraft modifier."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Hemocraft Die",
+     "entries": [
+      "A d4, rising to a d6 at level 5, a d8 at level 11 and a d10 at level 17."
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Blood Maledict",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 1,
+   "entries": [
+    "As a bonus action you invoke a blood curse you know on a creature you can see within 30 feet. A creature with no blood is immune unless the curse is amplified.",
+    {
+     "type": "entries",
+     "name": "Amplifying",
+     "entries": [
+      "You may amplify a curse as you invoke it. Doing so costs you one roll of your hemocraft die in necrotic damage that cannot be reduced or prevented in any way, and adds the extra effect listed with that curse."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Uses",
+     "entries": [
+      "Once, rising to twice at level 6, three times at level 13 and four times at level 17. All expended uses return on a short or long rest."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Curses Known",
+     "entries": [
+      "One to begin with, and another at levels 6, 10, 14 and 18."
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Fighting Style",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 2,
+   "entries": [
+    "Choose Archery, Dueling, Great Weapon Fighting or Two-Weapon Fighting."
+   ]
+  },
+  {
+   "name": "Crimson Rite",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 2,
+   "entries": [
+    "As a bonus action you invoke a rite on one weapon you are holding, at the cost of one roll of your hemocraft die in necrotic damage that cannot be reduced or prevented.",
+    "While the rite holds, that weapon counts as magical and deals an extra hemocraft die of the rite's damage type on a hit. The rite lasts until you finish a short or long rest, and only one weapon can carry one at a time.",
+    {
+     "type": "entries",
+     "name": "Primal Rites",
+     "entries": [
+      "Rite of the Flame (fire), Rite of the Frozen (cold) and Rite of the Storm (lightning). You know one to begin with, and learn another at levels 7 and 14."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Esoteric Rites",
+     "entries": [
+      "From level 14 your choices also include Rite of the Dead (necrotic), Rite of the Oracle (psychic) and Rite of the Roar (thunder)."
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Blood Hunter Order",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 3,
+   "entries": [
+    "You join an order — Ghostslayer, Lycan, Mutant or Profane Soul — and gain its features at levels 3, 7, 11, 15 and 18."
+   ]
+  },
+  {
+   "name": "Ability Score Improvement",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 4,
+   "entries": [
+    "Raise one ability score by 2, or two by 1, to a maximum of 20 — or take a feat. Again at levels 8, 12, 16 and 19."
+   ]
+  },
+  {
+   "name": "Extra Attack",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 5,
+   "entries": [
+    "You attack twice whenever you take the Attack action."
+   ]
+  },
+  {
+   "name": "Brand of Castigation",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 6,
+   "entries": [
+    "When you damage a creature with a weapon carrying an active rite, you can brand it. You know the direction of a branded creature on the same plane as you.",
+    "Whenever it deals damage to you or to a creature within 5 feet of you, it takes psychic damage equal to your hemocraft modifier.",
+    "The brand lasts until you end it, until you brand something else, or until it is dispelled. Once used, it returns on a short or long rest."
+   ]
+  },
+  {
+   "name": "Grim Psychometry",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 9,
+   "entries": [
+    "You have Advantage on Intelligence (History) checks to dig up the darker history of an object you handle or a place you stand in. A good enough roll may bring visions with it."
+   ]
+  },
+  {
+   "name": "Dark Augmentation",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 10,
+   "entries": [
+    "Your speed increases by 5 feet, and you add your hemocraft modifier (minimum +1) to your Strength, Dexterity and Constitution saving throws."
+   ]
+  },
+  {
+   "name": "Brand of Tethering",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 13,
+   "entries": [
+    "The psychic damage from your Brand of Castigation becomes twice your hemocraft modifier (minimum 2).",
+    "A branded creature cannot take the Dash action, and if it tries to teleport or leave the plane it takes 4d6 psychic damage and must succeed on a Wisdom saving throw against your save DC or the attempt fails."
+   ]
+  },
+  {
+   "name": "Hardened Soul",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 14,
+   "entries": [
+    "You have Advantage on saving throws against being charmed or frightened."
+   ]
+  },
+  {
+   "name": "Sanguine Mastery",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "level": 20,
+   "entries": [
+    "Once per turn you can reroll a hemocraft die and choose which result to use.",
+    "When you score a critical hit with a weapon carrying an active rite, you regain one use of Blood Maledict."
+   ]
+  }
+ ],
+ "subclassFeature": [
+  {
+   "name": "Rite of the Dawn",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Ghostslayer",
+   "subclassSource": "CRBH",
+   "level": 3,
+   "entries": [
+    "You learn this rite, and it does not count against the rites you know. Its damage is radiant.",
+    "While it is active you have Resistance to necrotic damage, and against undead it deals two hemocraft dice instead of one."
+   ]
+  },
+  {
+   "name": "Curse Specialist",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Ghostslayer",
+   "subclassSource": "CRBH",
+   "level": 3,
+   "entries": [
+    "You gain one extra use of Blood Maledict, and while a rite is active you can invoke your curses at a range of 30 feet."
+   ]
+  },
+  {
+   "name": "Ethereal Step",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Ghostslayer",
+   "subclassSource": "CRBH",
+   "level": 7,
+   "entries": [
+    "As a bonus action you step into the Ethereal Plane for a number of rounds equal to your hemocraft modifier (minimum 1), or until you end it. Returns on a short or long rest."
+   ]
+  },
+  {
+   "name": "Brand of Sundering",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Ghostslayer",
+   "subclassSource": "CRBH",
+   "level": 11,
+   "entries": [
+    "A creature carrying your Brand of Castigation takes an extra hemocraft die of damage from your rite weapon, and cannot move through creatures or objects while branded."
+   ]
+  },
+  {
+   "name": "Blood Curse of the Exorcist",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Ghostslayer",
+   "subclassSource": "CRBH",
+   "level": 15,
+   "entries": [
+    "You learn this curse, and it does not count against the curses you know. It ends the charmed, frightened or possessed condition on an ally you can see.",
+    "Amplified: the source takes 3d6 psychic damage and must save or be stunned until the end of your next turn."
+   ]
+  },
+  {
+   "name": "Rite Revival",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Ghostslayer",
+   "subclassSource": "CRBH",
+   "level": 18,
+   "entries": [
+    "When you drop to 0 hit points with a rite active, you can end every active rite to drop to 1 hit point instead. Returns on a long rest."
+   ]
+  },
+  {
+   "name": "Heightened Senses",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Lycan",
+   "subclassSource": "CRBH",
+   "level": 3,
+   "entries": [
+    "You have Advantage on Perception checks that rely on hearing or smell."
+   ]
+  },
+  {
+   "name": "Hybrid Transformation",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Lycan",
+   "subclassSource": "CRBH",
+   "level": 3,
+   "entries": [
+    "As a bonus action you transform for up to 1 hour, twice per short or long rest.",
+    "While transformed you have Advantage on Strength checks and saves; claws that count as simple melee weapons dealing 1d6 slashing (Strength or Dexterity, your choice), with an extra claw attack as a bonus action; a climb speed equal to your speed; and Resistance to bludgeoning, piercing and slashing damage from nonmagical, non-silvered sources.",
+    {
+     "type": "entries",
+     "name": "Bloodlust",
+     "entries": [
+      "If you start your turn below half your hit points, make a DC 8 + your hemocraft modifier Wisdom save or be forced to attack the nearest creature, ally or not."
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Stalker's Prowess",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Lycan",
+   "subclassSource": "CRBH",
+   "level": 7,
+   "entries": [
+    "Your speed increases by 10 feet and your jump distance doubles. While transformed, your claws score a critical hit on a 19 or 20."
+   ]
+  },
+  {
+   "name": "Advanced Transformation",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Lycan",
+   "subclassSource": "CRBH",
+   "level": 11,
+   "entries": [
+    "While transformed your claws deal 1d8 slashing damage, and you regain hit points equal to your hemocraft modifier at the start of each of your turns while you have at least 1 hit point."
+   ]
+  },
+  {
+   "name": "Brand of the Voracious",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Lycan",
+   "subclassSource": "CRBH",
+   "level": 15,
+   "entries": [
+    "While transformed, you have Advantage on attack rolls against a creature carrying your Brand of Castigation."
+   ]
+  },
+  {
+   "name": "Hybrid Transformation Mastery",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Lycan",
+   "subclassSource": "CRBH",
+   "level": 18,
+   "entries": [
+    "You transform at will, and your claws deal 1d10 slashing damage.",
+    "You learn Blood Curse of the Howl, which does not count against the curses you know: every creature within 30 feet makes a Wisdom save or is frightened of you for 1 minute. Amplified, the range is 60 feet and a creature failing by 5 or more is stunned while frightened this way."
+   ]
+  },
+  {
+   "name": "Formulas",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Mutant",
+   "subclassSource": "CRBH",
+   "level": 3,
+   "entries": [
+    "You learn four mutagen formulas, with another at levels 7, 11, 15 and 18. After a long rest you can swap one for another."
+   ]
+  },
+  {
+   "name": "Mutagencraft",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Mutant",
+   "subclassSource": "CRBH",
+   "level": 3,
+   "entries": [
+    "As part of a short or long rest you brew mutagens from formulas you know. Drinking one is a bonus action; its effect lasts 1 hour unless the formula says otherwise, and its side effect until you finish a short or long rest.",
+    "You can hold several at once, and any you brewed and did not drink lose their potency at your next rest."
+   ]
+  },
+  {
+   "name": "Strange Metabolism",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Mutant",
+   "subclassSource": "CRBH",
+   "level": 7,
+   "entries": [
+    "You are immune to poison damage and the poisoned condition. Once per long rest you can ignore one mutagen's side effect for 1 minute and gain Advantage on a Charisma save."
+   ]
+  },
+  {
+   "name": "Brand of Axiom",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Mutant",
+   "subclassSource": "CRBH",
+   "level": 11,
+   "entries": [
+    "A creature you brand has illusion and invisibility magic ended on it and is forced into its true form if it is a shapechanger. While branded it has Disadvantage on attacks against you and must save or be unable to change shape."
+   ]
+  },
+  {
+   "name": "Blood Curse of Corrosion",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Mutant",
+   "subclassSource": "CRBH",
+   "level": 15,
+   "entries": [
+    "You learn this curse, and it does not count against the curses you know. The target is poisoned for 1 minute, saving at the end of each of its turns.",
+    "Amplified: it also takes 4d6 necrotic damage each time it fails."
+   ]
+  },
+  {
+   "name": "Exalted Mutation",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Mutant",
+   "subclassSource": "CRBH",
+   "level": 18,
+   "entries": [
+    "As a bonus action you swap one mutagen affecting you for another you have brewed, a number of times per long rest equal to your hemocraft modifier (minimum 1)."
+   ]
+  },
+  {
+   "name": "Otherworldly Patron",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Profane Soul",
+   "subclassSource": "CRBH",
+   "level": 3,
+   "entries": [
+    "Choose a patron — Archfey, Celestial, Fiend, Great Old One, Hexblade or Undying. You gain its level 1 feature, and its expanded spells join your Profane Soul list."
+   ]
+  },
+  {
+   "name": "Pact Magic",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Profane Soul",
+   "subclassSource": "CRBH",
+   "level": 3,
+   "entries": [
+    "You cast warlock spells using Charisma, and your slots return on a short or long rest.",
+    "At Blood Hunter level 3: two cantrips, two spells known and one level 1 slot. A second slot arrives at level 6. Spells known rise to 3 at level 5, 4 at 7, 5 at 9, 6 at 11, 7 at 13, 8 at 15, 9 at 17, 10 at 19 and 11 at 20, and a third cantrip at level 10.",
+    "Slot level: 1 at Blood Hunter level 3, 2 at 7, 3 at 13 and 4 at 19."
+   ]
+  },
+  {
+   "name": "Rite Focus",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Profane Soul",
+   "subclassSource": "CRBH",
+   "level": 3,
+   "entries": [
+    "While a rite is active, your rite weapon is your spellcasting focus, and your patron grants it one extra benefit — more damage, a harder save, or a push, depending on the pact."
+   ]
+  },
+  {
+   "name": "Mystic Frenzy",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Profane Soul",
+   "subclassSource": "CRBH",
+   "level": 7,
+   "entries": [
+    "When you take the Attack action with an active rite, you can cast one cantrip you know as part of that action."
+   ]
+  },
+  {
+   "name": "Revealed Arcana",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Profane Soul",
+   "subclassSource": "CRBH",
+   "level": 11,
+   "entries": [
+    "Once per long rest you cast one spell drawn from your patron without expending a slot."
+   ]
+  },
+  {
+   "name": "Brand of the Sapping Scar",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Profane Soul",
+   "subclassSource": "CRBH",
+   "level": 15,
+   "entries": [
+    "A creature carrying your brand has Disadvantage on saving throws against your spells and takes an extra hemocraft die of damage from them."
+   ]
+  },
+  {
+   "name": "Blood Curse of the Souleater",
+   "source": "CRBH",
+   "className": "Blood Hunter",
+   "classSource": "CRBH",
+   "subclassShortName": "Profane Soul",
+   "subclassSource": "CRBH",
+   "level": 18,
+   "entries": [
+    "You learn this curse, and it does not count against the curses you know. As a reaction when a creature you can see within 30 feet dies, you gain Advantage on attack rolls and saving throws until the end of your next turn.",
+    "Amplified: you also regain one expended Pact Magic slot."
+   ]
+  }
+ ]
+}

@@ -1,8 +1,8 @@
 {
   "id": "weather-effects",
   "name": "Weather Effects",
-  "version": "2.0.0",
-  "description": "Per-map animated weather — stack rain, snow and fog together with a shared wind direction. Draw freehand exclusion polygons (no grid snapping) so interiors stay dry, plus a visibility wash. Visible to every player on that map.",
+  "version": "2.3.0",
+  "description": "Per-map animated weather — stack rain, snow and fog together with a shared wind direction. Draw freehand exclusion polygons (no grid snapping) so interiors stay dry, plus a visibility wash and feathered mask edges. Visible to every player on that map.",
   "author": "TableTop Forge",
   "requires": [],
   "frontend_entry": "client.js",

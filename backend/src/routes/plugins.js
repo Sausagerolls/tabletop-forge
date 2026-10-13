@@ -487,7 +487,26 @@ router.get('/:id/asset/*', (req, res) => {
     '.html': 'text/html; charset=utf-8',
   };
   res.setHeader('Content-Type', TYPES[ext] || 'application/octet-stream');
+  // `no-cache` means "revalidate before reusing", but a response with no
+  // validator gives the cache nothing to revalidate AGAINST — so a browser is
+  // free to keep serving the copy it already has. Combined with a cache-buster
+  // that never changes (the loader keys off installed_at, which reconcile does
+  // not touch), that meant an edited plugin could go on running its old code
+  // in every client indefinitely. Weather worked on the flat map and was
+  // missing in 3D for exactly this reason: the 3D half of the plugin was
+  // shipped, fetched, and quietly discarded in favour of the cached copy.
+  const st = fs.statSync(abs);
+  const etag = `W/"${st.size.toString(16)}-${st.mtimeMs.toString(16)}"`;
+  res.setHeader('ETag', etag);
+  res.setHeader('Last-Modified', st.mtime.toUTCString());
   res.setHeader('Cache-Control', 'no-cache');
+  // Now that there IS a validator, honour the conditional request so an
+  // unchanged plugin still costs one empty round trip rather than a re-download.
+  const since = Date.parse(req.headers['if-modified-since'] || '');
+  if (req.headers['if-none-match'] === etag
+      || (Number.isFinite(since) && Math.floor(st.mtimeMs / 1000) * 1000 <= since)) {
+    return res.status(304).end();
+  }
   fs.createReadStream(abs).pipe(res);
 });
 

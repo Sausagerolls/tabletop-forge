@@ -31,13 +31,6 @@ const router = express.Router();
 const PLUGINS_DIR = path.resolve(__dirname, '../../plugins');
 const MANIFEST_FILE = 'plugin.json';
 
-// Mac App Store build flag (set by the native shell when compiled with the
-// `app-store` feature). In this mode the app ships ALL plugins bundled but
-// must not let the user install code that wasn't reviewed by Apple
-// (guideline 2.5.2): the upload endpoint is refused and freshly-discovered
-// plugins default to DISABLED so nothing runs until the GM opts in.
-const APP_STORE = process.env.TTF_APP_STORE === '1';
-
 function ensurePluginsDir() {
   fs.mkdirSync(PLUGINS_DIR, { recursive: true });
 }
@@ -111,15 +104,10 @@ async function reconcilePluginsTable() {
   for (const m of onDisk) {
     const existing = (await db.query('SELECT id FROM plugins WHERE id=$1', [m.id])).rows[0];
     if (!existing) {
-      // New on disk → insert. Direct-dist enables on discovery (built-ins
-      // and freshly-uploaded plugins light up immediately); the App Store
-      // build inserts DISABLED so the bundled set stays inert until the GM
-      // turns one on.
-      const enabledDefault = !APP_STORE;
       await db.query(
         `INSERT INTO plugins (id, manifest, enabled, source, installed_at)
-         VALUES ($1, $2, $4, $3, NOW())`,
-        [m.id, JSON.stringify(m), m.builtin ? 'builtin' : 'upload', enabledDefault]
+         VALUES ($1, $2, true, $3, NOW())`,
+        [m.id, JSON.stringify(m), m.builtin ? 'builtin' : 'upload']
       );
     } else {
       await db.query(
@@ -236,12 +224,6 @@ router.post('/:id/disable', async (req, res) => {
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
-    // App Store builds may not install code that wasn't in the reviewed
-    // bundle (guideline 2.5.2). The whole upload path is disabled; the
-    // frontend hides the UI too, this is the server-side backstop.
-    if (APP_STORE) {
-      return res.status(403).json({ error: 'Plugin uploads are disabled in the App Store build. All available plugins are bundled — enable them in the plugin manager.' });
-    }
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     let zip;
     try { zip = new AdmZip(req.file.buffer); }
@@ -505,7 +487,26 @@ router.get('/:id/asset/*', (req, res) => {
     '.html': 'text/html; charset=utf-8',
   };
   res.setHeader('Content-Type', TYPES[ext] || 'application/octet-stream');
+  // `no-cache` means "revalidate before reusing", but a response with no
+  // validator gives the cache nothing to revalidate AGAINST — so a browser is
+  // free to keep serving the copy it already has. Combined with a cache-buster
+  // that never changes (the loader keys off installed_at, which reconcile does
+  // not touch), that meant an edited plugin could go on running its old code
+  // in every client indefinitely. Weather worked on the flat map and was
+  // missing in 3D for exactly this reason: the 3D half of the plugin was
+  // shipped, fetched, and quietly discarded in favour of the cached copy.
+  const st = fs.statSync(abs);
+  const etag = `W/"${st.size.toString(16)}-${st.mtimeMs.toString(16)}"`;
+  res.setHeader('ETag', etag);
+  res.setHeader('Last-Modified', st.mtime.toUTCString());
   res.setHeader('Cache-Control', 'no-cache');
+  // Now that there IS a validator, honour the conditional request so an
+  // unchanged plugin still costs one empty round trip rather than a re-download.
+  const since = Date.parse(req.headers['if-modified-since'] || '');
+  if (req.headers['if-none-match'] === etag
+      || (Number.isFinite(since) && Math.floor(st.mtimeMs / 1000) * 1000 <= since)) {
+    return res.status(304).end();
+  }
   fs.createReadStream(abs).pipe(res);
 });
 

@@ -1,0 +1,314 @@
+{
+ "subclass": [
+  {
+   "name": "Gunslinger",
+   "shortName": "Gunslinger",
+   "source": "CRGS",
+   "className": "Fighter",
+   "classSource": "PHB",
+   "_img": "/api/reference-img/gunslinger.jpg",
+   "_lore": "Most fighters spend their years perfecting swordplay, archery or the polearm. A few went the other way: alchemical powder, rare metals and controlled explosive force, and the nerve to stand behind the result. A gunslinger is a distant and very sudden kind of death — when the weapon works.\n\nThis is the free Gunslinger martial archetype by Matt Mercer (Gunslinger 1.3, art by Nick Robles), published under the DMs Guild Community Content Agreement. Its rules are summarised here for play at this table."
+  }
+ ],
+ "subclassFeature": [
+  {
+   "name": "Firearm Proficiency",
+   "source": "CRGS",
+   "className": "Fighter",
+   "classSource": "PHB",
+   "subclassShortName": "Gunslinger",
+   "subclassSource": "CRGS",
+   "level": 3,
+   "entries": [
+    "You gain proficiency with firearms, and add your proficiency bonus to attacks made with them."
+   ]
+  },
+  {
+   "name": "Gunsmith",
+   "source": "CRGS",
+   "className": "Fighter",
+   "classSource": "PHB",
+   "subclassShortName": "Gunslinger",
+   "subclassSource": "CRGS",
+   "level": 3,
+   "entries": [
+    "You gain proficiency with tinker's tools. With them you craft ammunition at half cost, repair damaged firearms, and — at your GM's discretion — draft and build new ones. The strangest firearms exist only as something somebody built."
+   ]
+  },
+  {
+   "name": "Adept Marksman",
+   "source": "CRGS",
+   "className": "Fighter",
+   "classSource": "PHB",
+   "subclassShortName": "Gunslinger",
+   "subclassSource": "CRGS",
+   "level": 3,
+   "entries": [
+    "You learn to perform trick shots with your firearms, to disable or to damage.",
+    {
+     "type": "entries",
+     "name": "Trick Shots",
+     "entries": [
+      "You learn two trick shots of your choice from the list below, and another at levels 7, 10, 15 and 18. Each time you learn one you may also swap one you already know.",
+      "A trick shot must be declared before the attack roll, and only one may be used per attack."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Grit",
+     "entries": [
+      "You have a number of grit points equal to your Wisdom modifier (minimum 1). You regain one grit point when you roll a 20 on the d20 for a firearm attack, or when you deal a killing blow with a firearm to a creature of significant threat. All spent grit returns on a short or long rest."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Saving Throws",
+     "entries": [
+      "Trick shot save DC = 8 + your proficiency bonus + your Dexterity modifier."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Trick Shot List",
+     "entries": [
+      {
+       "type": "entries",
+       "name": "Bullying Shot",
+       "entries": [
+        "Spend 1 grit to gain Advantage on a Charisma (Intimidation) check, using the blast and the noise to shake them."
+       ]
+      },
+      {
+       "type": "entries",
+       "name": "Dazing Shot",
+       "entries": [
+        "Spend 1 grit on a firearm attack. On a hit, normal damage, and the target makes a Constitution save or attacks at Disadvantage until the end of its next turn."
+       ]
+      },
+      {
+       "type": "entries",
+       "name": "Deadeye Shot",
+       "entries": [
+        "Spend 1 grit to gain Advantage on the attack roll."
+       ]
+      },
+      {
+       "type": "entries",
+       "name": "Disarming Shot",
+       "entries": [
+        "Spend 1 grit on a firearm attack. On a hit, normal damage, and the target makes a Strength save or drops one held object of your choice, which is pushed 10 feet away from you."
+       ]
+      },
+      {
+       "type": "entries",
+       "name": "Forceful Shot",
+       "entries": [
+        "Spend 1 grit on a firearm attack. On a hit, normal damage, and the target makes a Strength save or is pushed 15 feet away from you."
+       ]
+      },
+      {
+       "type": "entries",
+       "name": "Piercing Shot",
+       "entries": [
+        "Spend 1 grit on a firearm attack, raising its misfire score by 1. On a hit, normal damage, and you roll an attack with Disadvantage against every creature in a line behind the target within your first range increment. Only the first attack can misfire."
+       ]
+      },
+      {
+       "type": "entries",
+       "name": "Violent Shot",
+       "entries": [
+        "Spend one or more grit on a firearm attack, raising its misfire score by 2 for each point spent. On a hit, roll one extra weapon damage die per point spent."
+       ]
+      },
+      {
+       "type": "entries",
+       "name": "Winging Shot",
+       "entries": [
+        "Spend 1 grit on a firearm attack. On a hit, normal damage, and the target makes a Strength save or is knocked prone."
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Quickdraw",
+   "source": "CRGS",
+   "className": "Fighter",
+   "classSource": "PHB",
+   "subclassShortName": "Gunslinger",
+   "subclassSource": "CRGS",
+   "level": 7,
+   "entries": [
+    "You add your proficiency bonus to initiative, and can stow a firearm and draw another as a single object interaction on your turn."
+   ]
+  },
+  {
+   "name": "Rapid Repair",
+   "source": "CRGS",
+   "className": "Fighter",
+   "classSource": "PHB",
+   "subclassShortName": "Gunslinger",
+   "subclassSource": "CRGS",
+   "level": 10,
+   "entries": [
+    "You can spend a grit point to repair a misfired — but not broken — firearm as a bonus action."
+   ]
+  },
+  {
+   "name": "Lightning Reload",
+   "source": "CRGS",
+   "className": "Fighter",
+   "classSource": "PHB",
+   "subclassShortName": "Gunslinger",
+   "subclassSource": "CRGS",
+   "level": 15,
+   "entries": [
+    "You can reload any firearm as a bonus action."
+   ]
+  },
+  {
+   "name": "Vicious Intent",
+   "source": "CRGS",
+   "className": "Fighter",
+   "classSource": "PHB",
+   "subclassShortName": "Gunslinger",
+   "subclassSource": "CRGS",
+   "level": 18,
+   "entries": [
+    "Your firearm attacks score a critical hit on a 19 or 20, and you regain a grit point whenever you roll a 19 or 20 on a d20 firearm attack roll."
+   ]
+  },
+  {
+   "name": "Hemorrhaging Critical",
+   "source": "CRGS",
+   "className": "Fighter",
+   "classSource": "PHB",
+   "subclassShortName": "Gunslinger",
+   "subclassSource": "CRGS",
+   "level": 18,
+   "entries": [
+    "When you score a critical hit with a firearm, the target takes half the attack's damage again at the end of its next turn."
+   ]
+  },
+  {
+   "name": "Firearms and their properties",
+   "source": "CRGS",
+   "className": "Fighter",
+   "classSource": "PHB",
+   "subclassShortName": "Gunslinger",
+   "subclassSource": "CRGS",
+   "level": 3,
+   "entries": [
+    "Firearms are ranged weapons with properties of their own, which replace the optional firearm rules in the Dungeon Master's Guide.",
+    {
+     "type": "entries",
+     "name": "Reload",
+     "entries": [
+      "The weapon fires a number of times equal to its reload score before you must spend one attack or one action reloading it, with a free hand."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Misfire",
+     "entries": [
+      "If the d20 for a firearm attack rolls equal to or under the weapon's misfire score, the attack misses and the weapon cannot be used again until you spend an action repairing it with a tinker's tools check (DC 8 + misfire score). Fail that check and the weapon is broken, mended out of combat for a quarter of its cost.",
+      "A creature with no proficiency in firearms raises the weapon's misfire score by 1."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Explosive",
+     "entries": [
+      "On a hit, everything within 5 feet of the target makes a Dexterity save (DC 8 + your proficiency bonus + your Dexterity modifier) or takes 1d8 fire damage. On a miss the round fails to detonate."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Ammunition",
+     "entries": [
+      "Every firearm needs its own ammunition, which is rare enough that it is usually crafted rather than bought — at half cost with tinker's tools."
+     ]
+    },
+    {
+     "type": "table",
+     "caption": "Firearms",
+     "colLabels": [
+      "Name",
+      "Cost",
+      "Ammo",
+      "Damage",
+      "Weight",
+      "Range",
+      "Properties"
+     ],
+     "rows": [
+      [
+       "Palm Pistol",
+       "50 gp",
+       "2 gp (20)",
+       "1d8 piercing",
+       "1 lb.",
+       "40/160",
+       "Light, reload 1, misfire 1"
+      ],
+      [
+       "Pistol",
+       "150 gp",
+       "4 gp (20)",
+       "1d10 piercing",
+       "3 lb.",
+       "60/240",
+       "Reload 4, misfire 1"
+      ],
+      [
+       "Musket",
+       "300 gp",
+       "5 gp (20)",
+       "1d12 piercing",
+       "10 lb.",
+       "120/480",
+       "Two-handed, reload 1, misfire 2"
+      ],
+      [
+       "Pepperbox",
+       "250 gp",
+       "4 gp (20)",
+       "1d10 piercing",
+       "5 lb.",
+       "80/320",
+       "Reload 6, misfire 2"
+      ],
+      [
+       "Blunderbuss",
+       "300 gp",
+       "5 gp (5)",
+       "2d8 piercing",
+       "10 lb.",
+       "15/60",
+       "Reload 1, misfire 2"
+      ],
+      [
+       "Bad News",
+       "Crafted",
+       "10 gp (5)",
+       "2d12 piercing",
+       "25 lb.",
+       "200/800",
+       "Two-handed, reload 1, misfire 3"
+      ],
+      [
+       "Hand Mortar",
+       "Crafted",
+       "10 gp (1)",
+       "2d8 fire",
+       "10 lb.",
+       "30/60",
+       "Reload 1, misfire 3, explosive"
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

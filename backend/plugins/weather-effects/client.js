@@ -43,8 +43,9 @@ const CLOSE_SNAP_PX = 14;
 const MAX_MASK_POINTS = 64;
 
 function defaultState() {
-  return { layers: [], windAngle: 200, visibility: 0, masks: [] };
+  return { layers: [], windAngle: 200, visibility: 0, masks: [], feather: 24 };
 }
+const MAX_FEATHER = 160;
 
 // Tolerate anything the KV row throws at us — a half-written value from an
 // older build shouldn't take the map's weather down with it.
@@ -62,6 +63,11 @@ function normalise(raw) {
       })),
     windAngle: Number.isFinite(Number(raw.windAngle)) ? Number(raw.windAngle) : d.windAngle,
     visibility: clamp01(Number(raw.visibility)) || 0,
+    // Older rows predate feathering — fall back to the default rather
+    // than 0 so existing masks pick up soft edges too.
+    feather: Number.isFinite(Number(raw.feather))
+      ? Math.max(0, Math.min(MAX_FEATHER, Number(raw.feather)))
+      : d.feather,
     masks: (Array.isArray(raw.masks) ? raw.masks : [])
       .filter((m) => m && Array.isArray(m.points) && m.points.length >= 6)
       .map((m) => ({ id: m.id || `m-${Math.random().toString(36).slice(2, 8)}`, points: m.points.slice(0, MAX_MASK_POINTS * 2) })),
@@ -70,6 +76,18 @@ function normalise(raw) {
 
 function clamp01(n) { return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0; }
 function frac(n) { return n - Math.floor(n); }
+
+// Stable scattered pseudo-random in [0,1) for particle i. The old layout used
+// frac(i * 0.137), which advances in a straight line and wraps every ~7
+// particles — that regularity was visible as columns and marching wave fronts.
+// Same value every frame, so particles don't jitter between frames.
+function hash01(i, salt) {
+  const x = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+// Depth layers. Each is stroked separately because line width and colour are
+// canvas state, not per-subpath — one path can only ever be one thickness.
+const RAIN_DEPTHS = 3;
 
 // Wind angle convention: degrees clockwise from East.
 //   0 = East (+x) · 90 = South (+y, canvas-y is down) · 180 = West · 270 = North
@@ -104,30 +122,50 @@ function getState(mapId) {
 }
 
 // ── Particle painters (raw canvas 2d context) ──────────────────────────
-function drawRain(c, intensity, wind, w, h, t) {
+function drawRain(c, intensity, wind, w, h, t, unit) {
   const n = Math.floor(80 + intensity * 220);
-  const cycle = 1.4 - intensity * 0.35;
+  const baseCycle = 1.4 - intensity * 0.35;
   const tiltX = wind.x * 0.45;
   const totalY = h + 80;
   const totalX = totalY * tiltX;
   const span = w + Math.abs(totalX) + 100;
-  const tail = 14 + intensity * 12;
   const mag = Math.hypot(totalX, totalY) || 1;
-  c.strokeStyle = 'rgba(160,200,240,0.55)';
-  c.lineWidth = 1;
-  c.beginPath();
-  for (let i = 0; i < n; i++) {
-    const phase = frac(t / cycle + frac(i * 0.61803398));
-    const startX = -Math.max(0, totalX) - 50 + frac(i * 0.137 + 0.21) * span;
-    const px = startX + totalX * phase;
-    const py = -40 + totalY * phase;
-    c.moveTo(px, py);
-    c.lineTo(px - (totalX / mag) * tail, py - (totalY / mag) * tail);
+  const ux = totalX / mag, uy = totalY / mag;
+  const baseTail = (18 + intensity * 16) * unit;
+  c.lineCap = 'round';
+
+  // Three depth layers: near drops are bigger, faster and brighter, far ones
+  // thin and dim. Varying the fall speed per drop is what actually breaks the
+  // marching-wave look — drops at different speeds can't stay in formation.
+  for (let b = 0; b < RAIN_DEPTHS; b++) {
+    const depth = (b + 0.5) / RAIN_DEPTHS;
+    c.beginPath();
+    for (let i = b; i < n; i += RAIN_DEPTHS) {
+      const rx = hash01(i, 1);
+      const rp = hash01(i, 2);
+      const rs = hash01(i, 3);
+      const rt = hash01(i, 4);
+      // Nearer falls faster, plus a per-drop jitter so even one layer's drops
+      // drift out of phase with each other.
+      const cycle = baseCycle * (1.3 - 0.55 * depth) * (0.82 + 0.4 * rs);
+      const phase = frac(t / cycle + rp);
+      const startX = -Math.max(0, totalX) - 50 + rx * span;
+      const px = startX + totalX * phase;
+      const py = -40 + totalY * phase;
+      const tail = baseTail * (0.55 + 0.9 * depth) * (0.75 + 0.55 * rt);
+      c.moveTo(px, py);
+      c.lineTo(px - ux * tail, py - uy * tail);
+    }
+    c.strokeStyle = `rgba(150,195,240,${(0.16 + 0.3 * depth).toFixed(3)})`;
+    c.lineWidth = Math.max(0.9, (1.1 + 2.4 * depth + intensity * 1.0) * unit);
+    c.stroke();
+    c.strokeStyle = `rgba(215,235,255,${(0.35 + 0.5 * depth).toFixed(3)})`;
+    c.lineWidth = Math.max(0.5, (0.5 + 1.0 * depth + intensity * 0.4) * unit);
+    c.stroke();
   }
-  c.stroke();
 }
 
-function drawSnow(c, intensity, wind, w, h, t) {
+function drawSnow(c, intensity, wind, w, h, t, unit) {
   const n = Math.floor(60 + intensity * 160);
   const cycle = 14 - intensity * 5;
   const tiltX = wind.x * 0.6;
@@ -137,12 +175,17 @@ function drawSnow(c, intensity, wind, w, h, t) {
   c.fillStyle = 'rgba(255,255,255,0.85)';
   c.beginPath();
   for (let i = 0; i < n; i++) {
-    const phase = frac(t / cycle + frac(i * 0.61803398));
-    const startX = -Math.max(0, totalX) - 30 + frac(i * 0.137 + 0.31) * span;
-    const sway = Math.sin(t * 0.5 + i * 1.7) * 22;
+    const rx = hash01(i, 5);
+    const rp = hash01(i, 6);
+    const rs = hash01(i, 7);
+    const rr = hash01(i, 8);
+    const flakeCycle = cycle * (0.75 + 0.5 * rs);
+    const phase = frac(t / flakeCycle + rp);
+    const startX = -Math.max(0, totalX) - 30 + rx * span;
+    const sway = Math.sin(t * (0.35 + 0.4 * rs) + rp * 12) * (14 + 18 * rr) * unit;
     const px = startX + totalX * phase + sway;
     const py = -20 + totalY * phase;
-    const r = 1.4 + (i % 4) * 0.45;
+    const r = (1.1 + rr * 2.2) * unit;
     c.moveTo(px + r, py);
     c.arc(px, py, r, 0, Math.PI * 2);
   }
@@ -190,28 +233,15 @@ function washRgb(st) {
   return '150,160,175';
 }
 
-function drawScene(c, st, w, h, t) {
-  c.save();
-  // Clip to "the whole map MINUS every exclusion polygon". Even-odd means
-  // the inner subpaths punch holes rather than union.
-  c.beginPath();
-  c.rect(0, 0, w, h);
-  for (const m of st.masks) {
-    const p = m.points;
-    c.moveTo(p[0], p[1]);
-    for (let i = 2; i < p.length; i += 2) c.lineTo(p[i], p[i + 1]);
-    c.closePath();
-  }
-  // Konva's Context wrapper forwards the fill-rule; guard in case a future
-  // version doesn't, in which case masks stop cutting but weather still runs.
-  try { c.clip('evenodd'); } catch { c.clip(); }
-
+// The weather itself, unclipped. Shared by both the hard-edged and the
+// feathered paths so the two can never drift apart.
+function drawLayers(c, st, w, h, t, unit) {
   const wind = windVector(st.windAngle);
   for (const kind of DRAW_ORDER) {
     for (const L of st.layers) {
       if (L.kind !== kind) continue;
-      if (kind === 'rain') drawRain(c, L.intensity, wind, w, h, t);
-      else if (kind === 'snow') drawSnow(c, L.intensity, wind, w, h, t);
+      if (kind === 'rain') drawRain(c, L.intensity, wind, w, h, t, unit);
+      else if (kind === 'snow') drawSnow(c, L.intensity, wind, w, h, t, unit);
       else if (kind === 'fog') drawFog(c, L.intensity, wind, w, h, t);
     }
   }
@@ -219,7 +249,134 @@ function drawScene(c, st, w, h, t) {
     c.fillStyle = `rgba(${washRgb(st)},${st.visibility * 0.75})`;
     c.fillRect(0, 0, w, h);
   }
-  c.restore();
+}
+
+function tracePolys(c, masks) {
+  for (const m of masks) {
+    const p = m.points;
+    c.moveTo(p[0], p[1]);
+    for (let i = 2; i < p.length; i += 2) c.lineTo(p[i], p[i + 1]);
+    c.closePath();
+  }
+}
+
+// ── Offscreen scratch, reused across frames ────────────────────────────
+// A canvas clip() edge is always hard — there is no feathered clip. So for
+// soft edges we draw the weather to an offscreen canvas, punch the mask
+// holes out of it, then composite the result. The alpha mask only changes
+// when the polygons or the feather change, so it's cached and the
+// per-frame cost is one extra composite plus one drawImage.
+let _weatherCv = null;
+let _maskCv = null;
+let _maskKey = '';
+
+// Number of concentric passes used to build the soft edge. More is
+// smoother; 16 is indistinguishable from a true blur at these radii and
+// only runs when the mask is rebuilt.
+const FEATHER_STEPS = 16;
+
+function sizedCanvas(cv, w, h) {
+  if (!cv) cv = document.createElement('canvas');
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  return cv;
+}
+
+// White where weather should show, transparent inside the exclusions,
+// with a soft ramp between. Used as a destination-in alpha mask.
+//
+// The ramp is built from concentric strokes rather than `ctx.filter =
+// blur(...)`. Canvas filters combined with destination-out compositing
+// are unreliable across browsers (notably Safari, where the filter is
+// silently ignored and the edge comes out hard), and a feature check
+// can't catch that because `filter` reports as supported either way.
+//
+// A stroke of width W straddles the path, reaching W/2 either side, so
+// pass i of N (W = 2*feather*(i/N)) covers everything within
+// feather*(i/N) of the edge. destination-out with alpha a multiplies the
+// remaining alpha by (1-a), so a point d px out ends up with
+// prod_{j >= d*N/feather} (1 - a_j).
+//
+// Setting that product equal to the linear target d/feather telescopes
+// to a_i = 1/(i+1). A constant 1/N per pass looks like it should work but
+// leaves ~0.37 alpha at the edge — a visible step against the fully
+// erased interior.
+//
+// Strokes also bleed inward, but the interior is already fully erased by
+// the fill, so that costs nothing.
+function getMaskCanvas(masks, feather, w, h) {
+  const key = `${w}x${h}|${feather}|${JSON.stringify(masks.map((m) => m.points))}`;
+  if (_maskCv && _maskKey === key) return _maskCv;
+  _maskCv = sizedCanvas(_maskCv, w, h);
+  const mc = _maskCv.getContext('2d');
+  mc.setTransform(1, 0, 0, 1, 0, 0);
+  mc.globalCompositeOperation = 'source-over';
+  mc.globalAlpha = 1;
+  mc.clearRect(0, 0, w, h);
+  mc.fillStyle = '#fff';
+  mc.fillRect(0, 0, w, h);
+
+  mc.globalCompositeOperation = 'destination-out';
+  mc.fillStyle = '#fff';
+  mc.strokeStyle = '#fff';
+  mc.lineJoin = 'round';
+  mc.lineCap = 'round';
+
+  // Hard interior first.
+  mc.globalAlpha = 1;
+  mc.beginPath();
+  tracePolys(mc, masks);
+  mc.fill('evenodd');
+
+  if (feather > 0) {
+    for (let i = FEATHER_STEPS; i >= 1; i--) {
+      mc.globalAlpha = 1 / (i + 1);
+      mc.lineWidth = 2 * feather * (i / FEATHER_STEPS);
+      mc.beginPath();
+      tracePolys(mc, masks);
+      mc.stroke();
+    }
+  }
+
+  mc.globalAlpha = 1;
+  mc.globalCompositeOperation = 'source-over';
+  _maskKey = key;
+  return _maskCv;
+}
+
+function drawScene(c, st, w, h, t, unit) {
+  const feather = st.feather || 0;
+
+  // Fast path — no masks, or feather dialled to zero. Hard clip straight
+  // onto the real context, which also keeps the particles at full device
+  // resolution when the GM is zoomed in.
+  if (st.masks.length === 0 || feather <= 0) {
+    c.save();
+    c.beginPath();
+    c.rect(0, 0, w, h);
+    tracePolys(c, st.masks);
+    // Konva's Context wrapper forwards the fill-rule; guard in case a
+    // future version doesn't, in which case masks stop cutting but the
+    // weather still runs.
+    try { c.clip('evenodd'); } catch { c.clip(); }
+    drawLayers(c, st, w, h, t, unit);
+    c.restore();
+    return;
+  }
+
+  // Feathered path. The offscreen is map-resolution, so weather softens
+  // slightly when zoomed right in — acceptable for ambient effects that
+  // are half blur anyway, and it keeps the buffer bounded on big maps.
+  _weatherCv = sizedCanvas(_weatherCv, w, h);
+  const wc = _weatherCv.getContext('2d');
+  wc.setTransform(1, 0, 0, 1, 0, 0);
+  wc.globalCompositeOperation = 'source-over';
+  wc.filter = 'none';
+  wc.clearRect(0, 0, w, h);
+  drawLayers(wc, st, w, h, t, unit);
+  wc.globalCompositeOperation = 'destination-in';
+  wc.drawImage(getMaskCanvas(st.masks, feather, w, h), 0, 0);
+  wc.globalCompositeOperation = 'source-over';
+  c.drawImage(_weatherCv, 0, 0);
 }
 
 export default {
@@ -273,7 +430,7 @@ export default {
     }
 
     // ── Animated layer ───────────────────────────────────────────────
-    function WeatherShape({ st, mapWidth, mapHeight }) {
+    function WeatherShape({ st, mapWidth, mapHeight, unit }) {
       const [, force] = React.useState(0);
       const active = st.layers.length > 0 || st.visibility > 0;
       React.useEffect(() => {
@@ -293,9 +450,37 @@ export default {
       return React.createElement(Shape, {
         listening: false,
         perfectDrawEnabled: false,
-        sceneFunc: (ctx) => drawScene(ctx._context || ctx, st, mapWidth, mapHeight, t),
+        sceneFunc: (ctx) => drawScene(ctx._context || ctx, st, mapWidth, mapHeight, t, unit),
       });
     }
+
+    // ── View-agnostic state ──────────────────────────────────────────
+    //
+    // The Konva decoration below is the FLAT map's weather and nothing else —
+    // the 3D renderer cannot run Konva nodes, so before this hook existed,
+    // switching to 3D silently turned the weather off.
+    //
+    // So the state also goes out as plain data and each view renders it in
+    // its own terms. Both read the same `getState(mapId)`, which means the
+    // GM's slider moves both skies at once and the two cannot drift apart.
+    //
+    // The masks travel with it. They are the whole point of this plugin's
+    // interior handling, and a view that dropped them would put rain inside
+    // the tavern the GM explicitly roofed over.
+    console.log('[weather-effects] registering; host registry has mapWeather:',
+      !!(registries && registries.mapWeather));
+    registries.mapWeather.set(PLUGIN_ID, (ctx) => {
+      ensureLoaded(ctx.mapId);
+      const st = getState(ctx.mapId);
+      if (!st.layers.length && !st.visibility) return null;
+      return {
+        layers: st.layers.map((l) => ({ kind: l.kind, intensity: l.intensity })),
+        windAngle: st.windAngle,
+        visibility: st.visibility,
+        masks: st.masks,
+        feather: st.feather,
+      };
+    });
 
     // ── Map decoration ───────────────────────────────────────────────
     registries.mapDecorations.set(PLUGIN_ID, (ctx) => {
@@ -306,8 +491,13 @@ export default {
         setTimeout(pingTab, 0);
       }
       const st = getState(ctx.mapId);
+      // Particle sizes are in map pixels, so on a map with big grid squares
+      // a fixed size renders as hairlines. Normalise against a 50px cell —
+      // a standard map is unchanged, a coarser one gets proportionally
+      // chunkier drops. Clamped so extreme grids stay sane.
+      const unit = Math.max(0.7, Math.min(3, (Number(ctx.gridSize) || 50) / 50));
       const nodes = [React.createElement(WeatherShape, {
-        key: 'weather', st, mapWidth: ctx.mapWidth, mapHeight: ctx.mapHeight,
+        key: 'weather', st, mapWidth: ctx.mapWidth, mapHeight: ctx.mapHeight, unit,
       })];
 
       // GM-only editing chrome: existing masks outlined, plus the polygon
@@ -521,6 +711,16 @@ export default {
                   onClick: () => { if (window.confirm('Remove every exclusion area on this map?')) patch(mapId, { masks: [] }); },
                   className: 'text-xs bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-400 px-2 py-1.5 rounded',
                 }, 'Clear')),
+          st.masks.length > 0 && h('div', { className: 'pt-1' },
+            h('label', { className: 'block text-[11px] text-gray-400 mb-1' },
+              `Edge feather: ${Math.round(st.feather)}px`),
+            h('input', {
+              type: 'range', min: 0, max: MAX_FEATHER, step: 2, value: st.feather,
+              onChange: (e) => patch(mapId, { feather: parseInt(e.target.value, 10) }),
+              className: 'w-full',
+            }),
+            h('div', { className: 'text-[10px] text-gray-500 mt-0.5 leading-snug' },
+              'Softens where weather meets an excluded area, so a porch or broken roof fades instead of cutting off. 0 = hard edge.')),
           drawMode && h('p', { className: 'text-[10px] text-gray-500' },
             'While a mode is armed this plugin consumes map clicks — turn it off to use the normal map tools.')));
     }
@@ -533,6 +733,7 @@ export default {
 
   unregister({ registries }) {
     registries.mapDecorations.delete(PLUGIN_ID);
+    registries.mapWeather.delete(PLUGIN_ID);
     registries.mapClickHandlers.delete(PLUGIN_ID);
     registries.dmTabs.delete(PLUGIN_ID);
     statesByMap.clear();
@@ -540,5 +741,9 @@ export default {
     currentMapId = null;
     drawMode = null;
     draftPoints = null;
+    // Release the offscreen buffers — on a big map these are several MB each.
+    _weatherCv = null;
+    _maskCv = null;
+    _maskKey = '';
   },
 };

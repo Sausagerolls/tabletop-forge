@@ -22,7 +22,7 @@
 //
 // Versioning: bump CACHE_NAME on any breaking change to this file.
 // Old caches are evicted on activate.
-const CACHE_NAME = 'forge-shell-v4';
+const CACHE_NAME = 'forge-shell-v5';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest',
                '/icons/icon-192.png', '/icons/icon-512.png',
                '/icons/apple-touch-icon.png'];
@@ -66,9 +66,24 @@ self.addEventListener('fetch', (event) => {
   // served when online; fall back to the cached shell for installs
   // launched offline.
   if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req).catch(() => caches.match('/index.html'))
-    );
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(req);
+        // Keep the offline shell CURRENT. It used to be whatever was
+        // precached the day the worker installed, so a phone that fell back
+        // to it — a slow tunnel, a dropped connection mid-load — got an app
+        // that asked for script bundles deleted three builds ago. They 404,
+        // the modules never arrive, and the page comes up with whole features
+        // quietly missing rather than failing outright.
+        if (fresh && fresh.ok) {
+          const copy = fresh.clone();
+          caches.open(CACHE_NAME).then((c) => c.put('/index.html', copy)).catch(() => {});
+        }
+        return fresh;
+      } catch {
+        return (await caches.match('/index.html')) || Response.error();
+      }
+    })());
     return;
   }
 

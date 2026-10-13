@@ -147,6 +147,13 @@ def parse_side_effects(rows):
         'addsLanguages': [],
         'addsSpells': [],
         'breathWeaponType': None,
+        # Non-walk speeds and granted skills. The React picker has always
+        # consumed these (custom races use them); the CSV pipeline just had
+        # no way to express them until now.
+        'speed_fly': 0,
+        'speed_swim': 0,
+        'speed_climb': 0,
+        'addsSkills': [],
     }
     seen_lang = False
     for ability, desc, _cat, notes in rows:
@@ -206,6 +213,25 @@ def parse_side_effects(rows):
         if m:
             eff['setsSpeed'] = int(m.group(1))
 
+        # Non-walk speeds. "equal to your walking speed" resolves against
+        # whatever the walking speed ends up being, so it's applied after the
+        # loop once setsSpeed is known.
+        m = re.search(r'set (fly|swim|climb) speed to (\d+)\s*ft', n, re.I)
+        if m:
+            eff[f'speed_{m.group(1).lower()}'] = int(m.group(2))
+        m = re.search(r'set (fly|swim|climb) speed to walking', n, re.I)
+        if m:
+            eff[f'speed_{m.group(1).lower()}'] = 'walking'
+
+        # Skill proficiency / expertise granted by a trait.
+        m = re.search(r'auto adds (proficiency|expertise) in ([A-Za-z ]+)', n, re.I)
+        if m:
+            level = 'expertise' if m.group(1).lower() == 'expertise' else 'proficient'
+            for part in re.split(r'\s*,\s*|\s+and\s+', m.group(2)):
+                name = part.strip().lower().replace(' ', '_')
+                if name:
+                    eff['addsSkills'].append({'skill': f'skill_{name}', 'level': level})
+
         # Breath-weapon damage type (per dragonborn sub-race)
         m = LIGHT_BREATH.search(n)
         if m:
@@ -218,6 +244,11 @@ def parse_side_effects(rows):
         m = re.search(r"you know the ([A-Z][\w' ]+?) cantrip", desc)
         if m:
             eff['addsSpells'].append({'name': m.group(1).strip(), 'minLevel': 1})
+
+    # "equal to your walking speed" — resolve now that setsSpeed is known.
+    for key in ('speed_fly', 'speed_swim', 'speed_climb'):
+        if eff[key] == 'walking':
+            eff[key] = eff['setsSpeed'] or 30
 
     # Dedupe spells by (name, minLevel).
     seen = set()

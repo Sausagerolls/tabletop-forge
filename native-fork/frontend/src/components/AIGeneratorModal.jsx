@@ -118,7 +118,7 @@ export default function AIGeneratorModal({ aiSettings, onGenerated, onCancel }) 
   const labelClass = 'block text-xs text-gray-400 mb-1';
 
   return (
-    <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-[90] p-4">
       <div className="bg-dnd-panel border border-gray-700 rounded-xl w-full max-w-md flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-700 shrink-0 flex items-center justify-between">

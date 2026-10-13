@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import {
+  compendiumImgUrl, compendiumStatus, searchCompendium,
+  previewCompendiumCreature, importCompendiumCreature,
+} from '../utils/compendiumImport.js';
+import { SPELL_TYPES, spellType } from '../utils/spellTypes.js';
 
 const XIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="w-3.5 h-3.5">
@@ -13,6 +18,11 @@ const PencilIcon = () => (
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
     <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
+  </svg>
+);
+const CopyIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+    <rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
   </svg>
 );
 const PersonIcon = () => (
@@ -49,6 +59,7 @@ const UploadIcon = () => (
 import CreatureForm from './CreatureForm.jsx';
 import StatBlock from './StatBlock.jsx';
 import AIGeneratorModal from './AIGeneratorModal.jsx';
+import { printStatBlockCard } from '../utils/statBlockCard.js';
 
 const SIZE_COLORS = {
   tiny: 'bg-purple-900/50 text-purple-300',
@@ -59,7 +70,7 @@ const SIZE_COLORS = {
   gargantuan: 'bg-red-900/50 text-red-300',
 };
 
-function CreatureCard({ creature, onEdit, onDelete, onAddToMap, onView }) {
+function CreatureCard({ creature, onEdit, onDelete, onDuplicate, onAddToMap, onView, duplicating }) {
   const imageUrl = creature.image_path
     ? `/uploads/${creature.image_path}`
     : creature.is_player_character
@@ -83,6 +94,28 @@ function CreatureCard({ creature, onEdit, onDelete, onAddToMap, onView }) {
       <div className="p-3">
         <div className="flex items-start justify-between gap-1">
           <h3 className="text-sm font-semibold text-white leading-tight">{creature.name}</h3>
+          {/* Eligible as a druid's Wild Shape form. */}
+          {creature.wildshape_eligible && (
+            <span
+              className="text-xs px-1 py-0.5 rounded shrink-0 bg-emerald-900/50 text-emerald-300"
+              title="Available as a Wild Shape form"
+            >
+              🐾
+            </span>
+          )}
+          {/* Masked-on-placement marker — tokens from this entry spawn with
+              their name and/or health hidden from players. */}
+          {(creature.hide_token_name || creature.hide_token_hp) && (
+            <span
+              className="text-xs px-1 py-0.5 rounded shrink-0 bg-amber-900/50 text-amber-300"
+              title={`Spawns with ${[
+                creature.hide_token_name && 'name',
+                creature.hide_token_hp && 'health bar',
+              ].filter(Boolean).join(' + ')} hidden from players`}
+            >
+              🎭
+            </span>
+          )}
           <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${SIZE_COLORS[creature.size] || SIZE_COLORS.medium}`}>
             {creature.size?.charAt(0).toUpperCase()}
           </span>
@@ -110,6 +143,14 @@ function CreatureCard({ creature, onEdit, onDelete, onAddToMap, onView }) {
             <PencilIcon />
           </button>
           <button
+            onClick={() => onDuplicate(creature)}
+            disabled={duplicating}
+            title="Duplicate — make a copy to tweak into a variant"
+            className="bg-gray-700 hover:bg-gray-600 text-gray-300 disabled:opacity-50 text-xs py-1.5 px-2 rounded transition-colors flex items-center justify-center"
+          >
+            <CopyIcon />
+          </button>
+          <button
             onClick={() => onDelete(creature)}
             className="bg-gray-700 hover:bg-red-900/50 text-gray-400 hover:text-red-300 text-xs py-1.5 px-2 rounded transition-colors flex items-center justify-center"
           >
@@ -121,8 +162,266 @@ function CreatureCard({ creature, onEdit, onDelete, onAddToMap, onView }) {
   );
 }
 
+// Import from the self-hosted compendium (a 5etools mirror).
+//
+// Three steps, and the middle one is the point: search the mirror, LOOK at what
+// you are about to add, then create it. The preview matters because the mirror
+// holds several versions of most creatures — a 2014 Goblin Boss and a 2024 one
+// differ in type, AC and wording — and picking the wrong source is the easy
+// mistake to make.
+//
+// Creation goes through the ordinary POST /api/creatures, exactly as the manual
+// form does, so an imported creature is not a second class of thing.
+//
+// Built for more than creatures: `kind` is threaded through so items and spells
+// can be added as more tabs against the same three endpoints.
+function CompendiumImportModal({ onClose, onImported }) {
+  const [status, setStatus] = useState(null);      // { ok, url, error }
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState('');
+  const [selected, setSelected] = useState(null);  // index row
+  const [preview, setPreview] = useState(null);    // { creature, approximated }
+  const [previewing, setPreviewing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importStep, setImportStep] = useState('');
+
+  // Images come back as paths relative to the mirror and are pulled through the
+  // backend proxy — the mirror sends no CORS headers, so the browser cannot
+  // read one directly even to draw it, let alone re-upload it as a file.
+  //
+  // The stored path already has its spaces percent-encoded; encoding it again
+  // for the query string is correct, because Express decodes exactly one layer
+  // before handing it back.
+  const imgUrl = compendiumImgUrl;
+
+  useEffect(() => {
+    let gone = false;
+    // Loot tables only — the GM's rumour and encounter tables have no business
+    // in a loot picker.
+    fetch('/api/tables?kind=loot')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) => { if (!gone) setLootTables(Array.isArray(rows) ? rows : []); })
+      .catch(() => {});
+    return () => { gone = true; };
+  }, []);
+
+  useEffect(() => {
+    let dead = false;
+    compendiumStatus()
+      .then((s) => { if (!dead) setStatus(s); })
+      .catch(() => { if (!dead) setStatus({ ok: false, url: '(unknown)', error: 'unreachable' }); });
+    return () => { dead = true; };
+  }, []);
+
+  // Debounced, and an empty query is a valid search — it returns the head of
+  // the index, which gives the GM something to look at before they type.
+  useEffect(() => {
+    let dead = false;
+    const t = setTimeout(async () => {
+      setSearching(true);
+      setError('');
+      try {
+        const rows = await searchCompendium(query, 60);
+        if (dead) return;
+        setResults(rows);
+      } catch (err) {
+        if (!dead) { setResults([]); setError(err.message); }
+      } finally {
+        if (!dead) setSearching(false);
+      }
+    }, 250);
+    return () => { dead = true; clearTimeout(t); };
+  }, [query]);
+
+  async function choose(row) {
+    setSelected(row);
+    setPreview(null);
+    setPreviewing(true);
+    setError('');
+    try {
+      setPreview(await previewCompendiumCreature(row));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  async function doImport() {
+    if (!preview) return;
+    setImporting(true);
+    setError('');
+    try {
+      const d = await importCompendiumCreature(preview, { onStep: setImportStep });
+      onImported(d);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  const c = preview?.creature;
+
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/70 p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-4xl shadow-2xl flex flex-col" style={{ height: '80vh' }}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 shrink-0">
+          <div>
+            <h3 className="text-dnd-gold font-semibold">Import from Compendium</h3>
+            <p className="text-[11px] text-gray-500">
+              {status
+                ? (status.ok
+                    ? <>Connected to <span className="text-gray-400">{status.url}</span></>
+                    : <span className="text-red-400">Can't reach {status.url} — {status.error}</span>)
+                : 'Checking connection…'}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none px-2">×</button>
+        </div>
+
+        <div className="flex-1 min-h-0 flex">
+          {/* Results */}
+          <div className="w-1/2 border-r border-gray-800 flex flex-col min-h-0">
+            <div className="p-3 shrink-0">
+              <input
+                autoFocus
+                className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-dnd-gold"
+                placeholder="Search the bestiary…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <p className="text-[10px] text-gray-500 mt-1">
+                {searching
+                  ? 'Searching…'
+                  : `${results.length} result${results.length === 1 ? '' : 's'}${results.length >= 60 ? ' (narrow the search for more)' : ''}`}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto px-2 pb-2">
+              {results.map((row) => {
+                const active = selected && selected.name === row.name && selected.source === row.source;
+                return (
+                  <button
+                    key={`${row.source}:${row.name}`}
+                    onClick={() => choose(row)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg mb-0.5 transition-colors ${
+                      active ? 'bg-dnd-gold/20 border border-dnd-gold/60' : 'border border-transparent hover:bg-gray-800'
+                    }`}
+                  >
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-sm text-gray-100 truncate flex-1">{row.name}</span>
+                      <span className="text-[10px] text-gray-500 shrink-0">{row.source}</span>
+                    </div>
+                    <div className="text-[10px] text-gray-500 truncate">
+                      CR {row.cr} · {row.size} {row.type}
+                    </div>
+                  </button>
+                );
+              })}
+              {!searching && !results.length && (
+                <p className="text-xs text-gray-500 px-2 py-4 text-center">Nothing matched.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div className="w-1/2 flex flex-col min-h-0">
+            {!selected && (
+              <div className="flex-1 flex items-center justify-center text-xs text-gray-500 px-6 text-center">
+                Pick a creature to see what will be added.
+              </div>
+            )}
+            {selected && previewing && (
+              <div className="flex-1 flex items-center justify-center text-xs text-gray-400">Loading stat block…</div>
+            )}
+            {c && !previewing && (
+              <div className="flex-1 overflow-y-auto p-4 space-y-2 text-sm">
+                <div className="flex items-start gap-3">
+                  {preview.images?.token && (
+                    <img
+                      src={imgUrl(preview.images.token)}
+                      alt=""
+                      className="w-16 h-16 rounded-full object-cover border border-gray-600 bg-gray-800 shrink-0"
+                      // A creature whose token 404s on the mirror shouldn't
+                      // leave a broken-image icon in the preview.
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <div className="text-dnd-gold font-semibold text-base">{c.name}</div>
+                    <div className="text-[11px] text-gray-400 italic">
+                      {c.size} {c.creature_type}{c.subtype ? ` (${c.subtype})` : ''}, {c.alignment}
+                    </div>
+                    <div className="text-[10px] text-gray-500 mt-0.5">
+                      {preview.images?.token ? 'token' : 'no token'}
+                      {preview.images?.art ? ' · artwork' : ' · no artwork'} on the mirror
+                    </div>
+                  </div>
+                </div>
+                {preview.approximated && (
+                  <div className="bg-amber-900/30 border border-amber-700 rounded-lg px-2.5 py-1.5 text-[11px] text-amber-200">
+                    This entry is defined as a variant of another creature and carries
+                    changes this importer doesn't apply. The base stat block is shown —
+                    check it against your book before using it.
+                  </div>
+                )}
+                <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                  {[['AC', c.armor_class], ['HP', `${c.hit_points} (${c.hit_dice})`], ['CR', c.challenge_rating],
+                    ['Speed', `${c.speed_walk} ft`], ['PP', c.passive_perception], ['XP', c.xp]].map(([k, v]) => (
+                    <div key={k} className="bg-gray-800 rounded px-2 py-1">
+                      <span className="text-gray-500">{k} </span><span className="text-gray-200">{v}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-6 gap-1 text-center text-[11px]">
+                  {[['STR', c.strength], ['DEX', c.dexterity], ['CON', c.constitution],
+                    ['INT', c.intelligence], ['WIS', c.wisdom], ['CHA', c.charisma]].map(([k, v]) => (
+                    <div key={k} className="bg-gray-800 rounded py-1">
+                      <div className="text-gray-500 text-[9px]">{k}</div>
+                      <div className="text-gray-200">{v}</div>
+                    </div>
+                  ))}
+                </div>
+                {c.languages && <div className="text-[11px] text-gray-400"><span className="text-gray-500">Languages </span>{c.languages}</div>}
+                {c.damage_immunities && <div className="text-[11px] text-gray-400"><span className="text-gray-500">Immunities </span>{c.damage_immunities}</div>}
+                {[['Traits', c.special_abilities], ['Actions', c.actions], ['Bonus Actions', c.bonus_actions],
+                  ['Reactions', c.reactions], ['Legendary Actions', c.legendary_actions]].map(([label, list]) => (
+                  (list || []).length > 0 && (
+                    <div key={label} className="pt-1">
+                      <div className="text-[10px] uppercase tracking-wide text-dnd-gold/80 border-b border-gray-800 mb-1">{label}</div>
+                      {list.map((a, i) => (
+                        <p key={i} className="text-[11px] text-gray-300 leading-snug mb-1">
+                          <span className="font-semibold text-gray-100">{a.name}. </span>{a.desc}
+                        </p>
+                      ))}
+                    </div>
+                  )
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {error && <div className="px-4 py-2 text-xs text-red-300 border-t border-gray-800 shrink-0">{error}</div>}
+
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-700 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-100 text-sm">Close</button>
+          <button
+            onClick={doImport}
+            disabled={!c || importing}
+            className="px-4 py-2 rounded-lg bg-dnd-gold hover:bg-yellow-500 disabled:bg-gray-700 disabled:text-gray-500 text-gray-900 font-semibold text-sm"
+          >{importing ? (importStep || 'Adding…') : c ? `Add ${c.name}` : 'Add to library'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
   const [creatures, setCreatures] = useState([]);
+  const [showCompendium, setShowCompendium] = useState(false);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'monsters' | 'characters'
   const [sizeFilter, setSizeFilter] = useState('');
@@ -136,7 +435,14 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
   const [invItems, setInvItems] = useState([]);
   const [invCurrency, setInvCurrency] = useState({ gp: 0, sp: 0, cp: 0 });
   const [invSaving, setInvSaving] = useState(false);
+  const [lootTables, setLootTables] = useState([]);
+  const [lootSaving, setLootSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  // The print card opens in a popup; if the browser refuses, say so rather than
+  // leaving the button looking dead.
+  const [printBlocked, setPrintBlocked] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState(null);
+  const [duplicateError, setDuplicateError] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiPrefill, setAIPrefill] = useState(null);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -205,7 +511,7 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
       const file = new File([bytes], `regen-${Date.now()}.${ext}`, { type: m[1] });
       const fd = new FormData();
       fd.append('image', file);
-      const putRes = await fetch(`/api/creatures/${creature.id}`, { method: 'PUT', body: fd });
+      const putRes = await fetch(`/api/creatures/${creature.id}?role=dm`, { method: 'PUT', body: fd });
       if (!putRes.ok) {
         const txt = await putRes.text().catch(() => '');
         throw new Error(`Save ${putRes.status}: ${txt.slice(0, 200)}`);
@@ -227,6 +533,9 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
       const params = new URLSearchParams();
       if (q) params.set('search', q);
       if (filter !== 'all') params.set('filter', filter);
+      // role=dm: this list is what the editor loads a creature FROM, so without
+      // it the form would open holding a censored pack and save the secrets away.
+      params.set('role', 'dm');
       const res = await fetch(`/api/creatures?${params}`);
       const data = await res.json();
       setCreatures(data);
@@ -248,6 +557,30 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
     await fetch(`/api/creatures/${creature.id}`, { method: 'DELETE' });
     setConfirmDelete(null);
     loadCreatures(search, typeFilter);
+  }
+
+  // Duplicate → open the copy in the editor straight away. The whole point of
+  // the button is "I want a variant of this", so landing on the list and
+  // hunting for "(Copy)" would just be an extra click.
+  async function handleDuplicate(creature) {
+    if (duplicatingId) return;
+    setDuplicatingId(creature.id);
+    try {
+      const res = await fetch(`/api/creatures/${creature.id}/duplicate`, { method: 'POST' });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`Duplicate failed (${res.status}) ${txt.slice(0, 200)}`);
+      }
+      const copy = await res.json();
+      await loadCreatures(search, typeFilter);
+      setSelected(copy);
+      setMode('edit');
+    } catch (err) {
+      setDuplicateError(err?.message || String(err));
+      setTimeout(() => setDuplicateError(null), 4000);
+    } finally {
+      setDuplicatingId(null);
+    }
   }
 
   function handleSaved(creature) {
@@ -286,16 +619,37 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
       fd.append('currency_gp', invCurrency.gp);
       fd.append('currency_sp', invCurrency.sp);
       fd.append('currency_cp', invCurrency.cp);
-      const res = await fetch(`/api/creatures/${selected.id}`, { method: 'PUT', body: fd });
+      const res = await fetch(`/api/creatures/${selected.id}?role=dm`, { method: 'PUT', body: fd });
       const data = await res.json();
       if (!data.error) setSelected(data);
     } catch { /* ignore */ }
     finally { setInvSaving(false); }
   }
 
+  // Which table this creature's remains are rolled on.
+  //
+  // On the library entry rather than on the token: it is a property of the
+  // KIND of creature — every goblin shares it — and setting it per token would
+  // mean setting it again for every goblin the GM ever places.
+  async function setLootTable(tableId) {
+    if (!selected) return;
+    setLootSaving(true);
+    try {
+      const fd = new FormData();
+      // An empty select means "none", which has to reach the server as an empty
+      // string for the column to be nulled rather than set to 0.
+      fd.append('loot_table_id', tableId === '' ? '' : String(tableId));
+      const res = await fetch(`/api/creatures/${selected.id}?role=dm`, { method: 'PUT', body: fd });
+      const data = await res.json();
+      if (!data.error) setSelected(data);
+    } catch { /* the select snaps back on the next render */ }
+    finally { setLootSaving(false); }
+  }
+
   async function openExportModal() {
     setShowExportModal(true);
-    const res = await fetch('/api/creatures');
+    // role=dm so an exported creature carries its secrets and round-trips intact.
+    const res = await fetch('/api/creatures?role=dm');
     const data = await res.json();
     setExportCreatures(data);
     setExportSelected(new Set(data.map(c => c.id)));
@@ -351,6 +705,9 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
           <CreatureForm
             creature={mode === 'edit' ? selected : (aiPrefill || null)}
             isPlayerCharacter={mode === 'edit' ? (selected?.is_player_character || false) : false}
+            /* The GM's own library: secrets round-trip, and items can be
+               hidden from the character carrying them. */
+            asGm
             onSave={handleSaved}
             onCancel={() => { setMode('list'); setSelected(null); setAIPrefill(null); }}
           />
@@ -376,8 +733,36 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
               {regenStatus === 'running' ? 'Generating…' : '🎨 Regenerate Image'}
             </button>
           )}
+          <button
+            onClick={() => handleDuplicate(selected)}
+            disabled={duplicatingId === selected.id}
+            title="Duplicate — make a copy to tweak into a variant"
+            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-wait"
+          >
+            {duplicatingId === selected.id ? 'Copying…' : 'Duplicate'}
+          </button>
+          <button
+            onClick={() => {
+              if (!printStatBlockCard(selected)) setPrintBlocked(true);
+            }}
+            title="Print or save this creature as an A5 stat block — official fields only"
+            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+          >
+            🖨 A5 Stat Block
+          </button>
           <button onClick={() => setMode('edit')} className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700 hover:bg-gray-600">Edit</button>
         </div>
+        {printBlocked && (
+          <div className="mx-4 mt-2 text-xs text-amber-200 bg-amber-950/40 border border-amber-900/40 rounded px-2 py-1.5 flex items-center justify-between gap-2">
+            <span>The stat block opens in a new window — your browser blocked the popup. Allow popups for this site, then try again.</span>
+            <button onClick={() => setPrintBlocked(false)} className="text-amber-300 hover:text-white px-1">✕</button>
+          </div>
+        )}
+        {duplicateError && (
+          <div className="mx-4 mt-2 text-xs text-red-300 bg-red-950/40 border border-red-900/40 rounded px-2 py-1.5">
+            {duplicateError}
+          </div>
+        )}
         {regenStatus && typeof regenStatus === 'object' && regenStatus.error && (
           <div className="mx-4 mt-2 text-xs text-red-300 bg-red-950/40 border border-red-900/40 rounded px-2 py-1.5">
             Image regen failed: {regenStatus.error}
@@ -408,6 +793,7 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
         {viewTab === 'stats' && (
           <div className="flex-1 overflow-y-auto p-4">
             <StatBlock creature={selected} />
+
             {!selected.is_player_character && (
               <button
                 onClick={() => { onAddToMap(selected); setMode('list'); }}
@@ -443,6 +829,36 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
                 ))}
               </div>
             </div>
+
+            {/* Attunement — at a glance, without opening every item row. */}
+            {(() => {
+              const attunable = invItems.filter(it => it?.attunement_required);
+              if (attunable.length === 0) return null;
+              const attuned = attunable.filter(it => it.attuned);
+              return (
+                <div>
+                  <h4 className="text-xs font-semibold text-dnd-gold mb-2">
+                    Attunement <span className={`ml-1 font-mono ${attuned.length >= 3 ? 'text-amber-300' : 'text-gray-500'}`}>{attuned.length}/3</span>
+                  </h4>
+                  <div className="bg-gray-800 border border-purple-800/50 rounded-lg p-2 space-y-1">
+                    {attuned.length === 0 ? (
+                      <div className="text-[11px] text-gray-500 italic">Nothing attuned.</div>
+                    ) : attuned.map((it, i) => (
+                      <div key={it._key ?? i} className="flex items-baseline gap-2 text-[11px]">
+                        <span className="text-purple-300">◆</span>
+                        <span className="text-gray-200">{it.name || 'Unnamed item'}</span>
+                        {it.rarity && <span className="text-gray-500">{it.rarity}</span>}
+                      </div>
+                    ))}
+                    {attunable.filter(it => !it.attuned).length > 0 && (
+                      <div className="pt-1 border-t border-gray-700 text-[11px] text-gray-500">
+                        Carried, not attuned: {attunable.filter(it => !it.attuned).map(it => it.name).filter(Boolean).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Items */}
             <div>
@@ -536,18 +952,18 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
                       {slotInfo && slotInfo.total > 0 && (
                         <span className="text-xs text-gray-400">
                           {available}/{slotInfo.total} slots — {Array.from({ length: slotInfo.total }).map((_, i) => (
-                            <span key={i}>{i < (slotInfo.used || 0) ? '☒' : '☐'}</span>
+                            <span key={i} className={`slot-box${i < (slotInfo.used || 0) ? ' slot-box-used' : ''}`} />
                           ))}
                         </span>
                       )}
                     </div>
-                    {['combat','utility'].map((type) => {
-                      const group = lvlSpells.filter((s) => s.type === type);
+                    {SPELL_TYPES.map((t) => {
+                      const group = lvlSpells.filter((s) => spellType(s.type).key === t.key);
                       if (!group.length) return null;
                       return (
-                        <div key={type} className="pl-2 mb-1">
-                          <span className={`text-xs font-semibold ${type === 'combat' ? 'text-red-400' : 'text-blue-400'}`}>
-                            {type === 'combat' ? 'Combat' : 'Utility'}:
+                        <div key={t.key} className="pl-2 mb-1">
+                          <span className={`text-xs font-semibold ${t.dark}`}>
+                            {t.label}:
                           </span>
                           {group.map((s, i) => (
                             <span key={s.id ?? i} className="text-xs text-gray-300 ml-1">
@@ -566,14 +982,48 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
 
         {/* Loot tab */}
         {viewTab === 'loot' && (
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* The rollable table first: it is the thing that gets rolled when
+                this creature dies. The fixed list below it is the older,
+                separate idea — specific items with a percentage chance — and
+                the two coexist rather than replace each other. */}
+            <div className="p-3 rounded-lg bg-gray-800/60 border border-gray-700">
+              <label className="block text-xs text-gray-400 mb-1">
+                Loot table
+                <span className="text-gray-600"> — rolled from the token menu when one is slain</span>
+              </label>
+              <select
+                value={selected.loot_table_id ?? ''}
+                disabled={lootSaving}
+                onChange={(e) => setLootTable(e.target.value)}
+                className="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-dnd-gold disabled:opacity-60"
+              >
+                <option value="">None</option>
+                {lootTables.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}{t.row_count ? ` (${t.row_count} rows)` : ''}
+                  </option>
+                ))}
+              </select>
+              {lootTables.length === 0 && (
+                <p className="text-[11px] text-gray-500 mt-1">
+                  No tables yet — use “Import DMG treasure” on the Tables tab.
+                </p>
+              )}
+              {selected.loot_table_id ? (
+                <p className="text-[11px] text-emerald-300/80 mt-1">
+                  Right-click one of these on the map and choose “Roll loot”.
+                </p>
+              ) : null}
+            </div>
+
             {(() => {
               let loot = [];
               if (Array.isArray(selected.loot)) loot = selected.loot;
               else if (typeof selected.loot === 'string' && selected.loot.startsWith('[')) {
                 try { loot = JSON.parse(selected.loot); } catch { loot = []; }
               }
-              if (!loot.length) return <p className="text-xs text-gray-500 italic text-center py-8">No loot table defined. Use the Edit button to add loot.</p>;
+              if (!loot.length) return <p className="text-xs text-gray-500 italic text-center py-4">No fixed item drops. Use the Edit button to add specific items with a chance each.</p>;
               return (
                 <div className="space-y-1">
                   <div className="grid grid-cols-[1fr_60px_60px] gap-2 px-1 text-xs text-gray-500 font-semibold uppercase tracking-wide mb-2">
@@ -670,6 +1120,15 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
             className="bg-dnd-gold hover:bg-yellow-500 text-gray-900 px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap"
           >
             + New
+          </button>
+          {/* The self-hosted compendium. Beside "+ New" because it is the same
+              action by a different route: a creature arriving in the library. */}
+          <button
+            onClick={() => setShowCompendium(true)}
+            title="Import a creature from your compendium server"
+            className="flex items-center gap-1 bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap"
+          >
+            <span>📚</span><span>Import</span>
           </button>
           <button
             onClick={() => setShowAIModal(true)}
@@ -784,6 +1243,11 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
             </button>
           </div>
         )}
+        {duplicateError && (
+          <div className="mb-2 text-xs text-red-300 bg-red-950/40 border border-red-900/40 rounded px-2 py-1.5">
+            {duplicateError}
+          </div>
+        )}
         {(() => {
           let filtered = creatures;
           if (sizeFilter) filtered = filtered.filter(c => (c.size || '').toLowerCase() === sizeFilter);
@@ -797,6 +1261,8 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
                   creature={c}
                   onEdit={(c) => { setSelected(c); setMode('edit'); }}
                   onDelete={(c) => setConfirmDelete(c)}
+                  onDuplicate={(c) => handleDuplicate(c)}
+                  duplicating={duplicatingId === c.id}
                   onAddToMap={(c) => onAddToMap(c)}
                   onView={(c) => openView(c)}
                 />
@@ -808,6 +1274,20 @@ export default function CreatureLibrary({ sessionId, onAddToMap, aiSettings }) {
           );
         })()}
       </div>
+
+      {/* Compendium import */}
+      {showCompendium && (
+        <CompendiumImportModal
+          onClose={() => setShowCompendium(false)}
+          onImported={() => {
+            setShowCompendium(false);
+            // Straight back to the list with the new creature in it, rather
+            // than into the edit form: the whole point of importing is that the
+            // stat block is already right.
+            loadCreatures(search, typeFilter);
+          }}
+        />
+      )}
 
       {/* AI generator modal */}
       {showAIModal && aiConfigured && (

@@ -1,0 +1,509 @@
+{
+ "variantrule": [
+  {
+   "name": "Firearms (Gunslinger)",
+   "source": "CRGS",
+   "ruleType": "V",
+   "entries": [
+    "Ranged weapons built from alchemical powder, rare metals and controlled explosive force — new, volatile, and carrying weapon properties of their own.",
+    "These properties replace the optional firearm rules in the Dungeon Master's Guide; look up Firearms [DMG] for those.",
+    {
+     "type": "table",
+     "caption": "Firearms",
+     "colLabels": [
+      "Name",
+      "Cost",
+      "Damage",
+      "Range",
+      "Weight",
+      "Properties"
+     ],
+     "rows": [
+      [
+       "Palm Pistol",
+       "50 gp",
+       "1d8 piercing",
+       "40/160 ft.",
+       "1 lb.",
+       "Light, Reload 1, Misfire 1"
+      ],
+      [
+       "Pistol",
+       "150 gp",
+       "1d10 piercing",
+       "60/240 ft.",
+       "3 lb.",
+       "Reload 4, Misfire 1"
+      ],
+      [
+       "Musket",
+       "300 gp",
+       "1d12 piercing",
+       "120/480 ft.",
+       "10 lb.",
+       "Two-handed, Reload 1, Misfire 2"
+      ],
+      [
+       "Pepperbox",
+       "250 gp",
+       "1d10 piercing",
+       "80/320 ft.",
+       "5 lb.",
+       "Reload 6, Misfire 2"
+      ],
+      [
+       "Blunderbuss",
+       "300 gp",
+       "2d8 piercing",
+       "15/60 ft.",
+       "10 lb.",
+       "Reload 1, Misfire 2"
+      ],
+      [
+       "Bad News",
+       "Crafted",
+       "2d12 piercing",
+       "200/800 ft.",
+       "25 lb.",
+       "Two-handed, Reload 1, Misfire 3"
+      ],
+      [
+       "Hand Mortar",
+       "Crafted",
+       "2d8 fire",
+       "30/60 ft.",
+       "10 lb.",
+       "Explosive, Reload 1, Misfire 3"
+      ]
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Proficiency",
+     "entries": [
+      "Firearm proficiency is not granted by ordinary martial training. A Gunslinger has it from level 3; anyone else can fire one, but their misfire score is 1 worse."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "The properties",
+     "entries": [
+      "Reload N. Fires N times before you spend one attack or one action reloading it, with a free hand.",
+      "Misfire N. An attack roll of N or lower misses and jams the weapon.",
+      "Explosive. On a hit, everything within 5 feet of the target is caught in the blast.",
+      "Each has its own entry: look up Reload, Misfire or Explosive."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Ammunition",
+     "entries": [
+      "Every firearm takes its own, and none of them can attack without it. Look up Firearm Ammunition."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Where this comes from",
+     "entries": [
+      "From the Gunslinger (1.3) by Matt Mercer, summarised for play. The weapons themselves are stocked in the item library."
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Reload",
+   "source": "CRGS",
+   "ruleType": "V",
+   "entries": [
+    "Firearm property. The weapon fires a number of times equal to its reload score before it must be reloaded.",
+    {
+     "type": "entries",
+     "name": "Reloading",
+     "entries": [
+      "Costs one attack or one action, and needs one free hand.",
+      "A Gunslinger of level 15 or higher reloads any firearm as a bonus action instead (Lightning Reload)."
+     ]
+    },
+    {
+     "type": "table",
+     "caption": "Shots before reloading",
+     "colLabels": [
+      "Firearm",
+      "Reload"
+     ],
+     "rows": [
+      [
+       "Pepperbox",
+       "6"
+      ],
+      [
+       "Pistol",
+       "4"
+      ],
+      [
+       "Palm Pistol",
+       "1"
+      ],
+      [
+       "Musket",
+       "1"
+      ],
+      [
+       "Blunderbuss",
+       "1"
+      ],
+      [
+       "Bad News",
+       "1"
+      ],
+      [
+       "Hand Mortar",
+       "1"
+      ]
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Where this comes from",
+     "entries": [
+      "From the Gunslinger (1.3) by Matt Mercer, summarised for play."
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Misfire",
+   "source": "CRGS",
+   "ruleType": "V",
+   "entries": [
+    "Firearm property. Whenever you make an attack roll with a firearm and the d20 comes up equal to or lower than the weapon's misfire score, the attack misses and the weapon jams.",
+    {
+     "type": "entries",
+     "name": "Clearing a jam",
+     "entries": [
+      "The weapon cannot be used again until you spend an action repairing it: a Tinker's Tools check against DC 8 + the weapon's misfire score.",
+      "A Gunslinger of level 10 or higher can do it for 1 grit as a bonus action instead (Rapid Repair)."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "If the check fails",
+     "entries": [
+      "The weapon is broken, and must be mended out of combat at a quarter of the firearm's cost."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Firing one untrained",
+     "entries": [
+      "A creature with no firearm proficiency raises that weapon's misfire score by 1."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Raising it on purpose",
+     "entries": [
+      "Two trick shots trade reliability for effect: Piercing Shot adds 1 to the misfire score, and Violent Shot adds 2 for every grit point spent."
+     ]
+    },
+    {
+     "type": "table",
+     "caption": "Misfire score and repair DC",
+     "colLabels": [
+      "Firearm",
+      "Misfires on",
+      "Repair DC"
+     ],
+     "rows": [
+      [
+       "Palm Pistol",
+       "1 or lower",
+       "9"
+      ],
+      [
+       "Pistol",
+       "1 or lower",
+       "9"
+      ],
+      [
+       "Musket",
+       "2 or lower",
+       "10"
+      ],
+      [
+       "Pepperbox",
+       "2 or lower",
+       "10"
+      ],
+      [
+       "Blunderbuss",
+       "2 or lower",
+       "10"
+      ],
+      [
+       "Bad News",
+       "3 or lower",
+       "11"
+      ],
+      [
+       "Hand Mortar",
+       "3 or lower",
+       "11"
+      ]
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Where this comes from",
+     "entries": [
+      "From the Gunslinger (1.3) by Matt Mercer, summarised for play."
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Explosive",
+   "source": "CRGS",
+   "ruleType": "V",
+   "entries": [
+    "Firearm property. On a hit, every creature within 5 feet of the target makes a Dexterity saving throw or takes 1d8 fire damage.",
+    {
+     "type": "entries",
+     "name": "The save",
+     "entries": [
+      "DC 8 + your proficiency bonus + your Dexterity modifier."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "On a miss",
+     "entries": [
+      "The round fails to detonate, or bounces away harmlessly. Nothing in the blast radius is affected."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Which firearm",
+     "entries": [
+      "The Hand Mortar: 2d8 fire, 30/60 ft., reload 1, misfire 3, and crafted rather than bought."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Where this comes from",
+     "entries": [
+      "From the Gunslinger (1.3) by Matt Mercer, summarised for play."
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Firearm Ammunition",
+   "source": "CRGS",
+   "ruleType": "V",
+   "entries": [
+    "Every firearm takes its own ammunition, and none of them can attack without it.",
+    {
+     "type": "entries",
+     "name": "Buying it",
+     "entries": [
+      "Rare enough that a shop may simply not have any. Each kind is sold in the batch size below."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Crafting it",
+     "entries": [
+      "With materials and Tinker's Tools you can make your own at half the listed cost. A Gunslinger has the tool proficiency from level 3 (Gunsmith)."
+     ]
+    },
+    {
+     "type": "table",
+     "caption": "Ammunition",
+     "colLabels": [
+      "Firearm",
+      "Ammunition",
+      "Batch",
+      "Cost"
+     ],
+     "rows": [
+      [
+       "Palm Pistol",
+       "Bullets",
+       "×20",
+       "2 gp"
+      ],
+      [
+       "Pistol",
+       "Bullets",
+       "×20",
+       "4 gp"
+      ],
+      [
+       "Musket",
+       "Balls",
+       "×20",
+       "5 gp"
+      ],
+      [
+       "Pepperbox",
+       "Bullets",
+       "×20",
+       "4 gp"
+      ],
+      [
+       "Blunderbuss",
+       "Shot",
+       "×5",
+       "5 gp"
+      ],
+      [
+       "Bad News",
+       "Rounds",
+       "×5",
+       "10 gp"
+      ],
+      [
+       "Hand Mortar",
+       "Shell",
+       "×1",
+       "10 gp"
+      ]
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Where this comes from",
+     "entries": [
+      "From the Gunslinger (1.3) by Matt Mercer, summarised for play. Each batch is stocked in the item library beside its weapon."
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Grit",
+   "source": "CRGS",
+   "ruleType": "V",
+   "entries": [
+    "A Gunslinger's fuel for trick shots.",
+    {
+     "type": "entries",
+     "name": "How many",
+     "entries": [
+      "Grit points equal to your Wisdom modifier (minimum 1)."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Regaining grit",
+     "entries": [
+      "1 point when you roll a 20 on the d20 for an attack with a firearm.",
+      "1 point when you deal a killing blow with a firearm to a creature of significant threat (your GM's call).",
+      "From level 18, also on a roll of 19 or 20 on a firearm attack (Vicious Intent).",
+      "All spent grit returns when you finish a short or long rest."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Spending grit",
+     "entries": [
+      "Trick shots cost 1 point each — Violent Shot can take several. From level 10, repairing a jammed firearm as a bonus action costs 1 point (Rapid Repair)."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Where this comes from",
+     "entries": [
+      "From the Gunslinger (1.3) by Matt Mercer, summarised for play. See Trick Shots."
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Trick Shots",
+   "source": "CRGS",
+   "ruleType": "V",
+   "entries": [
+    "A Gunslinger's trick shots, paid for out of grit.",
+    {
+     "type": "entries",
+     "name": "Using one",
+     "entries": [
+      "Declared before the attack roll, and only one per attack.",
+      "Save DC = 8 + your proficiency bonus + your Dexterity modifier."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Learning them",
+     "entries": [
+      "Two at Gunslinger level 3, and another at levels 7, 10, 15 and 18. Each time you learn one you may also swap one you already know."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Bullying Shot",
+     "entries": [
+      "Cost: 1 grit. The blast and the noise do the talking: you gain Advantage on a Charisma (Intimidation) check."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Dazing Shot",
+     "entries": [
+      "Cost: 1 grit, on a firearm attack. On a hit: normal damage, and the target makes a Constitution saving throw or attacks at Disadvantage until the end of its next turn."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Deadeye Shot",
+     "entries": [
+      "Cost: 1 grit, on a firearm attack. You gain Advantage on the attack roll."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Disarming Shot",
+     "entries": [
+      "Cost: 1 grit, on a firearm attack. On a hit: normal damage, and the target makes a Strength saving throw or drops one held object of your choice, which is pushed 10 feet away from you."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Forceful Shot",
+     "entries": [
+      "Cost: 1 grit, on a firearm attack. On a hit: normal damage, and the target makes a Strength saving throw or is pushed 15 feet away from you."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Piercing Shot",
+     "entries": [
+      "Cost: 1 grit, on a firearm attack, and +1 to the weapon's misfire score for this attack. On a hit: normal damage, then an attack roll with Disadvantage against every creature in a line directly behind the target, within your first range increment. Only the first attack can misfire."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Violent Shot",
+     "entries": [
+      "Cost: 1 or more grit, on a firearm attack, and +2 to the weapon's misfire score for each point spent. On a hit: one extra weapon damage die per point spent."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Winging Shot",
+     "entries": [
+      "Cost: 1 grit, on a firearm attack. On a hit: normal damage, and the target makes a Strength saving throw or is knocked prone."
+     ]
+    },
+    {
+     "type": "entries",
+     "name": "Where this comes from",
+     "entries": [
+      "From the Gunslinger (1.3) by Matt Mercer, summarised for play."
+     ]
+    }
+   ]
+  }
+ ]
+}

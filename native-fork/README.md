@@ -83,6 +83,83 @@ Persistent data lives at `~/.tabletopforge/`:
 * `db/` — PGlite's data dir (drop it to reset).
 * `.schema_initialised` — sentinel; rerun init.sql by deleting.
 
+## Keeping this in step with the live app
+
+The fork is the same app with the Docker assumptions removed. It is DERIVED from
+`restored-live/`, not maintained beside it:
+
+```bash
+node scripts/sync-from-live.mjs --dry-run   # what would change, and do the patches still apply?
+node scripts/sync-from-live.mjs             # do it
+(cd backend && npm install) && (cd frontend && npm install && npm run build)
+```
+
+The script copies `backend/src`, `frontend/src`, `frontend/public`, the configs
+and `init.sql` from the live tree, then re-applies the fork's own deltas:
+
+* `backend/src/db.js` and `paths.js` are the fork's — never overwritten.
+* `package.json` takes live's dependencies with `pg` swapped for PGlite, so a new
+  dependency upstream (three.js, adm-zip) arrives on its own.
+* `index.js` gets the uploads/sounds redirect to `$VTT_DATA_DIR` and the static
+  frontend + SPA fallback.
+* Every route that writes into `uploads/` is rewritten to go through `paths.js`.
+
+If an anchor for one of those patches stops matching, the sync **fails loudly**
+rather than finishing without it. That is deliberate: hand-syncing had already
+lost the SPA patch entirely, so a bundled `.app` would have served `/api` and no
+user interface, and nothing said so.
+
+## Taking a session on holiday
+
+Two scripts move a campaign off the live server and into the local app, with its
+uploads. No network needed once the pack is on the laptop.
+
+```bash
+# On the Mac that can reach the live server:
+node scripts/pack-session.mjs --list                       # which sessions exist
+node scripts/pack-session.mjs --code 6VI3S2 --out ~/holiday
+
+# On the laptop (app CLOSED — PGlite allows one process at a time):
+node scripts/unpack-session.mjs --in ~/holiday
+```
+
+The pack walks the session's whole graph — maps, walls, doors, lights, terrain,
+tiles, portals, levels, ships, markers, tokens, the creatures those tokens point
+at, every player character, their companions, wild-shape forms, creature art,
+loot tables and their rows, custom classes/races/backgrounds — plus every file
+those rows reference, and nothing else from the uploads tree.
+
+It also carries the **whole** spell and item libraries, deliberately. First boot
+seeds the SRD from Open5e over HTTP; in a cottage with no signal that seed does
+nothing and the party sits down to an empty spell list.
+
+Things the loader has to get right, all of which it does:
+
+* **Ids are preserved.** Every row refers to others by id, including ids buried in
+  JSONB (`wildshape_forms`, `class_state`). Renumbering would mean rewriting
+  foreign keys in flight. Rows are upserted, so a packed row wins over whatever
+  the local app seeded for itself.
+* **`sessions` ↔ `maps` is a cycle** — the session names its current map and the
+  map names its session. The session goes in with `map_id` null and it is filled
+  in once the maps exist.
+* **Unique keys other than the id.** The local app seeds six magic pistols into
+  `item_library` with its own UUIDs; the packed rows collide on `(name, edition)`,
+  not on the primary key, so the upsert retries against the natural key.
+* **Sequences are bumped** past the imported ids afterwards. Without that the next
+  creature the GM makes is handed id 1 and collides with something imported.
+* **A stale `postmaster.pid`** from a crash or force-quit is cleared with an
+  explanation, because PGlite's own error for it is `Aborted()`.
+
+Verified end to end: a 5,035-row / 128-file pack of "Stranger Things" loaded into
+an empty local database, and the app then served the session with all three maps,
+80/446/703 walls and 16/33/21 tokens per map — the same counts as live, per map —
+with token art, Howard's Dagger of Polymorph (GM secret intact) and Nog's bound
+Demodog.
+
+**Quit the app properly.** Killing it with `kill -9` corrupted a test database
+badly enough that PGlite could not reopen it even after the lock file was
+removed. There is no repair path yet; the pack is the backup.
+
 ## What's left before this can ship as a native app
 
 ### Phase 2 — Tauri shell (DONE)

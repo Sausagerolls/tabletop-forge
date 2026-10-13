@@ -11,7 +11,7 @@ RUN npm install --production
 
 COPY src ./src
 
-RUN mkdir -p uploads/maps uploads/creatures uploads/spell-pdfs uploads/terrain
+RUN mkdir -p uploads/maps uploads/creatures uploads/spell-pdfs uploads/terrain uploads/backdrops
 
 EXPOSE 3001
 

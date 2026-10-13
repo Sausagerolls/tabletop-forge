@@ -1,68 +1,13 @@
-import React, { useState } from 'react';
-import { formatDamageWithMod, formatDamageType } from '../utils/damage.js';
+import React, { useState, useMemo } from 'react';
+import { formatDamageWithMod, formatDamageType, weaponDamageModes, weaponDamageRiders, damageParts, bestWeaponStat, weaponDamageMod } from '../utils/damage.js';
 import { computeHitDicePool } from '../utils/classes.js';
-
-function mod(score) {
-  const m = Math.floor((score - 10) / 2);
-  return m >= 0 ? `+${m}` : `${m}`;
-}
-
-function sensesStr(creature) {
-  let arr = [];
-  if (Array.isArray(creature.senses)) {
-    arr = creature.senses;
-  } else if (typeof creature.senses === 'string' && creature.senses.trim().startsWith('[')) {
-    try { arr = JSON.parse(creature.senses); } catch { arr = []; }
-  }
-  const LABELS = {
-    darkvision: 'Darkvision', blindsight: 'Blindsight', tremorsense: 'Tremorsense',
-    truesight: 'Truesight', devilssight: "Devil's Sight",
-  };
-  const parts = arr
-    .filter((s) => s.type && s.type !== 'normal')
-    .map((s) => {
-      const label = LABELS[s.type] || s.type;
-      const range = s.range != null && s.range !== 0 ? ` ${s.range} ft.` : '';
-      return label + range;
-    });
-  if (creature.passive_perception != null) {
-    parts.push(`Passive Perception ${creature.passive_perception}`);
-  }
-  return parts.join(', ');
-}
-
-function speedStr(creature) {
-  const parts = [];
-  if (creature.speed_walk) parts.push(`${creature.speed_walk} ft.`);
-  if (creature.speed_fly) parts.push(`fly ${creature.speed_fly} ft.`);
-  if (creature.speed_swim) parts.push(`swim ${creature.speed_swim} ft.`);
-  if (creature.speed_burrow) parts.push(`burrow ${creature.speed_burrow} ft.`);
-  if (creature.speed_climb) parts.push(`climb ${creature.speed_climb} ft.`);
-  return parts.join(', ') || '—';
-}
-
-function savesStr(creature) {
-  const map = { save_str: 'Str', save_dex: 'Dex', save_con: 'Con', save_int: 'Int', save_wis: 'Wis', save_cha: 'Cha' };
-  const parts = Object.entries(map)
-    .filter(([k]) => creature[k] !== null && creature[k] !== undefined)
-    .map(([k, label]) => `${label} ${creature[k] >= 0 ? '+' : ''}${creature[k]}`);
-  return parts.join(', ');
-}
-
-function skillsStr(creature) {
-  const labels = {
-    skill_acrobatics: 'Acrobatics', skill_animal_handling: 'Animal Handling', skill_arcana: 'Arcana',
-    skill_athletics: 'Athletics', skill_deception: 'Deception', skill_history: 'History',
-    skill_insight: 'Insight', skill_intimidation: 'Intimidation', skill_investigation: 'Investigation',
-    skill_medicine: 'Medicine', skill_nature: 'Nature', skill_perception: 'Perception',
-    skill_performance: 'Performance', skill_persuasion: 'Persuasion', skill_religion: 'Religion',
-    skill_sleight_of_hand: 'Sleight of Hand', skill_stealth: 'Stealth', skill_survival: 'Survival',
-  };
-  const parts = Object.entries(labels)
-    .filter(([k]) => creature[k] !== null && creature[k] !== undefined)
-    .map(([k, label]) => `${label} ${creature[k] >= 0 ? '+' : ''}${creature[k]}`);
-  return parts.join(', ');
-}
+import { subclassEntry } from '../data/subclasses.js';
+import {
+  formatSizeType, abilityMod, modStr as mod, signed,
+  sensesStr, speedStr, savesStr, skillsStr, acLine,
+} from '../utils/creature.js';
+import { spellSlotsForCreature, pactMagicForCreature } from '../data/classes.js';
+import { spellType } from '../utils/spellTypes.js';
 
 function StatBox({ label, score }) {
   return (
@@ -78,10 +23,6 @@ function parseDiceStr(str) {
   const m = str.trim().match(/^(\d+)d(\d+)\s*([+-]\d+)?$/i);
   if (!m) return null;
   return { count: parseInt(m[1], 10), dice: `d${m[2]}`, extraMod: m[3] ? parseInt(m[3], 10) : 0 };
-}
-
-function abilityMod(score) {
-  return Math.floor(((score || 10) - 10) / 2);
 }
 
 const STAT_KEYS = { STR: 'strength', DEX: 'dexterity', CON: 'constitution', INT: 'intelligence', WIS: 'wisdom', CHA: 'charisma' };
@@ -105,14 +46,8 @@ function WeaponsSection({ creature, onRoll }) {
 
   const profBonus = creature.proficiency_bonus ?? 2;
 
-  function weaponAtkBonus(w) {
-    const sk = STAT_KEYS[w.attack_stat] || 'strength';
-    return abilityMod(creature[sk]) + profBonus + (w.attack_bonus_misc || 0);
-  }
-
-  function weaponDmgMod(w) {
-    const sk = STAT_KEYS[w.attack_stat] || 'strength';
-    return abilityMod(creature[sk]);
+  function weaponAtkBonus(w, modeStat = '') {
+    return bestWeaponStat(w, creature, modeStat).mod + profBonus + (w.attack_bonus_misc || 0);
   }
 
   function getDmgEntries(w) {
@@ -127,9 +62,8 @@ function WeaponsSection({ creature, onRoll }) {
       <div className="font-bold text-dnd-red border-b border-dnd-red pb-0.5 mb-2 font-serif">Weapons</div>
       <div className="space-y-2">
         {weapons.map((w, i) => {
+          const modes = weaponDamageModes({ ...w, damage_entries: getDmgEntries(w) });
           const ab = weaponAtkBonus(w);
-          const dm = weaponDmgMod(w);
-          const dmgEntries = getDmgEntries(w).filter(e => e.damage);
           return (
             <div key={i} className="text-sm">
               <div className="flex items-center gap-1 flex-wrap">
@@ -138,25 +72,45 @@ function WeaponsSection({ creature, onRoll }) {
                 <span className="text-xs text-gray-500">·</span>
                 <span className="text-xs text-green-400 font-mono">{ab >= 0 ? '+' : ''}{ab}</span>
                 <span className="text-xs text-gray-500">to hit</span>
-                {w.weapon_range && (
+                {modes.length === 0 && w.weapon_range && (
                   <>
                     <span className="text-xs text-gray-500">·</span>
                     <span className="text-xs text-gray-500">{w.weapon_range}</span>
                   </>
                 )}
               </div>
-              {dmgEntries.length > 0 && (
+              {modes.length > 0 && (
                 <div className="pl-2 mt-0.5 space-y-0.5">
-                  {dmgEntries.map((e, di) => (
-                    <div key={di} className="flex items-center gap-1 text-xs">
-                      <span className="text-gray-400">Damage:</span>
-                      <span className="font-mono text-gray-200">
-                        {formatDamageWithMod(e.damage, dm)}{e.damage_type ? ` ${formatDamageType(e.damage_type)}` : ''}
-                      </span>
-                    </div>
-                  ))}
+                  {modes.map((m) => {
+                    const pick = weaponDamageMod(w, creature, m.stat);
+                    const bd = damageParts(m.damage, pick.mod, pick.abbr, pick.misc);
+                    return (
+                      <div key={m.key} className="flex items-center gap-1 text-xs flex-wrap">
+                        <span className="text-gray-400 w-20 shrink-0">{m.label}:</span>
+                        <span className="font-mono text-gray-200">
+                          {formatDamageWithMod(m.damage, pick.total)}{m.damage_type ? ` ${formatDamageType(m.damage_type)}` : ''}
+                        </span>
+                        {bd.parts.length > 0 && (
+                          <span className="text-gray-500">({bd.dice} + {bd.parts.join(' + ')})</span>
+                        )}
+                        {m.range && <span className="text-gray-500">· {m.range}</span>}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
+              {/* Damage that only lands under a stated condition, kept out of
+                  the attack lines above so it is never read as part of an
+                  ordinary hit. */}
+              {weaponDamageRiders({ ...w, damage_entries: getDmgEntries(w) }).map((r) => (
+                <div key={r.key} className="pl-2 mt-0.5 flex items-center gap-1 text-xs flex-wrap">
+                  <span className="text-amber-500/90 w-20 shrink-0">Extra:</span>
+                  <span className="font-mono text-amber-300">
+                    +{r.damage}{r.damage_type ? ` ${formatDamageType(r.damage_type)}` : ''}
+                  </span>
+                  <span className="text-gray-500">{r.condition}</span>
+                </div>
+              ))}
               {w.properties && (
                 <div className="pl-2 text-xs text-gray-400">
                   <span className="text-gray-500">Properties:</span> {w.properties}
@@ -228,7 +182,7 @@ function InventorySection({ creature }) {
                   )}
                 </td>
                 <td className="text-center py-0.5 px-2">{item.qty || 1}</td>
-                <td className="py-0.5 px-2 text-gray-600 text-xs">{item.desc || ''}</td>
+                <td className="py-0.5 px-2 text-gray-600 text-xs whitespace-pre-wrap">{item.desc || ''}</td>
               </tr>
             ))}
           </tbody>
@@ -250,11 +204,24 @@ function Section({ title, children }) {
 function ActionList({ items }) {
   if (!items || !items.length) return null;
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
       {items.map((item, i) => (
-        <p key={i} className="text-sm">
-          <strong className="italic">{item.name}.</strong> {item.desc}
-        </p>
+        // Name on its own line as a heading: features like Font of Magic run
+        // to several paragraphs, and an inline italic lead-in disappeared
+        // into the body text on the printed sheet.
+        <div key={i} className="action-entry break-inside-avoid">
+          <div className="font-serif font-bold text-[15px] leading-tight text-dnd-red flex items-baseline gap-2 flex-wrap">
+            <span>{item.name}</span>
+            {/* Which subclass granted this — a multiclassed sheet otherwise
+                shows one undifferentiated list of features. */}
+            {item.subclass && (
+              <span className="subclass-flag font-sans font-semibold text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-dnd-red/50 text-dnd-red/90">
+                {item.subclass}
+              </span>
+            )}
+          </div>
+          {item.desc && <p className="text-sm whitespace-pre-wrap mt-0.5">{item.desc}</p>}
+        </div>
       ))}
     </div>
   );
@@ -322,6 +289,52 @@ export function SpellBox({ spell, typeLabel, typeColor, darkTheme = false }) {
   );
 }
 
+// Pen-tickable spell slot boxes for the printed sheet. Totals come from the
+// sheet when it carries them and are otherwise derived from class + level, so
+// a caster always gets boxes even if slots were never tracked in-app. Boxes
+// already spent in-app print pre-filled.
+function SpellSlotTracker({ creature, slots }) {
+  const derived = spellSlotsForCreature(creature);
+  const pact = pactMagicForCreature(creature);
+  const totalFor = (l) => Number(slots?.[l]?.total || derived[l] || 0);
+
+  const rows = [1,2,3,4,5,6,7,8,9]
+    .map((l) => ({ key: l, label: `Level ${l}`, total: totalFor(l), used: Number(slots?.[l]?.used || 0) }))
+    .filter((r) => r.total > 0);
+
+  if (pact) {
+    const p = slots?.pact || {};
+    rows.push({
+      key: 'pact',
+      label: `Pact (lv ${pact.slotLevel})`,
+      total: Number(p.total || pact.slots),
+      used: Number(p.used || 0),
+    });
+  }
+  if (!rows.length) return null;
+
+  return (
+    <div className="slot-tracker mb-2 border border-dnd-red/40 rounded p-2 bg-amber-50/60 text-gray-900">
+      <div className="text-xs font-semibold mb-1">
+        Spell Slots
+        {pact && <span className="font-normal text-red-900/70"> · Pact Magic returns on a Short Rest</span>}
+      </div>
+      <div className="slot-tracker-rows">
+        {rows.map((r) => (
+          <div key={r.key} className="slot-row flex items-center gap-2 mb-1">
+            <span className="slot-row-label text-xs font-semibold">{r.label}</span>
+            <span className="slot-boxes flex flex-wrap gap-1">
+              {Array.from({ length: r.total }).map((_, i) => (
+                <span key={i} className={`slot-box${i < r.used ? ' slot-box-used' : ''}`} />
+              ))}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SpellsSection({ creature, onRoll }) {
   const [expandedSpell, setExpandedSpell] = useState(null);
 
@@ -362,6 +375,7 @@ function SpellsSection({ creature, onRoll }) {
     <div>
       <hr className="section-divider" />
       <div className="font-bold text-dnd-red border-b border-dnd-red pb-0.5 mb-2 font-serif">Spellcasting</div>
+      <SpellSlotTracker creature={creature} slots={slots} />
       {usedAbilities.length > 0 && (
         <div className="mb-2 text-xs bg-amber-50/60 border border-dnd-red/40 rounded p-2 space-y-1 text-gray-900">
           {usedAbilities.map(ab => {
@@ -382,8 +396,10 @@ function SpellsSection({ creature, onRoll }) {
       )}
       {levels.map((lvl) => {
         const lvlSpells = spells.filter((s) => s.level === lvl);
-        const combat = lvlSpells.filter((s) => s.type === 'combat');
-        const utility = lvlSpells.filter((s) => s.type === 'utility');
+        // All categories in one alphabetical run — each card carries its own
+        // type badge, so grouping by type only made the list harder to scan.
+        const sorted = [...lvlSpells].sort((a, b) =>
+          String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
         const slotInfo = slots[lvl];
         const available = slotInfo ? slotInfo.total - (slotInfo.used || 0) : null;
 
@@ -397,23 +413,20 @@ function SpellsSection({ creature, onRoll }) {
                 <span className="text-xs text-gray-600">
                   ({available}/{slotInfo.total} slots)&nbsp;
                   {Array.from({ length: slotInfo.total }).map((_, i) => (
-                    <span key={i} style={{ fontSize: 10 }}>{i < (slotInfo.used || 0) ? '☒' : '☐'}</span>
+                    <span key={i} className={`slot-box${i < (slotInfo.used || 0) ? ' slot-box-used' : ''}`} />
                   ))}
                 </span>
               )}
             </div>
-            {combat.length > 0 && (
-              <div className="spell-grid grid grid-cols-2 gap-2 mt-1" style={{ gridAutoFlow: 'row' }}>
-                {combat.map((s) => (
-                  <SpellBox key={s.id} spell={s} typeLabel="⚔ Combat" typeColor="text-red-700" />
-                ))}
-              </div>
-            )}
-            {utility.length > 0 && (
-              <div className="spell-grid grid grid-cols-2 gap-2 mt-1" style={{ gridAutoFlow: 'row' }}>
-                {utility.map((s) => (
-                  <SpellBox key={s.id} spell={s} typeLabel="◈ Utility" typeColor="text-blue-700" />
-                ))}
+            {sorted.length > 0 && (
+              <div
+                className="spell-grid grid grid-cols-2 gap-2 mt-1"
+                style={{ gridAutoFlow: 'row', alignItems: 'start' }}
+              >
+                {sorted.map((s) => {
+                  const t = spellType(s.type);
+                  return <SpellBox key={s.id} spell={s} typeLabel={t.badge} typeColor={t.light} />;
+                })}
               </div>
             )}
           </div>
@@ -424,9 +437,28 @@ function SpellsSection({ creature, onRoll }) {
 }
 
 export default function StatBlock({ creature, onRoll = null }) {
+  // Must run before the null guard below: hooks have to be called in the same
+  // order on every render, and this component renders with creature = null
+  // while the library has nothing selected.
+  const subclassFeatureNames = useMemo(() => {
+    const map = new Map();
+    const pairs = [[creature?.char_class, creature?.char_subclass]];
+    for (const mc of (Array.isArray(creature?.multiclasses) ? creature.multiclasses : [])) {
+      if (mc?.class) pairs.push([mc.class, mc.subclass]);
+    }
+    for (const [cls, sub] of pairs) {
+      if (!cls || !sub) continue;
+      const entry = subclassEntry(cls, sub);
+      for (const f of (entry?.features || [])) {
+        if (f?.name) map.set(String(f.name).toLowerCase(), sub);
+      }
+    }
+    return map;
+  }, [creature?.char_class, creature?.char_subclass, creature?.multiclasses]);
+
   if (!creature) return null;
 
-  const sizeType = `${creature.size?.charAt(0).toUpperCase()}${creature.size?.slice(1)} ${creature.creature_type}${creature.subtype ? ` (${creature.subtype})` : ''}`;
+  const sizeType = formatSizeType(creature);
   const saves = savesStr(creature);
   const skills = skillsStr(creature);
 
@@ -450,6 +482,7 @@ export default function StatBlock({ creature, onRoll = null }) {
   // PCs: derive the multi-pool from class + multiclasses. Non-PCs
   // keep falling back to the scalar hit_dice_qty/type fields above.
   const hitDicePool = computeHitDicePool(creature) || [];
+
   const hitDiceUsedMap = (creature.hit_dice_used_by_type && typeof creature.hit_dice_used_by_type === 'object')
     ? creature.hit_dice_used_by_type : {};
 
@@ -469,7 +502,12 @@ export default function StatBlock({ creature, onRoll = null }) {
 
       {/* Header */}
       <div className="print-section">
-        <h2 className="text-2xl font-bold text-dnd-red font-serif">{creature.name}</h2>
+        <h2 className="text-2xl font-bold text-dnd-red font-serif">
+          {creature.name}
+          {creature.pronouns && (
+            <span className="ml-2 text-sm font-normal font-sans text-gray-500">({creature.pronouns})</span>
+          )}
+        </h2>
         <p className="italic text-gray-600">{sizeType}, {creature.alignment}</p>
         {classLine && <p className="italic text-gray-500 text-xs">{classLine}</p>}
         {levelLine && <p className="italic text-gray-500 text-xs">{levelLine}</p>}
@@ -480,12 +518,7 @@ export default function StatBlock({ creature, onRoll = null }) {
       {/* Core stats */}
       <div className="space-y-0.5 print-section">
         {(() => {
-          const baseAC = Number(creature.armor_class) || 0;
-          const shield = !!creature.shield_equipped;
-          const total = baseAC + (shield ? 2 : 0);
-          const parts = [];
-          if (creature.armor_desc) parts.push(creature.armor_desc);
-          if (shield) parts.push('shield +2');
+          const { total, parts } = acLine(creature);
           return (
             <p><strong>Armor Class</strong> {total}{parts.length ? ` (${parts.join(', ')})` : ''}</p>
           );
@@ -527,14 +560,30 @@ export default function StatBlock({ creature, onRoll = null }) {
         {creature.is_player_character && armorProfs.length > 0 && (
           <p><strong>Armor/Shield Proficiencies</strong> {armorProfs.join(', ')}</p>
         )}
-        {creature.is_player_character && hitDicePool.length > 0 && (
-          <p>
+        {creature.is_player_character && (hitDicePool.length > 0 || hitDiceQty > 0) && (
+          // Tickable on paper, like the spell slots: hit dice get spent one at
+          // a time during a rest, so a printed sheet needs boxes not a total.
+          <div className="slot-tracker-inline">
             <strong>Hit Dice</strong>{' '}
-            {hitDicePool.map(({ type, qty }) => {
-              const used = Math.max(0, Math.min(qty, Number(hitDiceUsedMap[type]) || 0));
-              return `${qty - used}/${qty} ${type}`;
-            }).join(' · ')}
-          </p>
+            {(hitDicePool.length > 0
+              ? hitDicePool
+              : [{ type: hitDiceType, qty: hitDiceQty }]
+            ).map(({ type, qty }) => {
+              const used = Math.max(0, Math.min(qty, Number(
+                hitDicePool.length > 0 ? hitDiceUsedMap[type] : hitDiceUsed
+              ) || 0));
+              return (
+                <span key={type || 'hd'} className="inline-flex items-center gap-1 mr-3">
+                  <span className="text-xs">{qty - used}/{qty} {type}</span>
+                  <span className="inline-flex flex-wrap gap-1 align-middle">
+                    {Array.from({ length: qty }).map((_, i) => (
+                      <span key={i} className={`slot-box${i < used ? ' slot-box-used' : ''}`} />
+                    ))}
+                  </span>
+                </span>
+              );
+            })}
+          </div>
         )}
         {creature.is_player_character && creature.heroic_inspiration && (
           <p><strong>Heroic Inspiration</strong> ✓</p>
@@ -542,8 +591,15 @@ export default function StatBlock({ creature, onRoll = null }) {
         {creature.is_player_character && (
           <p>
             <strong>Death Saves</strong>{' '}
-            Success: {[0,1,2].map(i => <span key={`ds${i}`}>{i < (Number(creature.death_save_successes) || 0) ? '☒' : '☐'}</span>)}{' · '}
-            Fail: {[0,1,2].map(i => <span key={`df${i}`}>{i < (Number(creature.death_save_failures) || 0) ? '☒' : '☐'}</span>)}
+            Success:{' '}
+            {[0,1,2].map(i => (
+              <span key={`ds${i}`} className={`slot-box${i < (Number(creature.death_save_successes) || 0) ? ' slot-box-used' : ''}`} />
+            ))}
+            {' · '}
+            Fail:{' '}
+            {[0,1,2].map(i => (
+              <span key={`df${i}`} className={`slot-box${i < (Number(creature.death_save_failures) || 0) ? ' slot-box-used' : ''}`} />
+            ))}
           </p>
         )}
         {creature.is_player_character && creature.concentrating_on && (
@@ -565,7 +621,9 @@ export default function StatBlock({ creature, onRoll = null }) {
       {creature.class_features?.length > 0 && (
         <div className="print-section">
           <hr className="section-divider" />
-          <Section title="Class Features"><ActionList items={creature.class_features} /></Section>
+          <Section title="Class Features">
+            <ActionList items={creature.class_features} subclassByName={subclassFeatureNames} />
+          </Section>
         </div>
       )}
 

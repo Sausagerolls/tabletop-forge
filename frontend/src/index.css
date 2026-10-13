@@ -70,16 +70,39 @@ body {
 /* Prevent text selection during drag */
 .konvajs-content { user-select: none; }
 
+/* Spell slot boxes — ticked on screen, ticked with a pen once printed. */
+.slot-box {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  opacity: 0.75;
+  vertical-align: -1px;
+}
+.slot-box-used {
+  background: currentColor;
+  opacity: 0.55;
+}
+.slot-row-label { min-width: 74px; }
+
 /* Print / PDF export — show only the character stat block */
 .print-only { display: none; }
 
 @media print {
-  @page { margin: 1.5cm; size: auto; }
+  /* A4 explicitly: `size: auto` let the printer decide, which is why the
+     sheet could end up as a narrow column on a wider sheet. */
+  @page { size: A4; margin: 1.2cm; }
 
+  /* A4 (21cm) minus the 1.2cm @page margins on each side. Everything in the
+     print tree is measured against this, not the browser viewport — otherwise
+     `width: 100%` resolves against the ~1920px screen and runs off the page. */
   html, body {
     background: #fff !important;
     margin: 0 !important;
     padding: 0 !important;
+    width: 18.6cm !important;
+    max-width: 18.6cm !important;
     height: auto !important;
     overflow: visible !important;
   }
@@ -102,7 +125,7 @@ body {
     max-height: none !important;
     height: auto !important;
     width: auto !important;
-    max-width: none !important;
+    max-width: 18.6cm !important;
     transform: none !important;
     z-index: auto !important;
     background: transparent !important;
@@ -122,13 +145,32 @@ body {
     overflow: visible !important;
     max-height: none !important;
     height: auto !important;
-    max-width: none !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Intrinsically-wide content must shrink to the sheet rather than push it. */
+  .print-backdrop img,
+  .print-backdrop svg,
+  .print-backdrop canvas,
+  .print-backdrop table,
+  .print-backdrop pre {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  .print-backdrop pre {
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
   }
 
   .print-sheet {
-    max-width: 700px !important;
-    width: 100% !important;
-    margin: 0 auto !important;
+    /* Fill the printable width exactly. Was capped at 700px (narrow column on
+       A4); an uncapped `100%` then measured against the viewport and overflowed
+       the right edge instead. 18.6cm is the printable width itself. */
+    width: 18.6cm !important;
+    max-width: 18.6cm !important;
+    margin: 0 !important;
     border: none !important;
     border-radius: 0 !important;
     background: transparent !important;
@@ -137,6 +179,15 @@ body {
 
   .no-print { display: none !important; }
   .print-only { display: block !important; }
+
+  /* The sheet's inner wrappers are sized for a modal on screen; on paper they
+     should take the full width they're given. */
+  .print-sheet > *,
+  .print-sheet .stat-block {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
 
   /* Stat block print overrides */
   .stat-block {
@@ -163,19 +214,98 @@ body {
     max-width: 160px !important;
   }
 
-  /* Force spell boxes into two columns regardless of viewport width — saves
-     paper compared to the single-column layout when the md: breakpoint isn't
-     triggered on a narrow print sheet. */
+  /* Two columns regardless of viewport width, laid out with inline-block
+     rather than grid: Chrome does not reliably honour break-inside on grid
+     items, which is how spell cards ended up split across a page boundary.
+     Inline-block also fills left-to-right before wrapping to a new row. */
   .spell-grid {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
-    gap: 6px !important;
+    display: block !important;
+    grid-template-columns: none !important;
   }
 
-  /* Keep each spell card on a single page — if a card won't fit on the current
-     page, push it to the next instead of splitting it in half. */
+  /* 48 + 2 + 48 leaves room for the whitespace between inline-blocks, which
+     would otherwise push the second card onto its own row. */
   .spell-grid > * {
+    display: inline-block !important;
+    vertical-align: top !important;
+    width: 48% !important;
+    margin: 0 2% 6px 0 !important;
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
+
+  .spell-grid > *:nth-child(2n) {
+    margin-right: 0 !important;
+  }
+
+  /* Nested blocks inside a card must not introduce their own break either. */
+  .spell-grid > * * {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* A card taller than the space left on the page moves down whole; a card
+     taller than a full page still has to split, so cap the description. */
+  .print-section {
+    break-inside: auto !important;
+  }
+
+  /* Feature headings: keep a heading with at least the start of its text
+     rather than stranding it at the foot of a page. */
+  .action-entry > div:first-child {
+    font-size: 12pt !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+    margin-top: 6px !important;
+  }
+
+  .action-entry {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Bigger and unmistakably inked on paper — these get ticked by hand. */
+  .slot-box {
+    width: 14px !important;
+    height: 14px !important;
+    border: 1.5px solid #111 !important;
+    border-radius: 2px !important;
+    opacity: 1 !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Slots already spent in-app print filled, so the sheet leaves with the
+     right count remaining. */
+  .slot-box-used {
+    background: #111 !important;
+    opacity: 1 !important;
+  }
+
+  .slot-tracker {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .slot-row { margin-bottom: 4px !important; }
+  .slot-row-label { min-width: 80px !important; }
+
+  /* Hit dice sit inline with the other summary lines, so keep the row from
+     splitting its boxes across a page break. */
+  .slot-tracker-inline {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin: 2px 0 !important;
+  }
+}
+
+/* Sneak mode's edge glow. Breathing rather than flashing — a strobe at the
+   table is unpleasant, and reduced-motion users get a steady glow instead. */
+@keyframes sneakPulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="sneakPulse"] { animation: none !important; opacity: 0.8 !important; }
 }

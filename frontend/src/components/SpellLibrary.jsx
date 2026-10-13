@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import EditionTag from './EditionTag.jsx';
+import { SPELL_TYPES } from '../utils/spellTypes.js';
 import { useAllClasses } from '../utils/classes.js';
 
 const LEVEL_LABELS = ['Cantrip', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'];
@@ -809,7 +811,10 @@ export default function SpellLibrary({ aiSettings, activeSrdEdition = 'both', on
             <div key={s.id} className="bg-gray-800 border border-gray-700 rounded-lg p-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-white font-medium truncate">{s.name}</div>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="text-sm text-white font-medium truncate">{s.name}</div>
+                    <EditionTag edition={s.edition} source={s.source} />
+                  </div>
                   <div className="text-xs text-gray-400">
                     {LEVEL_LABELS[s.level] || `lvl ${s.level}`}
                     {s.school ? ` · ${s.school}` : ''}
@@ -890,7 +895,7 @@ function ExportModal({ rows, selected, search, level, klass, loading, submitting
   onSearch, onLevel, onKlass, onToggle, onSelectAll, onSelectNone, onClose, onExport }) {
   const CLASSES = useAllClasses();
   return (
-    <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[90] bg-black/70 flex items-center justify-center p-4">
       <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
           <div>
@@ -950,7 +955,10 @@ function ExportModal({ rows, selected, search, level, klass, loading, submitting
                   className="w-4 h-4 accent-emerald-400 shrink-0"
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-white truncate">{s.name}</div>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="text-sm text-white truncate">{s.name}</div>
+                    <EditionTag edition={s.edition} source={s.source} />
+                  </div>
                   <div className="text-[11px] text-gray-400">
                     {LEVEL_LABELS[s.level] || `lvl ${s.level}`}
                     {s.school ? ` · ${s.school}` : ''}
@@ -982,7 +990,7 @@ function ReviewModal({ items, onClose, onEditName, onApply, onSkip, onDelete, on
   const skipped = items.filter(x => x.status === 'skipped').length;
   const deleted = items.filter(x => x.status === 'deleted').length;
   return (
-    <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[90] bg-black/70 flex items-center justify-center p-4">
       <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
           <div>
@@ -1139,8 +1147,7 @@ function SpellEditor({ initial, ruleset = '2014', onCancel, onSave }) {
           {SCHOOLS.map(x => <option key={x} value={x}>{x}</option>)}
         </select>
         <select className={inp} value={s.type || 'utility'} onChange={e => field('type', e.target.value)}>
-          <option value="utility">Utility</option>
-          <option value="combat">Combat</option>
+          {SPELL_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
         <input className={inp} placeholder="Casting Time" value={s.casting_time || ''} onChange={e => field('casting_time', e.target.value)} />
         <input className={inp} placeholder="Range/Area" value={s.range_area || ''} onChange={e => field('range_area', e.target.value)} />

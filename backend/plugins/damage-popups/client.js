@@ -209,6 +209,31 @@ export default {
       );
     });
 
+    // ── mapFloaters: the same pops, as plain data ────────────────────
+    // The Konva nodes above only exist on the flat map — the 3D renderer
+    // can't run them, so switching view used to lose the numbers entirely
+    // even though the HP change had already been applied. This publishes
+    // the pops in view-agnostic terms and lets each view draw them; the
+    // phase is computed HERE so both views animate off one clock.
+    registries.mapFloaters.set(PLUGIN_ID, () => {
+      if (popups.length === 0) return [];
+      const now = performance.now();
+      const out = [];
+      for (const p of popups) {
+        const phase = (now - p.spawnTime) / POP_DURATION_MS;
+        if (phase < 0 || phase > 1) continue;
+        const kindDef = KIND_BY_ID[p.kind] || KIND_BY_ID.damage;
+        out.push({
+          id: p.id,
+          tokenId: p.tokenId,
+          text: `${kindDef.sign}${Math.abs(p.value)}`,
+          color: kindDef.color,
+          phase,
+        });
+      }
+      return out;
+    });
+
     // ── mapClickHandlers: pick a token while in pick mode (GM only) ──
     // Returns true to consume the click whenever the GM is mid-pick,
     // so the click doesn't fall through to whatever the active toolbar

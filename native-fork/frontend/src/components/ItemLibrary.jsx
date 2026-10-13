@@ -3,6 +3,7 @@
 // toggle. PDF scan / manual edit aren't here yet because the SRD
 // importer (`node src/import_srd_items.js`) covers v1.
 
+import EditionTag from './EditionTag.jsx';
 import React, { useEffect, useMemo, useState } from 'react';
 
 const TYPES = [
@@ -32,7 +33,7 @@ export default function ItemLibrary({
   async function load() {
     setLoading(true);
     try {
-      const r = await fetch('/api/item-library');
+      const r = await fetch('/api/item-library?role=dm');
       setItems(r.ok ? (await r.json()) : []);
     } finally { setLoading(false); }
   }
@@ -108,9 +109,12 @@ export default function ItemLibrary({
               <button type="button"
                 onClick={() => setExpanded(s => ({ ...s, [it.id]: !open }))}
                 className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-800/70">
-                <span className="text-gray-100">{it.name}</span>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-gray-100 truncate">{it.name}</span>
+                  <EditionTag edition={it.edition} source={it.source} />
+                </span>
                 <span className="text-[10px] uppercase text-gray-500">
-                  {it.item_type}{it.rarity ? ` · ${it.rarity}` : ''} · {it.edition}
+                  {it.item_type}{it.rarity ? ` · ${it.rarity}` : ''}
                 </span>
               </button>
               {open && (

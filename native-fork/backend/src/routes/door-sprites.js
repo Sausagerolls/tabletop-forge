@@ -1,4 +1,5 @@
 const express = require('express');
+const { UPLOADS_DIR, ensureDir } = require('../paths');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -7,7 +8,7 @@ const db = require('../db');
 
 const router = express.Router();
 
-const SPRITE_DIR = path.join(__dirname, '../../uploads/door-sprites');
+const SPRITE_DIR = path.join(UPLOADS_DIR, 'door-sprites');
 if (!fs.existsSync(SPRITE_DIR)) fs.mkdirSync(SPRITE_DIR, { recursive: true });
 
 const storage = multer.diskStorage({
@@ -58,7 +59,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const r = await db.query('DELETE FROM door_sprites WHERE id=$1 RETURNING image_path', [req.params.id]);
     if (r.rows[0]) {
-      const filePath = path.join(__dirname, '../../uploads', r.rows[0].image_path);
+      const filePath = path.join(UPLOADS_DIR, r.rows[0].image_path);
       fs.unlink(filePath, () => {}); // best-effort; ignore if already gone
     }
     res.json({ ok: true });

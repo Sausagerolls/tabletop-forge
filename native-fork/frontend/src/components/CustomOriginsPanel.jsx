@@ -258,7 +258,7 @@ export default function CustomOriginsPanel() {
       )}
 
       {exportOpen && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[90] flex items-center justify-center p-4"
           onClick={() => setExportOpen(false)}>
           <div onClick={(e) => e.stopPropagation()}
             className="bg-gray-900 border border-gray-700 rounded-lg w-full max-w-md max-h-[70vh] flex flex-col">

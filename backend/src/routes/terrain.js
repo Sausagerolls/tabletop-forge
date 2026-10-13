@@ -18,6 +18,38 @@ const storage = multer.diskStorage({
   },
 });
 
+// ── Imported 3D models ──────────────────────────────────────────────────────
+// Kept in their own directory rather than beside the sprites: a .glb is tens of
+// megabytes where a terrain sprite is tens of kilobytes, and the delete/replace
+// guards below whitelist by directory, so one dir per kind of file keeps those
+// guards from ever pointing at the wrong thing.
+const MODEL_DIR = path.join(__dirname, '../../uploads/terrain-models');
+if (!fs.existsSync(MODEL_DIR)) fs.mkdirSync(MODEL_DIR, { recursive: true });
+
+// .glb is the format to hand people: one file with its meshes, materials and
+// textures packed inside, which is what "File > Export > glTF 2.0 (.glb)" out
+// of Blender produces by default. .gltf is accepted too, but only the embedded
+// flavour works — a .gltf that references sibling .bin/.png files will load
+// with missing geometry, since those siblings were never uploaded.
+const MODEL_EXTS = ['.glb', '.gltf'];
+const modelUpload = multer({
+  storage: multer.diskStorage({
+    destination: MODEL_DIR,
+    filename: (req, file, cb) => cb(null, `${uuidv4()}${path.extname(file.originalname).toLowerCase()}`),
+  }),
+  limits: { fileSize: 128 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, MODEL_EXTS.includes(path.extname(file.originalname).toLowerCase())),
+});
+
+// Unlink a model file, but only from inside MODEL_DIR — the same directory
+// guard the image replace/delete paths use, so a bad row can't reach out of the
+// uploads tree.
+function unlinkModel(rel) {
+  if (!rel) return;
+  const abs = path.resolve(path.join(__dirname, '../../uploads'), rel);
+  if (path.dirname(abs) === path.resolve(MODEL_DIR)) fs.unlink(abs, () => { /* already gone */ });
+}
+
 // SVG, PNG, JPEG, WebP, GIF. Same-ish set as map upload, plus SVG since
 // the terrain pieces ship as SVG by default.
 const upload = multer({
@@ -47,10 +79,20 @@ router.get('/library', async (_req, res) => {
 // POST /api/terrain-library — multipart upload for the image plus JSON
 // metadata (sent as form fields — multer parses both). Returns the new
 // library row so the client can update its panel without a refetch.
-router.post('/library', upload.single('image'), async (req, res) => {
+const uploadArt = upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'source_image', maxCount: 1 },
+]);
+
+router.post('/library', uploadArt, async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
-    const imagePath = `terrain/${req.file.filename}`;
+    const art = req.files?.image?.[0];
+    if (!art) return res.status(400).json({ error: 'No image uploaded' });
+    const imagePath = `terrain/${art.filename}`;
+    // Only present when the client framed the art — otherwise the drawn image
+    // IS the original and there's nothing extra to keep.
+    const src = req.files?.source_image?.[0];
+    const sourcePath = src ? `terrain/${src.filename}` : null;
     const name = String(req.body.name || '').slice(0, 120) || 'Terrain';
     const default_w = Number(req.body.default_w) || 2;
     const default_h = Number(req.body.default_h) || 2;
@@ -58,6 +100,10 @@ router.post('/library', upload.single('image'), async (req, res) => {
     const blocks_light  = req.body.blocks_light  === 'true';
     const blocks_movement = req.body.blocks_movement === 'true';
     const hide_until_revealed = req.body.hide_until_revealed === 'true';
+    // Marker: a ship / settlement / point of interest rather than scenery.
+    // Placed instances of one draw their name on the map and are listed
+    // separately in the GM's library.
+    const is_marker = req.body.is_marker === 'true';
     let custom_walls = null;
     if (req.body.custom_walls) {
       try { custom_walls = JSON.parse(req.body.custom_walls); } catch {}
@@ -66,12 +112,12 @@ router.post('/library', upload.single('image'), async (req, res) => {
       `INSERT INTO terrain_library
          (name, image_path, default_w, default_h,
           blocks_vision, blocks_light, blocks_movement,
-          hide_until_revealed, custom_walls)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          hide_until_revealed, custom_walls, is_marker, source_image_path)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING *`,
       [name, imagePath, default_w, default_h,
        blocks_vision, blocks_light, blocks_movement,
-       hide_until_revealed, custom_walls ? JSON.stringify(custom_walls) : null]
+       hide_until_revealed, custom_walls ? JSON.stringify(custom_walls) : null, is_marker, sourcePath]
     );
     res.json(r.rows[0]);
   } catch (err) {
@@ -94,6 +140,41 @@ router.patch('/library/:id', express.json(), async (req, res) => {
     if (req.body.blocks_light !== undefined)  push('blocks_light',  !!req.body.blocks_light);
     if (req.body.blocks_movement !== undefined) push('blocks_movement', !!req.body.blocks_movement);
     if (req.body.hide_until_revealed !== undefined) push('hide_until_revealed', !!req.body.hide_until_revealed);
+    if (req.body.is_marker !== undefined) push('is_marker', !!req.body.is_marker);
+    // Whitelisted rather than passed through: this lands in a VARCHAR the
+    // renderer switches on, and an unknown value would silently draw nothing.
+    if (req.body.three_d_shape !== undefined) {
+      const want = String(req.body.three_d_shape);
+      push('three_d_shape', [
+        'flat', 'rock', 'sphere', 'model', 'cloud', 'gate',
+        'blackhole', 'wormhole', 'ionstorm', 'debris',
+        // Grown pieces. Missing from this list, a GM who picked one in the
+        // library editor had it silently saved as 'flat' — the whitelist is
+        // the thing that has to be updated when a shape is added, and it is
+        // nowhere near the renderer that defines them.
+        'vine', 'tentacle',
+      ].includes(want) ? want : 'flat');
+    }
+    // Which volume a cloud builds in 3D. Whitelisted for the same reason as
+    // three_d_shape: the renderer switches on this string, and an unknown value
+    // would silently fall back rather than erroring anywhere visible.
+    if (req.body.cloud_form !== undefined) {
+      const want = String(req.body.cloud_form);
+      push('cloud_form', ['bank', 'ground', 'column', 'wisps', 'ring', 'wall'].includes(want) ? want : 'bank');
+    }
+    // Which VARIATION of a shape — the general form of cloud_form, for shapes
+    // whose art and geometry come in poses. Whitelisted for the same reason;
+    // an empty string is "this shape has no variations", which is most of them.
+    if (req.body.piece_form !== undefined) {
+      const want = String(req.body.piece_form);
+      push('piece_form', ['', 'rearing', 'coiled', 'nest'].includes(want) ? want : '');
+    }
+    // Multiplier on top of the auto-fit, for a model exported with padding
+    // around it or with an atmosphere shell that shouldn't drive the fit.
+    if (req.body.model_scale !== undefined) {
+      const sc = Number(req.body.model_scale);
+      push('model_scale', Number.isFinite(sc) && sc > 0 ? Math.min(sc, 100) : 1);
+    }
     if (req.body.custom_walls !== undefined) {
       push('custom_walls', req.body.custom_walls ? JSON.stringify(req.body.custom_walls) : null);
     }
@@ -110,6 +191,109 @@ router.patch('/library/:id', express.json(), async (req, res) => {
   }
 });
 
+// POST /api/terrain/library/:id/image — swap a piece's artwork in place.
+//
+// This is what "Adjust framing" lands on: ImageFramer re-crops and hands back a
+// new file, which replaces the drawn art while the row (and every placement of
+// it) stays put. The unframed original is kept in step when one is sent, so
+// re-framing repeatedly always crops from the picture rather than from the
+// previous crop.
+router.post('/library/:id/image', uploadArt, async (req, res) => {
+  try {
+    const art = req.files?.image?.[0];
+    if (!art) return res.status(400).json({ error: 'No image uploaded' });
+    const prev = await db.query('SELECT image_path, source_image_path FROM terrain_library WHERE id=$1', [req.params.id]);
+    if (!prev.rows.length) return res.status(404).json({ error: 'Not found' });
+
+    const src = req.files?.source_image?.[0];
+    const fields = ['image_path=$1'];
+    const values = [`terrain/${art.filename}`];
+    if (src) { values.push(`terrain/${src.filename}`); fields.push(`source_image_path=$${values.length}`); }
+    values.push(req.params.id);
+    const r = await db.query(
+      `UPDATE terrain_library SET ${fields.join(', ')} WHERE id=$${values.length} RETURNING *`,
+      values
+    );
+
+    // Drop the superseded file, but only from inside the terrain dir — the same
+    // guard the delete route uses, so a bad row can't unlink something else.
+    // The original is only replaced when a new one came with it.
+    const stale = [prev.rows[0].image_path];
+    if (src && prev.rows[0].source_image_path) stale.push(prev.rows[0].source_image_path);
+    for (const rel of stale) {
+      if (!rel) continue;
+      const abs = path.resolve(path.join(__dirname, '../../uploads'), rel);
+      if (path.dirname(abs) === path.resolve(TERRAIN_DIR)) fs.unlink(abs, () => { /* already gone */ });
+    }
+    res.json(r.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/terrain/library/:id/model — attach or replace the piece's 3D mesh.
+//
+// Separate from the art upload on purpose. The model does NOT replace
+// `image_path`: the flat board still draws the sprite, and this is only what
+// the 3D view stands up in its place. So one library entry is a picture from
+// above and a mesh in perspective, and the GM sets both.
+//
+// Attaching a model also flips `three_d_shape` to 'model' unless the piece is
+// already set to something explicit — otherwise you upload a Blender planet and
+// the 3D view carries on drawing the flat sprite with no clue why.
+router.post('/library/:id/model', modelUpload.single('model'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No model uploaded (.glb or embedded .gltf)' });
+    const prev = await db.query('SELECT model_path, three_d_shape FROM terrain_library WHERE id=$1', [req.params.id]);
+    if (!prev.rows.length) {
+      unlinkModel(`terrain-models/${req.file.filename}`);
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const fields = ['model_path=$1'];
+    const values = [`terrain-models/${req.file.filename}`];
+    if (req.body.model_scale !== undefined) {
+      const sc = Number(req.body.model_scale);
+      values.push(Number.isFinite(sc) && sc > 0 ? Math.min(sc, 100) : 1);
+      fields.push(`model_scale=$${values.length}`);
+    }
+    if (prev.rows[0].three_d_shape === 'flat') fields.push("three_d_shape='model'");
+    values.push(req.params.id);
+    const r = await db.query(
+      `UPDATE terrain_library SET ${fields.join(', ')} WHERE id=$${values.length} RETURNING *`,
+      values
+    );
+    unlinkModel(prev.rows[0].model_path);
+    res.json(r.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/terrain/library/:id/model — drop the mesh, keep the piece.
+// Falls the 3D shape back to 'flat' when it was only 'model' because a model
+// was attached, so the piece doesn't become invisible in 3D.
+router.delete('/library/:id/model', async (req, res) => {
+  try {
+    // Read the path BEFORE clearing it: RETURNING hands back the row after the
+    // update, by which point model_path is already NULL and the file on disk
+    // would have nothing pointing at it.
+    const prev = await db.query('SELECT model_path FROM terrain_library WHERE id=$1', [req.params.id]);
+    if (!prev.rows.length) return res.status(404).json({ error: 'Not found' });
+    const r = await db.query(
+      `UPDATE terrain_library
+          SET model_path=NULL,
+              three_d_shape = CASE WHEN three_d_shape='model' THEN 'flat' ELSE three_d_shape END
+        WHERE id=$1
+      RETURNING *`,
+      [req.params.id]
+    );
+    unlinkModel(prev.rows[0].model_path);
+    res.json(r.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/terrain-library/:id — removes the library row, the
 // image file on disk, and (via FK ON DELETE SET NULL) leaves any
 // already-placed instances on the map but disconnected from the
@@ -119,7 +303,7 @@ router.patch('/library/:id', express.json(), async (req, res) => {
 router.delete('/library/:id', async (req, res) => {
   try {
     const r = await db.query(
-      'DELETE FROM terrain_library WHERE id=$1 RETURNING image_path, is_default',
+      'DELETE FROM terrain_library WHERE id=$1 RETURNING image_path, source_image_path, model_path, is_default',
       [req.params.id]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
@@ -127,10 +311,19 @@ router.delete('/library/:id', async (req, res) => {
     // seed-skip relies on the row, not the file. (We allow deleting
     // the row though, since a GM may genuinely not want a default in
     // their library.)
-    if (!r.rows[0].is_default && r.rows[0].image_path) {
-      const filePath = path.join(__dirname, '../../uploads', r.rows[0].image_path);
-      fs.unlink(filePath, () => {}); // best-effort
+    //
+    // A framed marker owns TWO files: the disc drawn on the map and the
+    // unframed original behind it. Both go, or deleting markers slowly fills
+    // uploads/terrain with orphaned originals nothing references.
+    if (!r.rows[0].is_default) {
+      for (const rel of [r.rows[0].image_path, r.rows[0].source_image_path]) {
+        if (!rel) continue;
+        fs.unlink(path.join(__dirname, '../../uploads', rel), () => {}); // best-effort
+      }
     }
+    // The mesh goes whether or not the piece was a shipped default: models are
+    // never seeded, so one always belongs to the row being deleted.
+    unlinkModel(r.rows[0].model_path);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

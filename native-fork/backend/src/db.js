@@ -37,25 +37,102 @@ fs.mkdirSync(dataDir, { recursive: true });
 // Schema migrations beyond the initial dump are handled by the
 // existing CREATE TABLE IF NOT EXISTS blocks in index.js.
 const INIT_SQL_PATH   = path.join(__dirname, '..', '..', 'init.sql');
-const SCHEMA_SENTINEL = path.join(dataDir, '.schema_initialised');
+// Inside db/, not beside it.
+//
+// It used to live in the data dir next to the database folder, which meant the
+// two could disagree: move or delete `db/` — to reset, or to set a damaged one
+// aside — and the sentinel stayed behind saying "already initialised", so the
+// fresh database came up with NO SCHEMA and every query failed with
+// `relation "creatures" does not exist`. Keeping it in the folder it describes
+// means they are moved, copied and deleted together, always.
+const SCHEMA_SENTINEL = path.join(dataDir, 'db', '.schema_initialised');
+
+// Anything left by an older build, so this migration only has to happen once.
+const LEGACY_SENTINEL = path.join(dataDir, '.schema_initialised');
+try {
+  if (fs.existsSync(LEGACY_SENTINEL) && fs.existsSync(path.join(dataDir, 'db'))
+      && !fs.existsSync(SCHEMA_SENTINEL)) {
+    fs.mkdirSync(path.join(dataDir, 'db'), { recursive: true });
+    fs.renameSync(LEGACY_SENTINEL, SCHEMA_SENTINEL);
+  } else if (fs.existsSync(LEGACY_SENTINEL) && !fs.existsSync(path.join(dataDir, 'db'))) {
+    // A sentinel with no database is the lie described above.
+    fs.rmSync(LEGACY_SENTINEL);
+  }
+} catch { /* best effort — worst case init.sql runs again, which is idempotent */ }
+
+
+// Run init.sql the way psql does — statement by statement, not all-or-nothing.
+//
+// `db.exec(wholeFile)` aborts on the first error, and init.sql is not a clean
+// standalone schema: it ALTERs several tables that index.js creates at RUNTIME
+// (terrain_library, map_terrain), so those statements fail on a fresh database.
+// Under Docker that is invisible, because the postgres entrypoint runs the file
+// through psql WITHOUT `ON_ERROR_STOP` — each failing statement logs and the run
+// continues, and index.js then creates the tables properly a moment later. The
+// native build was the only place that treated it as fatal, and the symptom was
+// a server that answered nothing at all: `relation "terrain_library" does not
+// exist` on boot, then exit.
+//
+// So: tolerate exactly the class of errors psql tolerates here — a statement
+// about something that does not exist yet, or that already does — and keep
+// anything else fatal, because a genuinely broken schema should not boot.
+//
+// Safe to split on semicolons: init.sql has no dollar-quoted bodies (no
+// functions, no DO blocks, no triggers). Asserted rather than assumed — if one
+// ever lands, the check below stops the naive split from cutting it in half.
+const BENIGN = new Set([
+  '42P01', // undefined_table      — index.js creates it later
+  '42703', // undefined_column
+  '42P07', // duplicate_table      — re-running over an existing schema
+  '42710', // duplicate_object
+  '42P16', // invalid_table_definition
+  '42704', // undefined_object
+]);
+
+async function runInitSql(db, sql) {
+  if (sql.includes('$$')) {
+    throw new Error('init.sql now contains a dollar-quoted block; the statement splitter in db.js must be taught about it before it can be trusted.');
+  }
+  // Strip line comments so a trailing `;` inside one cannot split a statement.
+  const cleaned = sql.split('\n').map((line) => line.replace(/--.*$/, '')).join('\n');
+  const statements = cleaned.split(';').map((s) => s.trim()).filter(Boolean);
+  let ran = 0;
+  const skipped = [];
+  for (const statement of statements) {
+    try {
+      await db.exec(statement);
+      ran++;
+    } catch (err) {
+      if (BENIGN.has(err?.code)) { skipped.push(`${err.code}: ${err.message}`); continue; }
+      console.error('[db] init.sql failed on:', statement.slice(0, 120));
+      throw err;
+    }
+  }
+  console.log(`[db] schema initialised — ${ran} statement(s) applied`
+    + (skipped.length ? `, ${skipped.length} deferred to the runtime migrations` : ''));
+  if (skipped.length) for (const s of skipped) console.log('      · ' + s);
+}
 
 let dbInstance = null;
 const ready = (async () => {
   const PGlite = await pgPromise;
-  const db = await PGlite.create(path.join(dataDir, 'db'));
+  const dbDir = path.join(dataDir, 'db');
+  let db;
+  try {
+    db = await PGlite.create(dbDir);
+  } catch (err) {
+    // A crash or a force-quit leaves postmaster.pid behind and PGlite then refuses
+    // to open, with `Aborted()` as its only explanation. If nothing is running, the
+    // file is a gravestone, not a lock.
+    const lock = path.join(dbDir, 'postmaster.pid');
+    if (!fs.existsSync(lock)) throw err;
+    console.warn('[db] clearing a stale lock left by a previous crash');
+    try { fs.rmSync(lock); } catch { /* fall through */ }
+    db = await PGlite.create(dbDir);
+  }
 
   if (!fs.existsSync(SCHEMA_SENTINEL) && fs.existsSync(INIT_SQL_PATH)) {
-    const sql = fs.readFileSync(INIT_SQL_PATH, 'utf8');
-    try {
-      await db.exec(sql);
-    } catch (err) {
-      // Surface the failing SQL in dev so the porting work has a
-      // clear error trail. We rethrow to abort startup — booting the
-      // server with a half-applied schema would just produce mystery
-      // 500s on every route.
-      console.error('[db] init.sql failed:', err.message);
-      throw err;
-    }
+    await runInitSql(db, fs.readFileSync(INIT_SQL_PATH, 'utf8'));
     fs.writeFileSync(SCHEMA_SENTINEL, new Date().toISOString());
   }
 

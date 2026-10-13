@@ -13,6 +13,32 @@
 // category. Plain ability dropdowns can also expand category
 // proficiencies into the concrete list via expandWeaponProficiency.
 
+// What each 2024 mastery property actually does.
+//
+// The weapon rows above carry only the NAME, and the item editor offers the
+// eight names in a dropdown — so a sheet could say "Sap" and nothing in the app
+// would tell you what Sap means. These are the effects, for readouts that have
+// room to explain themselves.
+//
+// Keyed lower-case; look up with masteryText() rather than indexing directly,
+// since sheets carry hand-typed capitalisation.
+export const WEAPON_MASTERIES = {
+  cleave: 'On a hit with a melee attack, make one attack roll against a second creature within 5 feet of the first and within your reach. On a hit it takes the weapon\'s damage, but add no modifiers. Once per turn.',
+  graze: 'If your attack roll misses, the target still takes damage equal to the ability modifier you used for the attack roll. That damage is the weapon\'s type and gets no bonuses.',
+  nick: 'When you make the extra attack granted by the Light property, you make it as part of the Attack action rather than as a Bonus Action. Once per turn.',
+  push: 'On a hit, you can push the creature up to 10 feet straight away from you, if it is Large or smaller.',
+  sap: 'On a hit, the creature has Disadvantage on its next attack roll before the start of your next turn.',
+  slow: 'On a hit, if the creature\'s Speed is not already 0, reduce it by 10 feet until the start of your next turn. The reduction does not stack with itself.',
+  topple: 'On a hit, the creature makes a Constitution saving throw against DC 8 + the ability modifier used for the attack + your Proficiency Bonus. On a failure it has the Prone condition.',
+  vex: 'On a hit that deals damage, you have Advantage on your next attack roll against that creature before the end of your next turn.',
+};
+
+/** The effect text for a mastery name, however it was typed. */
+export function masteryText(name) {
+  const key = String(name || '').trim().toLowerCase();
+  return WEAPON_MASTERIES[key] || '';
+}
+
 export const WEAPONS = [
   // ── Simple Melee ──────────────────────────────────────
   { name: 'Club',           category: 'Simple',  kind: 'Melee',  mastery: 'Slow' },

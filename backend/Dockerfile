@@ -10,8 +10,10 @@ COPY package*.json ./
 RUN npm install --production
 
 COPY src ./src
+# Shipped default artwork (system markers) seeded into uploads/ on boot.
+COPY assets ./assets
 
-RUN mkdir -p uploads/maps uploads/creatures uploads/spell-pdfs uploads/terrain
+RUN mkdir -p uploads/maps uploads/creatures uploads/spell-pdfs uploads/terrain uploads/backdrops
 
 EXPOSE 3001
 

@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import socket from '../socket.js';
+import BackdropLayer from './BackdropLayer.jsx';
 import MapStage from './MapStage.jsx';
 
 // SpectatorView — read-only, audience-facing display intended to run on
@@ -31,16 +32,27 @@ export default function SpectatorView() {
   const code = searchParams.get('code');
 
   const [session, setSession]       = useState(null);
+  // Read inside socket handlers, which are registered once and would otherwise
+  // close over the first (null) session.
+  const sessionRef = useRef(null);
+  useEffect(() => { sessionRef.current = session; }, [session]);
   const [tokens, setTokens]         = useState([]);
+  const [tokenFx, setTokenFx]       = useState([]);
   const [walls, setWalls]           = useState([]);
   const [doors, setDoors]           = useState([]);
   const [lights, setLights]         = useState([]);
   const [magicalDarkness, setMagicalDarkness] = useState([]);
   const [terrain, setTerrain]       = useState([]);
+  const [tiles, setTiles]           = useState([]);
+  const [ships, setShips]           = useState([]);
+  const [shipFx, setShipFx]         = useState([]);
   const [spellTemplates, setSpellTemplates]   = useState([]);
   const [userColors, setUserColors] = useState({});
   const [allMaps, setAllMaps]       = useState([]);
   const [error, setError]           = useState('');
+  // Full-screen scene art in place of the map. The TV view is player-facing,
+  // so it follows the same backdrop the players see.
+  const [backdrop, setBackdrop]     = useState(null);
   const [connected, setConnected]   = useState(false);
   const [mapSwitchToast, setMapSwitchToast] = useState(null);
 
@@ -53,6 +65,11 @@ export default function SpectatorView() {
   const [gridColor, setGridColor]       = useState('rgba(0,0,0,0.35)');
   const [gridThickness, setGridThickness] = useState(0.7);
   const [tokenNameFontSize, setTokenNameFontSize] = useState(45);
+  // GM projecting the live map: the whole map is revealed and this client's
+  // camera follows the GM's rather than being driven locally.
+  const [liveMapView, setLiveMapView] = useState(false);
+  const [liveMapCamera, setLiveMapCamera] = useState(null);
+
 
   useEffect(() => {
     if (!code) { navigate('/'); return; }
@@ -71,13 +88,22 @@ export default function SpectatorView() {
       setTimeout(() => navigate('/'), 2500);
     });
 
-    socket.on('session_joined', ({ state, userColors: uc }) => {
+    socket.on('session_joined', ({ state, userColors: uc, liveMapCamera: cam }) => {
+      setLiveMapView(!!state.session?.live_map_view);
+      setLiveMapCamera(cam || null);
       setSession(state.session);
+      // Pick up a scene already running, so a TV rebooted mid-session comes
+      // back to the art rather than the map behind it.
+      setBackdrop(state.session?.backdrop_id && state.session?.backdrop_image
+        ? { id: state.session.backdrop_id, name: state.session.backdrop_name, image_path: state.session.backdrop_image }
+        : null);
       setSpellTemplates(Array.isArray(state.spellTemplates) ? state.spellTemplates : []);
       // Hidden tokens still hidden — the GM's audience shouldn't see the
       // ambush before it triggers any more than the players do.
       setTokens((state.tokens || []).filter((t) => !t.is_hidden));
       setTerrain(state.terrain || []);
+      setTiles(state.tiles || []);
+      setShips(state.ships || []);
       setWalls(state.walls || []);
       setDoors(state.doors || []);
       setLights(state.lights || []);
@@ -112,9 +138,33 @@ export default function SpectatorView() {
       }
     });
     socket.on('token_flying_changed', ({ tokenId, isFlying }) => setTokens(p => p.map(t => t.id === tokenId ? { ...t, is_flying: isFlying } : t)));
-    socket.on('token_size_changed',   ({ tokenId, size })      => setTokens(p => p.map(t => t.id === tokenId ? { ...t, size }    : t)));
+    socket.on('token_size_changed',   ({ tokenId, size, sizeSquares }) => setTokens(p => p.map(t => t.id === tokenId ? { ...t, size, size_squares: sizeSquares ?? null } : t)));
     socket.on('token_name_changed',   ({ tokenId, name: n })   => setTokens(p => p.map(t => t.id === tokenId ? { ...t, name: n } : t)));
     socket.on('token_nickname_changed',({ tokenId, nickname }) => setTokens(p => p.map(t => t.id === tokenId ? { ...t, nickname } : t)));
+    socket.on('token_familiar_changed',({ tokenId, familiarOf, companionKind }) => setTokens(p => p.map(t => t.id === tokenId ? { ...t, familiar_of: familiarOf, companion_kind: companionKind || null } : t)));
+    // Transformation / destruction animations also play on the TV.
+    socket.on('token_fx', ({ tokenId, effect, ts }) => {
+      const entry = { tokenId, effect, ts: ts || Date.now() };
+      setTokenFx((prev) => [...prev, entry]);
+      setTimeout(() => setTokenFx((prev) => prev.filter((f) => f !== entry)), 2500);
+    });
+    socket.on('token_auras_changed', ({ tokenId, auras }) => setTokens(p => p.map(t => t.id === tokenId ? { ...t, auras } : t)));
+    socket.on('token_mark_changed', ({ tokenId, markedBy, markLabel }) => setTokens(p => p.map(t => t.id === tokenId ? { ...t, marked_by: markedBy, mark_label: markLabel } : t)));
+    socket.on('token_exhaustion_changed', ({ tokenId, exhaustion }) => setTokens(p => p.map(t => t.id === tokenId ? { ...t, exhaustion } : t)));
+    socket.on('token_label_visibility_changed', ({ tokenId, hideName, hideHp }) => setTokens(p => p.map(t => t.id === tokenId
+      ? { ...t, hide_name_from_players: hideName, hide_hp_from_players: hideHp }
+      : t)));
+    // The TV is a player-facing view, so hidden labels apply here too — which
+    // means it also needs the combat flag that overrides them. Without these
+    // two, `in_combat` would only ever be as fresh as the last full fetch.
+    socket.on('combat_changed', ({ active, tokenIds }) => {
+      const idSet = tokenIds ? new Set(tokenIds) : null;
+      setTokens(p => p.map(t => ({ ...t, in_combat: active ? (idSet ? idSet.has(t.id) : t.in_combat) : false })));
+    });
+    socket.on('tokens_added_to_combat', ({ tokenIds }) => {
+      const idSet = new Set(tokenIds || []);
+      setTokens(p => p.map(t => idSet.has(t.id) ? { ...t, in_combat: true } : t));
+    });
     socket.on('token_light_changed',  ({ tokenId, brightFt, dimFt, color, flicker }) => {
       setTokens((p) => p.map((t) => t.id === tokenId ? {
         ...t,
@@ -124,24 +174,90 @@ export default function SpectatorView() {
         ...(flicker !== undefined ? { token_light_flicker: flicker } : {}),
       } : t));
     });
-    socket.on('token_added',   ({ token })      => { if (!token.is_hidden) setTokens((p) => p.find((t) => t.id === token.id) ? p : [...p, token]); });
+    socket.on('token_added',   ({ token })      => { if (!token.is_hidden) setTokens((p) => p.some((t) => t.id === token.id) ? p.map((t) => t.id === token.id ? { ...t, ...token } : t) : [...p, token]); });
+    socket.on('token_elevation_changed', ({ tokenId, elevation, isFlying }) => {
+      setTokens((prev) => prev.map((t) => (t.id === tokenId ? { ...t, elevation, is_flying: isFlying } : t)));
+    });
+
     socket.on('token_refreshed', ({ token })    => setTokens((p) => p.map((t) => t.id === token.id ? { ...t, ...token } : t)));
     socket.on('token_removed', ({ tokenId })    => setTokens((p) => p.filter((t) => t.id !== tokenId)));
     socket.on('token_map_changed', ({ tokenId, toMapId, gridCol, gridRow }) => {
       setTokens((p) => p.map((t) => t.id === tokenId ? { ...t, map_id: toMapId, grid_col: gridCol, grid_row: gridRow } : t));
     });
 
+    socket.on('live_map_view_changed', ({ on, camera }) => {
+      setLiveMapView(!!on);
+      // Null on the way out, so the local camera takes over again cleanly.
+      setLiveMapCamera(on ? (camera || null) : null);
+    });
+    socket.on('live_map_camera', ({ camera }) => setLiveMapCamera(camera || null));
+
+    socket.on('backdrop_changed', ({ backdrop: b }) => setBackdrop(b || null));
+
     // ── Map / walls / doors / lights / darkness / terrain ──────────────
-    socket.on('map_changed', ({ map, walls: w, doors: d, lights: l, tokens: tk, magicalDarkness: dz, terrain: trn }) => {
+    socket.on('map_changed', ({ map, walls: w, doors: d, lights: l, tokens: tk, magicalDarkness: dz, terrain: trn, ships: shp, fowEnabled: fw, tiles: tl }) => {
       setMapSwitchToast({ name: map.name || 'New map', ts: Date.now() });
-      setSession((prev) => prev ? { ...prev, map_id: map.id, map_image: map.image_path, map_width: map.width, map_height: map.height, grid_size: map.grid_size, map_name: map.name } : prev);
+      setSession((prev) => prev ? { ...prev, map_id: map.id, map_image: map.image_path, map_width: map.width, map_height: map.height, map_type: map.map_type || 'image', map_grid_cols: map.grid_cols ?? null, map_grid_rows: map.grid_rows ?? null, map_grid_size: map.grid_size ?? null, map_grid_type: map.grid_type || 'square', map_grid_scale: map.grid_scale ?? 5, map_grid_unit: map.grid_unit ?? 'ft', map_grid_scale_visible: !!map.grid_scale_visible, grid_size: map.grid_size, map_name: map.name } : prev);
       setWalls(w || []);
       setDoors(d || []);
       setLights(l || []);
       setMagicalDarkness(dz || []);
       setTerrain((trn || []).filter((t) => !(t.hide_until_revealed && !t.is_revealed)));
+      setShips(shp || []);
+      // Replaced with the board, not kept: a tile map's dungeon belongs to the
+      // map it was laid on.
+      setTiles(tl || []);
+      if (fw !== undefined) setFowEnabled(!!fw);
       setTokens((tk || []).filter((t) => !t.is_hidden));
     });
+
+    // Tiles, as the GM builds the dungeon in front of the audience. Mirrored
+    // rather than acted on — nothing here can lay a tile.
+    socket.on('tiles_placed', ({ tile }) => {
+      // Only for the board on screen. The broadcast reaches the whole session,
+      // and the TV follows the GM's map, so a tile laid on any other map is not
+      // this audience's business.
+      const here = sessionRef.current?.map_id ?? null;
+      if (tile?.map_id != null && here != null && tile.map_id !== here) return;
+      setTiles((prev) => (prev.some((x) => x.id === tile.id) ? prev : [...prev, tile]));
+    });
+    socket.on('tiles_removed', ({ tileId }) => {
+      setTiles((prev) => prev.filter((x) => x.id !== tileId));
+    });
+
+    // Ships. The TV view is read-only, so it only mirrors state — the crew
+    // patches ride along with the hull move so nobody lags a frame behind.
+    const applyShipTokenPatches = (patches) => {
+      if (!patches?.length) return;
+      const byId = new Map(patches.map((p) => [p.tokenId, p]));
+      setTokens((prev) => prev.map((t) => {
+        const p = byId.get(t.id);
+        return p ? { ...t, grid_col: p.gridCol, grid_row: p.gridRow } : t;
+      }));
+    };
+    socket.on('ship_placed',  ({ ship })   => setShips((p) => p.some((s) => s.id === ship.id) ? p : [...p, ship]));
+    // Ship destruction animation — geometry travels with the event, since the
+    // ship row is gone by the time this arrives.
+    socket.on('ship_destroyed', (fx) => {
+      setShipFx((prev) => [...prev.filter((f) => Date.now() - f.ts < 4000), fx]);
+      setTimeout(() => setShipFx((prev) => prev.filter((f) => f !== fx)), 4000);
+    });
+    socket.on('ship_removed', ({ shipId }) => setShips((p) => p.filter((s) => s.id !== shipId)));
+    socket.on('ship_moved',   ({ shipId, gridCol, gridRow, tokenPatches }) => {
+      setShips((p) => p.map((s) => s.id === shipId ? { ...s, grid_col: gridCol, grid_row: gridRow } : s));
+      applyShipTokenPatches(tokenPatches);
+    });
+    socket.on('ship_rotated', ({ shipId, rotation, tokenPatches }) => {
+      setShips((p) => p.map((s) => s.id === shipId ? { ...s, rotation } : s));
+      applyShipTokenPatches(tokenPatches);
+    });
+    socket.on('ships_refreshed', ({ ships: rows }) => setShips(rows || []));
+    socket.on('ship_deck_changed', ({ shipId, deckIndex }) =>
+      setShips((p) => p.map((s) => s.id === shipId ? { ...s, active_deck: deckIndex } : s)));
+    socket.on('token_deck_moved', ({ tokenId, shipId, deckIndex, gridCol, gridRow, deckCol, deckRow }) =>
+      setTokens((p) => p.map((t) => t.id === tokenId
+        ? { ...t, ship_id: shipId, deck_index: deckIndex, grid_col: gridCol, grid_row: gridRow, deck_col: deckCol, deck_row: deckRow }
+        : t)));
 
     socket.on('wall_added',    ({ wall })    => setWalls((p) => p.find((w) => w.id === wall.id) ? p : [...p, wall]));
     socket.on('wall_deleted',  ({ wallId })  => setWalls((p) => p.filter((w) => w.id !== wallId)));
@@ -161,12 +277,46 @@ export default function SpectatorView() {
     socket.on('light_deleted', ({ lightId }) => setLights((p) => p.filter((l) => l.id !== lightId)));
     socket.on('lights_cleared', () => setLights([]));
 
-    socket.on('magical_darkness_added',   ({ zone })  => setMagicalDarkness((p) => p.find((z) => z.id === zone.id) ? p : [...p, zone]));
-    socket.on('magical_darkness_updated', ({ zone })  => setMagicalDarkness((p) => p.map((z) => z.id === zone.id ? zone : z)));
-    socket.on('magical_darkness_deleted', ({ id })    => setMagicalDarkness((p) => p.filter((z) => z.id !== id)));
+    // The server sends { darkness } and { darknessId }; this listened for
+    // { zone } / { id }, so adding a zone threw on `zone.id` and deleting one
+    // silently did nothing on the TV. Accept both shapes.
+    socket.on('magical_darkness_added', (payload) => {
+      const zone = payload?.darkness || payload?.zone;
+      if (!zone?.id) return;
+      setMagicalDarkness((p) => (p.some((z) => z.id === zone.id) ? p : [...p, zone]));
+    });
+    socket.on('magical_darkness_updated', (payload) => {
+      const zone = payload?.darkness || payload?.zone;
+      if (!zone?.id) return;
+      setMagicalDarkness((p) => p.map((z) => (z.id === zone.id ? zone : z)));
+    });
+    socket.on('magical_darkness_deleted', (payload) => {
+      const id = payload?.darknessId ?? payload?.id;
+      if (!id) return;
+      setMagicalDarkness((p) => p.filter((z) => z.id !== id));
+    });
+    socket.on('darkness_attached', ({ darknessId, tokenId }) =>
+      setMagicalDarkness((p) => p.map((z) => (z.id === darknessId ? { ...z, attached_token_id: tokenId } : z))));
     socket.on('magical_darkness_cleared', () => setMagicalDarkness([]));
 
-    socket.on('terrain_added',   ({ terrain: t }) => setTerrain((p) => p.find((x) => x.id === t.id) ? p : [...p, t]));
+    // Live terrain sync.
+    //
+    // The server broadcasts these to the WHOLE session room — see
+    // broadcastTerrain in backend/src/index.js — filtered only by whether the
+    // piece is hidden, not by which map each client happens to be rendering.
+    // The row carries its own map_id, so `added` has to be filtered here or a
+    // piece placed on one board turns up on whatever board this client is
+    // showing. That is exactly how a star system's planets ended up standing
+    // on a dockside map.
+    //
+    // `updated` and `removed` need no guard: both are no-ops when the piece
+    // isn't already in the list.
+    socket.on('terrain_added', ({ terrain: t }) => {
+      if (!t) return;
+      const here = sessionRef.current?.map_id;
+      if (t.map_id != null && here != null && Number(t.map_id) !== Number(here)) return;
+      setTerrain(prev => prev.some(x => x.id === t.id) ? prev : [...prev, t]);
+    });
     socket.on('terrain_updated', ({ terrain: t }) => setTerrain((p) => p.map((x) => x.id === t.id ? t : x)));
     socket.on('terrain_removed', ({ id })         => setTerrain((p) => p.filter((x) => x.id !== id)));
 
@@ -175,7 +325,12 @@ export default function SpectatorView() {
     socket.on('spell_templates_cleared', () => setSpellTemplates([]));
 
     // ── Session-level settings the GM may toggle live ──────────────────
-    socket.on('fow_changed',      ({ enabled }) => setFowEnabled(!!enabled));
+    socket.on('fow_changed', ({ enabled, mapId }) => {
+      // Per-map setting: the TV view only follows the session's map, so a flip
+      // aimed at any other map isn't ours to take.
+      if (mapId != null && Number(mapId) !== Number(sessionRef.current?.map_id)) return;
+      setFowEnabled(!!enabled);
+    });
     socket.on('fow_blur_changed', ({ blur })    => setFowBlur(Number(blur) || 0));
     socket.on('fow_color_changed',({ color })   => setFowColor(color || '#000000'));
     socket.on('ambient_light_changed', ({ ambientLight: a }) => setAmbientLight(a || 'bright'));
@@ -258,13 +413,28 @@ export default function SpectatorView() {
 
   return (
     <div className="w-screen h-screen bg-black overflow-hidden relative">
+      {/* Backdrop covers the entire TV output — see PlayerView for the
+          blurred-fill rationale. */}
+      <BackdropLayer backdrop={backdrop} className="z-40" />
       <MapStage
         mapUrl={mapUrl}
         mapId={session?.map_id ?? null}
         mapWidth={mapWidth}
         mapHeight={mapHeight}
-        gridSize={gridSize}
+        mapType={session.map_type || 'image'}
+        gridCols={session.map_grid_cols ?? null}
+        gridRows={session.map_grid_rows ?? null}
+        ships={ships}
+        shipFx={shipFx}
+        gridSize={Number(session.map_grid_size) || gridSize}
+        gridType={session.map_grid_type || 'square'}
+        revealAll={liveMapView}
+        cameraRect={liveMapView ? liveMapCamera : null}
+        gridScale={session.map_grid_scale ?? 5}
+        gridUnit={session.map_grid_unit ?? 'ft'}
+        showScaleKey={!!session.map_grid_scale_visible}
         tokens={onMapTokens}
+        tokenFx={tokenFx}
         // isPlayer: gates out GM-only chrome (terrain handles, wall draw,
         // context menus, etc). Spectator should be locked down the same way.
         isPlayer
@@ -286,6 +456,7 @@ export default function SpectatorView() {
         fowColor={fowColor}
         ambientLight={ambientLight}
         terrain={terrain}
+        tiles={tiles}
       />
 
       {/* Off-map party indicator strip — surfaces players pinned to a

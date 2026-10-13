@@ -12,5 +12,9 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    // TEMPORARY — sourcemaps so a runtime error names the original file, line
+    // and variable instead of a minified letter. Remove once the character
+    // builder fault is found.
+    sourcemap: true,
   },
 });

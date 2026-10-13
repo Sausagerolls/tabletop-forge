@@ -85,9 +85,15 @@ export default function DiceRoller({ rolls, isPlayer }) {
 }
 
 // Overlay component for floating dice results
+// ABOVE EVERYTHING.
+//
+// z-80 put this under the modals, which are z-90: a player who opened their
+// quick reference and rolled a die saw the result appear behind the panel they
+// were looking at. A roll is the one thing that always has to be readable,
+// whatever is open on top of it.
 export function DiceRollOverlay({ rolls }) {
   return (
-    <div className="fixed bottom-4 right-4 space-y-2 z-[80] pointer-events-none max-w-xs">
+    <div className="fixed bottom-4 right-4 space-y-2 z-[1100] pointer-events-none max-w-xs">
       {rolls.map((roll) => (
         <div
           key={roll.id}
@@ -107,7 +113,10 @@ export function DiceRollOverlay({ rolls }) {
               <div className="flex items-baseline gap-1">
                 <span className="text-2xl font-bold text-dnd-gold">{roll.total}</span>
                 {roll.rolls.length > 1 && (
-                  <span className="text-xs text-gray-400">({roll.rolls.join(', ')})</span>
+                  <span className="text-xs text-gray-400">
+                    ({roll.rolls.join(', ')}
+                    {roll.mode ? ` — ${roll.mode === 'advantage' ? 'adv' : 'dis'}, kept ${roll.kept}` : ''})
+                  </span>
                 )}
               </div>
             </div>

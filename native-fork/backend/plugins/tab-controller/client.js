@@ -44,18 +44,30 @@ const PLUGIN_ID = 'tab-controller';
 // array directly (nothing exposes it via the contract), so we duplicate the
 // BUILT-IN tabs here. Plugin-supplied tabs come from the dmTabs registry
 // at render time.
+//
+// Listed in the host's own order, so this reads like the panel it controls.
+// Anything missing here is simply not offered — it stays permanently visible
+// with no way to turn it off, which is how Lobby, Backdrops, Tiles and Tables
+// were all quietly unhideable after being added to the host.
 const BUILTIN_TABS = [
-  { id: 'map',      label: 'Map',           protected: true  },
-  { id: 'library',  label: 'Token Library', protected: true  },
-  { id: 'terrain',  label: 'Terrain',       protected: false },
-  { id: 'spells',   label: 'Spells',        protected: false },
-  { id: 'items',    label: 'Items',         protected: false },
-  { id: 'origins',  label: 'Origins',       protected: false },
-  { id: 'tokens',   label: 'Token List',    protected: true  },
-  { id: 'markers',  label: 'Markers',       protected: false },
-  { id: 'treasure', label: 'Treasure',      protected: false },
-  { id: 'handouts', label: 'Handouts',      protected: false },
-  { id: 'session',  label: 'Session',       protected: true  },
+  { id: 'lobby',     label: 'Lobby',         protected: false },
+  { id: 'map',       label: 'Map',           protected: true  },
+  { id: 'backdrops', label: 'Backdrops',     protected: false },
+  { id: 'library',   label: 'Token Library', protected: true  },
+  { id: 'terrain',   label: 'Terrain',       protected: false },
+  { id: 'tiles',     label: 'Tiles',         protected: false },
+  { id: 'sneak',     label: 'Sneak',         protected: false },
+  { id: 'shop',      label: 'Shop',          protected: false },
+  { id: 'print',     label: 'Print',         protected: false },
+  { id: 'spells',    label: 'Spells',        protected: false },
+  { id: 'items',     label: 'Items',         protected: false },
+  { id: 'tables',    label: 'Tables',        protected: false },
+  { id: 'origins',   label: 'Origins',       protected: false },
+  { id: 'tokens',    label: 'Token List',    protected: true  },
+  { id: 'markers',   label: 'Markers',       protected: false },
+  { id: 'treasure',  label: 'Treasure',      protected: false },
+  { id: 'handouts',  label: 'Handouts',      protected: false },
+  { id: 'session',   label: 'Session',       protected: true  },
 ];
 
 // Built-in collapsible sub-sections inside the Session tab. Ids must

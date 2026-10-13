@@ -1002,10 +1002,6 @@ router.post('/generate-image', async (req, res) => {
     width, height, steps, cfgScale, seed,
   } = req.body;
 
-  // App Store build forces the SFW safety prompt regardless of what the
-  // client sends — the toggle is hidden in that build (guideline 1.1.4).
-  const effAllowNsfw = process.env.TTF_APP_STORE === '1' ? false : allowNsfw;
-
   const adapter = IMAGE_PROVIDERS[provider];
   if (!adapter) {
     return res.status(400).json({ error: `Unknown image provider: ${provider}` });
@@ -1032,7 +1028,7 @@ router.post('/generate-image', async (req, res) => {
   // drop it; the safety guarantee shifts to the upstream policy filter.
   let finalNeg = '';
   if (adapter.supportsNegativePrompt) {
-    finalNeg = effAllowNsfw
+    finalNeg = allowNsfw
       ? (negativePrompt || DEFAULT_NEG_NSFW)
       : `${negativePrompt ? negativePrompt + ', ' : ''}${DEFAULT_NEG_SFW}`;
   }
@@ -1099,9 +1095,7 @@ router.post('/player-generate-image', async (req, res) => {
     const prompt = buildImagePrompt(cfg.imagePromptTemplate || '', name || '', appearance || '');
     let finalNeg = '';
     if (adapter.supportsNegativePrompt) {
-      // App Store build always keeps the SFW safety prompt (guideline 1.1.4).
-      const allowNsfw = process.env.TTF_APP_STORE === '1' ? false : cfg.imageAllowNsfw;
-      finalNeg = allowNsfw
+      finalNeg = cfg.imageAllowNsfw
         ? (cfg.imageNegativePrompt || DEFAULT_NEG_NSFW)
         : `${cfg.imageNegativePrompt ? cfg.imageNegativePrompt + ', ' : ''}${DEFAULT_NEG_SFW}`;
     }

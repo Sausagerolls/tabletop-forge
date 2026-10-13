@@ -132,7 +132,15 @@ export default {
         if (v && v.pluginId === PLUGIN_ID) overlays.delete(k);
       }
       for (const [tid, el] of elementCache.entries()) {
-        if (el === 'water') overlays.set(tid, { kind: 'water', pluginId: PLUGIN_ID });
+        if (!el || el === 'none') continue;
+        // Every element is published now, not just water.
+        //
+        // The host used to need only 'water' (it post-processes that one
+        // natively), but the 3D view can't run our Konva decorator — it has no
+        // Konva — so it reads the element from here to pick its own animation.
+        // Water keeps the exact same kind string, so the host's existing
+        // `kind === 'water'` test is untouched.
+        overlays.set(tid, { kind: el, pluginId: PLUGIN_ID });
       }
     }
 

@@ -5,12 +5,13 @@
 
 const express = require('express');
 const db = require('../db');
+const { asksAsDm } = require('../itemSecrets');
 
 const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
-    const { search, type, rarity, sessionCode, role } = req.query;
+    const { search, type, rarity, edition, sessionCode, role } = req.query;
     const params = [];
     const conds = [];
     if (search) {
@@ -24,6 +25,13 @@ router.get('/', async (req, res) => {
     if (rarity) {
       params.push(String(rarity));
       conds.push(`rarity = $${params.length}`);
+    }
+    // Explicit edition filter, for a GM narrowing the library by hand. The
+    // session-driven filter below is a different thing: that one HIDES the
+    // other edition from players, and is not a choice they make.
+    if (edition === '2014' || edition === '2024') {
+      params.push(edition);
+      conds.push(`edition = $${params.length}`);
     }
     if (sessionCode && role && role !== 'dm') {
       const sess = await db.query(
@@ -41,7 +49,17 @@ router.get('/', async (req, res) => {
       `SELECT * FROM item_library ${where} ORDER BY item_type, name`,
       params
     )).rows;
-    res.json(rows);
+    // A library row can carry a GM secret, and this endpoint is reachable by a
+    // player client (it already filters editions for them). Removed rather than
+    // blanked, for the reason given in itemSecrets.js: an empty `gm_secret`
+    // would itself announce that the item has something to find.
+    if (asksAsDm(req)) return res.json(rows);
+    res.json(rows.map((r) => {
+      if (!r || !('gm_secret' in r)) return r;
+      const out = { ...r };
+      delete out.gm_secret;
+      return out;
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

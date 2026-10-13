@@ -1,0 +1,11 @@
+{
+  "id": "my-pack",
+  "name": "My Pack",
+  "version": "1.0.0",
+  "description": "Generated content pack — My Pack",
+  "author": "Content Exporter",
+  "frontend_entry": "client.js",
+  "extension_points": [
+    "dmTabs"
+  ]
+}

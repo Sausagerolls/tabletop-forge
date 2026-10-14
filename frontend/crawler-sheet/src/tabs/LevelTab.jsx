@@ -3,6 +3,8 @@ import { CLASSES, HIT_DIE, DIE_FIXED } from '../rules.js';
 import { SPECIES, findSpecies, subclassGroups, findFeat } from '../ttf.js';
 import { classChoicesFor, choiceDone, speciesChoices, speciesChoiceDone } from '../choices.js';
 import { ClassChoiceFields, SpeciesChoiceFields } from '../ChoiceFields.jsx';
+import { newFeat } from '../featRules.js';
+import { RulesLink } from '../rulesLinks.jsx';
 import { derive } from '../character.js';
 import { rollDamage } from '../dice.js';
 import { Modal, Pick, Stepper } from '../bits.jsx';
@@ -17,7 +19,7 @@ export default function LevelTab({ st, d, update }) {
       <div className="card">
         <div className="row between"><h2 className="sec" style={{ margin: 0 }}>Floor</h2>
           <Stepper value={st.floor} min={1} max={18} onChange={(v) => update({ floor: v })} /></div>
-        <p className="small muted">Set this when you take the stairs. Class and species selection opens on Floor 3.</p>
+        <p className="small muted">Set this when you take the stairs. Class and species selection opens on Floor 3. <RulesLink page="class-selection">Class selection</RulesLink> · <RulesLink page="leveling">Leveling</RulesLink></p>
       </div>
 
       {canSelect && (
@@ -133,7 +135,7 @@ function ClassSelect({ st, d, update, onClose }) {
       s.speciesId = speciesId; s.subraceId = subraceId; s.speciesName = sp?.name + (subraceId ? ` (${(sp.subraces || []).find((x) => x.id === subraceId)?.name || ''})` : '');
       s.speciesChoices = spPicks;
       const feat = spPicks.feat && findFeat(spPicks.feat);
-      if (feat) s.feats = [...(s.feats || []), { name: feat.name, desc: feat.desc, source: `${sp.name} species` }];
+      if (feat) s.feats = [...(s.feats || []), newFeat(feat, `${sp.name} species`)];
       s.classChoices = { ...(s.classChoices || {}), [cls]: picks };
       s.boxes = { ...(s.boxes || {}), [`Class|Bronze`]: { ...(s.boxes?.['Class|Bronze'] || { earned: 0, opened: 0 }), earned: (s.boxes?.['Class|Bronze']?.earned || 0) + 1 } };
       s.boxLog = [{ text: `Class selection: became a ${cls}. Earned a Bronze Class Box.`, floor: s.floor, at: Date.now() }, ...(s.boxLog || [])];

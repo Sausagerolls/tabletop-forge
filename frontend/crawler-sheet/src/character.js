@@ -5,6 +5,7 @@ import {
 } from './rules.js';
 import SETTING from './generated/setting.json';
 import { classChoiceEffects, speciesSkills } from './choices.js';
+import { featEffects } from './featRules.js';
 
 export const SKILL_DATA = SETTING.skills;
 export const PRESTIGE = SETTING.prestige;
@@ -51,11 +52,27 @@ export function classLevels(st) {
   return out;
 }
 
+export const classAbility = (cls, sub) => SPELL_ABILITY[`${cls}:${sub}`] || SPELL_ABILITY[cls] || null;
+
+// The ability a tome spell is cast with: Intelligence for a spell read from a tome
+// (or a class ability if the spell is on that class's list and it is better),
+// the class's for a class spell, the feature's for a feat or species spell.
+export function spellAbilityFor(sp, d) {
+  if (sp.ability) return sp.ability;
+  if (sp.source === 'Class' && sp.cls) return classAbility(sp.cls, d.classes[sp.cls]?.subclass) || 'INT';
+  const lists = String(sp.allowed_classes || '');
+  const opts = ['INT', ...d.classNames.filter((c) => lists.includes(c)).map((c) => classAbility(c, d.classes[c].subclass)).filter(Boolean)];
+  return opts.reduce((best, a) => (d.m[a] > d.m[best] ? a : best), 'INT');
+}
+
 export function derive(st) {
   const level = st.levels.length;
   const pb = profBonus(level);
+  // Scores include feat increases (no cap of 20 in the World Dungeon).
+  const ffx = featEffects(st);
+  const scores = {};
   const m = {};
-  ABILITIES.forEach((a) => { m[a] = mod(st.scores[a]); });
+  ABILITIES.forEach((a) => { scores[a] = (Number(st.scores[a]) || 10) + (ffx.scores[a] || 0); m[a] = mod(scores[a]); });
   const classes = classLevels(st);
   const classNames = Object.keys(classes);
   const primary = classNames[0] || null;
@@ -65,14 +82,16 @@ export function derive(st) {
   const tough = sl('Tough as Nails');
   const toughPer = tough >= 10 ? 3 : tough >= 5 ? 2 : tough >= 1 ? 1 : 0;
 
-  const hpMax = Math.max(1, st.levels.reduce((t, e) => t + (Number(e.hp) || 0), 0) + level * m.CON + level * toughPer);
+  const hpMax = Math.max(1, st.levels.reduce((t, e) => t + (Number(e.hp) || 0), 0) + level * m.CON + level * toughPer + level * ffx.hpPerLevel + ffx.hpFlat);
   const hitDice = {};
   st.levels.forEach((e) => { hitDice[e.hd] = (hitDice[e.hd] || 0) + 1; });
 
-  const saves = primary ? CLASS_SAVES[primary] : ['CON', ...(st.saveChoice ? [st.saveChoice] : [])];
+  const saves = [...new Set([...(primary ? CLASS_SAVES[primary] : ['CON', ...(st.saveChoice ? [st.saveChoice] : [])]), ...ffx.saves])];
   const fx = classChoiceEffects(st, classes);
-  const profSkills = new Set([...st.skills, ...(st.bgSkills || []), ...(st.classSkills || []), ...(st.extraSkill ? [st.extraSkill] : []), ...fx.skills, ...speciesSkills(st)]);
-  const expSkills = new Set([...st.expertise, ...fx.expertise]);
+  const profSkills = new Set([...st.skills, ...(st.bgSkills || []), ...(st.classSkills || []), ...(st.extraSkill ? [st.extraSkill] : []), ...fx.skills, ...speciesSkills(st), ...ffx.skills]);
+  const expSkills = new Set([...st.expertise, ...fx.expertise, ...ffx.expertise]);
+  // Keen Mind, Observant: proficiency, or Expertise if already proficient.
+  ffx.upgrade.forEach((n) => { if (profSkills.has(n)) expSkills.add(n); else profSkills.add(n); });
   const skillRows = SKILLS.map(([name, ab]) => {
     const prof = profSkills.has(name);
     const exp = expSkills.has(name);
@@ -81,8 +100,8 @@ export function derive(st) {
     return { name, ab, prof, exp, extra, bonus: m[ab] + (exp ? 2 * pb : prof ? pb : 0) + extra };
   });
 
-  const armorProf = new Set([...st.armorProf, ...classNames.flatMap((c) => CLASS_ARMOR[c] || []), ...fx.armor]);
-  const weaponProf = new Set([...st.weaponProf, ...classNames.flatMap((c) => CLASS_WEAPONS[c] || []), ...fx.weapons]);
+  const armorProf = new Set([...st.armorProf, ...classNames.flatMap((c) => CLASS_ARMOR[c] || []), ...fx.armor, ...ffx.armor]);
+  const weaponProf = new Set([...st.weaponProf, ...classNames.flatMap((c) => CLASS_WEAPONS[c] || []), ...fx.weapons, ...ffx.weapons]);
   if (st.inclination === 'Bulwark' && level >= 3) { armorProf.add('Medium'); armorProf.add('Shields'); }
   if (st.inclination === 'Bulwark' && level >= 9) armorProf.add('Heavy');
   st.drills.forEach((d) => { if (/armor/i.test(d)) armorProf.add(d.replace(/ armor/i, '')); else if (d === 'Shields') armorProf.add('Shields'); else weaponProf.add(d.replace(/ weapons/i, '')); });
@@ -106,16 +125,22 @@ export function derive(st) {
   const pact = pactMana(classes.Warlock?.level || 0);
   const manaMax = tomeMana + clsMana;
 
-  const spellAbility = primary ? (SPELL_ABILITY[`${primary}:${classes[primary].subclass}`] || SPELL_ABILITY[primary] || null) : null;
+  const spellAbility = primary ? classAbility(primary, classes[primary].subclass) : null;
   const castMod = spellAbility ? m[spellAbility] : null;
+  // Every spell is a tome spell; its source decides the ability (rules/tome-magic.md).
+  const classAbilities = classNames.map((c) => classAbility(c, classes[c].subclass)).filter(Boolean);
+  const tomeLimit = tomeSpellLimit(level, sl('Tome Scholar') > 0);
+  const maxSpell = maxSpellLevel(classes);
 
   const slots = 20 + level + (Number(st.slotBonus) || 0) + 2 * sl('Pack Rat');
   const used = st.inventory.reduce((t, i) => t + (i.equipped ? 0 : 1), 0);
 
   return {
     level, pb, m, classes, classNames, primary, hpMax, hitDice, saves, skillRows, armorProf, weaponProf, ac,
-    initiative: m.DEX, speed: 30, passive: 10 + skillRows.find((r) => r.name === 'Perception').bonus,
-    tomeMana, clsMana, manaMax, pact, casterLevel: cl, maxSpell: maxSpellLevel(classes), tomeLimit: tomeSpellLimit(level, sl('Tome Scholar') > 0),
+    scores, featFx: ffx, classAbilities,
+    initiative: m.DEX + (ffx.initiativePB ? pb : 0), speed: 30 + ffx.speed, passive: 10 + skillRows.find((r) => r.name === 'Perception').bonus,
+    tomeMana, clsMana, manaMax, pact, casterLevel: cl, maxSpell, tomeLimit, maxCast: Math.max(maxSpell, tomeLimit),
+    dcFor: (a) => 8 + pb + (m[a] || 0), atkFor: (a) => pb + (m[a] || 0),
     tomeDC: 8 + pb + m.INT, tomeAtk: pb + m.INT, spellAbility, spellDC: castMod === null ? null : 8 + pb + castMod,
     spellAtk: castMod === null ? null : pb + castMod, slots, slotsUsed: used, sl, choiceFx: fx,
   };
@@ -147,7 +172,7 @@ export function toCreature(st, d) {
     // Tabletop Forge reads the druid's Wild Shape list from this column.
     wildshape_forms: (st.wildForms || []).map((f) => f.id),
   };
-  ABILITIES.forEach((a) => { row[ABILITY_COLUMN[a]] = st.scores[a]; });
+  ABILITIES.forEach((a) => { row[ABILITY_COLUMN[a]] = d.scores[a]; });
   ABILITIES.forEach((a) => { row[`save_${a.toLowerCase()}`] = d.saves.includes(a) ? d.m[a] + d.pb : null; });
   d.skillRows.forEach((r) => { row[skillKey(r.name)] = r.prof || r.exp ? r.bonus : null; });
   row.skill_expertise = Object.fromEntries(d.skillRows.filter((r) => r.exp).map((r) => [skillKey(r.name), true]));
@@ -174,5 +199,14 @@ export function fromCreature(row, owner) {
     out.classChoices = { ...(out.classChoices || {}), [cls]: { ...((out.classChoices || {})[cls] || {}), 'class-skills': out.classSkills } };
     out.classSkills = [];
   }
+  // Every spell is now a tome spell. Class spells keep their class as the source.
+  out.spells = (out.spells || []).map((sp) => {
+    const x = { ...sp, level: Number(sp.level) || 0 };
+    if (x.id === 'heal-self') return { ...x, tome: true, source: 'Crawler' };
+    if (!x.tome) { delete x.prepared; return { ...x, tome: true, source: 'Class', rank: x.rank || 1 }; }
+    return { ...x, source: x.source || 'Tome' };
+  });
+  // Feats get an id so their choices and spells can be found again.
+  out.feats = (out.feats || []).map((f, i) => (f.uid ? f : { ...f, uid: `f${Date.now().toString(36)}${i}` }));
   return out;
 }

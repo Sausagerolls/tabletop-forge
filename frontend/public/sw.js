@@ -60,7 +60,8 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/sounds/') ||
     // The Crawler Sheet is a separate app. Caching its page as this app's
     // offline shell would open the wrong app offline.
-    url.pathname.startsWith('/crawler')
+    url.pathname.startsWith('/crawler') ||
+    url.pathname.startsWith('/rules')
   ) {
     return; // default network handling
   }

@@ -2,6 +2,7 @@ import React from 'react';
 import { sign, CONDITIONS } from '../rules.js';
 import { weaponCategory } from '../ttf.js';
 import { useRoller, AdvBar } from '../roller.jsx';
+import { RulesLink } from '../rulesLinks.jsx';
 import { weaponDamageModes, formatDamageWithMod } from '@ttf/utils/damage.js';
 
 const isExplosive = (i) => i.item_type === 'explosive';
@@ -180,6 +181,7 @@ export default function CombatTab({ st, d, update }) {
                     <span className="shots">{Array.from({ length: Math.min(cap, 30) }, (_, i) => <i key={i} className={i < shots ? 'on' : ''} />)}</span>
                   </div>
                   {w.special?.note && <div className="small muted">{w.special.note}</div>}
+                  <RulesLink page="firearms" anchor="Firearm Rules">Firearm rules</RulesLink>
                   <div className="row" style={{ marginTop: 6 }}>
                     <select className="f" style={{ flex: 1, minWidth: 0, padding: '6px 8px' }} value="" onChange={(e) => e.target.value && reload(idx, e.target.value)}>
                       <option value="">Load ammo…</option>
@@ -202,7 +204,7 @@ export default function CombatTab({ st, d, update }) {
 
       {bombs.length > 0 && (
         <div className="card">
-          <h2 className="sec">Explosives</h2>
+          <h2 className="sec">Explosives <RulesLink page="explosives" anchor="Explosive Rules" /></h2>
           <p className="small muted">Throwing one replaces an attack (range 30/90). Everyone in the area saves; you just roll damage.{demo ? ` Demolitionist ${demo}: +${Math.floor(demo / 5)} die and DC.` : ''}</p>
           <div className="list">{bombs.map((it, i) => {
             const b = bombLine(it);

@@ -1,3 +1,4 @@
+import { RulesLink } from './rulesLinks.jsx';
 import React from 'react';
 
 export function Pick({ on, lock, onClick, children }) {
@@ -16,6 +17,7 @@ export function SkillCard({ skill, level, children, limitBreaker }) {
           <h3 className="it">{skill.name}</h3>
           <span className="chip">{skill.cat}</span> <span className="chip">{skill.key}</span>
           {limitBreaker && <> <span className="chip gold">Limit Breaker</span></>}
+          {' '}<RulesLink page="crawler-skills" anchor={skill.name} />
         </div>
         {children}
       </div>

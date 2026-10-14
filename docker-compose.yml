@@ -62,6 +62,11 @@ services:
       - backend
     ports:
       - "${PORT:-80}:80"
+    volumes:
+      # Optional: the World Dungeon rules site, served at /rules/ beside the
+      # Crawler Sheet at /crawler/. Built by the setting repo's
+      # tools/sync_sheet_to_ttf.sh; an empty folder just means no rules site.
+      - ./rules-site:/usr/share/nginx/html/rules:ro
 
 volumes:
   pgdata:

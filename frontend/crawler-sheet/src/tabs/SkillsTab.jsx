@@ -32,7 +32,7 @@ export default function SkillsTab({ st, d, update }) {
         <div className="grid6" style={{ marginTop: 10 }}>{ABILITIES.map((a) => (
           <div className="abil" key={a}>
             <div className="n">{ABILITY_NAME[a]}</div>
-            <div className="s">{st.scores[a]}</div>
+            <div className="s">{d.scores[a]}</div>
             <button className="m" onClick={() => roll.test(`${ABILITY_NAME[a]} check`, d.m[a])}>{sign(d.m[a])}</button>
             <button className={`savebtn${d.saves.includes(a) ? ' prof' : ''}`} onClick={() => roll.test(`${ABILITY_NAME[a]} save`, d.m[a] + (d.saves.includes(a) ? d.pb : 0))}>
               Save {sign(d.m[a] + (d.saves.includes(a) ? d.pb : 0))}</button>

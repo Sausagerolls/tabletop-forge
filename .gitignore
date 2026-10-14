@@ -100,3 +100,6 @@ audio/
 # binary is built from native-fork/apple-intelligence/ which is in the tree.
 native-fork/src-tauri/macos/embedded.provisionprofile
 native-fork/src-tauri/binaries/
+
+# World Dungeon rules site, built from the setting repo and mounted at /rules/
+rules-site/

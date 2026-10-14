@@ -1908,17 +1908,17 @@
    ]
   },
   "Wizard": {
-   "scaling": "Add 1 spell to your spellbook for free each prestige level. Arcane Recovery restores 1 more spell level every 2 prestige levels.",
+   "scaling": "Learn 1 extra wizard spell as a tome spell each prestige level. Arcane Recovery restores 1 more spell level every 2 prestige levels.",
    "features": [
     {
      "rank": "I",
      "name": "Spell Mastery+",
-     "text": "Choose a 3rd-level wizard spell in your spellbook. You can cast it at its lowest level without spending mana."
+     "text": "Choose a 3rd-level wizard spell in your tome. You can cast it at its lowest level without spending mana."
     },
     {
      "rank": "II",
      "name": "Arcane Library",
-     "text": "Copying a spell into your spellbook takes 1 minute and costs half as much."
+     "text": "When you read a tome holding a wizard spell, the spell gains 1 extra rank."
     },
     {
      "rank": "III",

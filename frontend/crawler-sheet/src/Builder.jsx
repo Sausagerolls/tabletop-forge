@@ -1,3 +1,4 @@
+import { newFeat, featBase } from './featRules.js';
 import React, { useState } from 'react';
 import { ABILITIES, ABILITY_NAME, SKILLS, mod, sign, HEAL_SELF } from './rules.js';
 import { BACKGROUNDS, findBackground, skillLabel } from './ttf.js';
@@ -31,7 +32,7 @@ export default function Builder({ st: initial, onDone, onCancel }) {
     else if (pick.type === 'montage') pick.montage.forEach((a) => { if (a) scores[a] += 1; });
     else if (pick.type === 'drill' && pick.drill) drills.push(pick.drill);
     else skillPicksUnspent = 1;
-    const feats = bg?.feat ? [{ name: bg.feat.name, desc: bg.feat.desc, source: `Background: ${bg.name}` }] : [];
+    const feats = bg?.feat ? [{ ...newFeat(bg.feat, `Background: ${bg.name}`), id: featBase(bg.feat)?.id, desc: featBase(bg.feat)?.desc || bg.feat.desc }] : [];
     const out = { ...st, scores, crawlerSkills, drills, skillPicksUnspent, statPointsUnspent: statPoint ? 0 : 1,
       bgSkills, tools: [bg?.tool, st.tools].filter(Boolean).join(', '), feats: [...feats, ...st.feats.filter((f) => !String(f.source).startsWith('Background'))],
       spells: st.spells?.length ? st.spells : [{ ...HEAL_SELF }], gold: st.gold || 0 };

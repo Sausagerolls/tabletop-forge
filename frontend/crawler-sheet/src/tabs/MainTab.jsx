@@ -39,6 +39,7 @@ export default function MainTab({ st, d, update, conn, charId }) {
     s.hp.current = d.hpMax; s.hp.temp = 0; s.deathSaves = { s: 0, f: 0 };
     s.mana.current = d.manaMax; s.mana.pact = d.pact.mana; s.mana.big = [];
     s.willToLiveUsed = 0; s.hardToKillUsed = false; s.resources = {};
+    s.spells.forEach((x) => { delete x.freeUsed; });
     s.exhaustion = Math.max(0, (s.exhaustion || 0) - 1);
     // regain half your Hit Dice (at least one), largest first
     let back = Math.max(1, Math.floor(d.level / 2));

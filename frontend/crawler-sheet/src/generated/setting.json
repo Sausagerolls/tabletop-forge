@@ -1,0 +1,1969 @@
+{
+ "skills": [
+  {
+   "name": "Demolitionist",
+   "cat": "Combat",
+   "key": "Intelligence",
+   "cue": "Use explosives in a fight, under a time limit, or to change a battlefield.",
+   "scaling": "Explosives you set or throw deal <strong>+1 damage die per 5 SL</strong>, and their save DC increases by <strong>+1 per 5 SL</strong>.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Handler.",
+     "text": "You are proficient with explosives and alchemist's supplies. You never set off an explosive by accident. You can set a fuse to go off at the start or end of any turn within the next minute."
+    },
+    {
+     "lv": "5",
+     "name": "Bomb Maker.",
+     "text": "During a short rest, you can make explosives from dungeon scrap, up to your PB per long rest. Each one fills a 10-foot radius: Dexterity save (Skill DC), <strong>2d6</strong> fire damage, half on success. You have advantage on saves against explosions."
+    },
+    {
+     "lv": "10",
+     "name": "Shaped Charge.",
+     "text": "When you set or throw an explosive, you can make its area a 30-foot cone or a 60-foot line instead. Choose up to PB creatures in the area. They automatically succeed on the save and take no damage."
+    },
+    {
+     "lv": "15",
+     "name": "Big Boom.",
+     "text": "Once per long rest, an explosive you set or throw deals maximum damage, and its area is doubled."
+    },
+    {
+     "lv": "20",
+     "name": "Extinction Event.",
+     "text": "<em>Limit Breaker only.</em> Your explosives deal <strong>double damage</strong> to creatures, and you are immune to damage from your own explosives. Big Boom recharges on a short rest."
+    }
+   ]
+  },
+  {
+   "name": "Iron Fist",
+   "cat": "Combat",
+   "key": "Strength or Dexterity",
+   "cue": "Win or turn a dangerous fight with your bare hands.",
+   "scaling": "Unarmed strike damage die: <strong>d6</strong> (SL 1\u20134), <strong>d8</strong> (SL 5\u20139), <strong>d10</strong> (SL 10\u201314), <strong>d12</strong> (SL 15).",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Brawler.",
+     "text": "When you take the Attack action, you can make one unarmed strike as a bonus action."
+    },
+    {
+     "lv": "5",
+     "name": "Hardened Knuckles.",
+     "text": "Your unarmed strikes count as magical."
+    },
+    {
+     "lv": "10",
+     "name": "Knockout.",
+     "text": "When you score a critical hit with an unarmed strike, the target must succeed on a Constitution save (Skill DC) or be stunned until the end of your next turn."
+    },
+    {
+     "lv": "15",
+     "name": "Unstoppable.",
+     "text": "Your unarmed strikes ignore resistance to bludgeoning damage."
+    },
+    {
+     "lv": "20",
+     "name": "One-Inch Punch.",
+     "text": "<em>Limit Breaker only.</em> Your unarmed strikes ignore all resistance and immunity to bludgeoning damage. Once per turn, a hit can push the target up to 30 feet; if it hits a wall or creature, both take 2d10 extra bludgeoning damage."
+    }
+   ]
+  },
+  {
+   "name": "Powerful Strike",
+   "cat": "Combat",
+   "key": "Strength",
+   "cue": "Land a Powerful Strike that drops or seriously hurts a strong enemy.",
+   "scaling": "Extra damage is <strong>1d8 per 3 SL</strong>, rounded up (1d8 at SL 1, 5d8 at SL 15).",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Heavy Hit.",
+     "text": "PB times per long rest, when you hit with a melee attack, add the extra damage (same type as the weapon)."
+    },
+    {
+     "lv": "5",
+     "name": "Knockback.",
+     "text": "A Large or smaller target hit by a Powerful Strike is pushed 10 feet away from you."
+    },
+    {
+     "lv": "10",
+     "name": "Second Wind.",
+     "text": "When you roll initiative with no uses left, you regain one use."
+    },
+    {
+     "lv": "15",
+     "name": "Relentless.",
+     "text": "Your uses return when you finish a short or long rest."
+    },
+    {
+     "lv": "20",
+     "name": "Earthsplitter.",
+     "text": "<em>Limit Breaker only.</em> Powerful Strike has no use limit. Once per turn when you use it, every creature of your choice within 10 feet of the target takes half the extra damage."
+    }
+   ]
+  },
+  {
+   "name": "Pitcher's Arm",
+   "cat": "Combat",
+   "key": "Strength or Dexterity",
+   "cue": "Hit an important target with a thrown object at long range or under pressure.",
+   "scaling": "Thrown weapon attacks deal <strong>+1 damage per 2 SL</strong>, rounded down.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Good Arm.",
+     "text": "You are proficient with thrown improvised weapons. Your thrown weapons' normal and long ranges are doubled. You can draw a thrown weapon from your inventory as part of the attack."
+    },
+    {
+     "lv": "5",
+     "name": "Ricochet.",
+     "text": "Once per turn, when you hit with a thrown weapon, you can make one more thrown attack, at disadvantage, against a different target within 15 feet of the first."
+    },
+    {
+     "lv": "10",
+     "name": "Trick Shot.",
+     "text": "Your thrown attacks ignore half and three-quarters cover."
+    },
+    {
+     "lv": "15",
+     "name": "Bank Shot.",
+     "text": "Ricochet attacks no longer have disadvantage, and you can ricochet twice per turn."
+    },
+    {
+     "lv": "20",
+     "name": "Fastball.",
+     "text": "<em>Limit Breaker only.</em> Your thrown weapons' range is 300 feet with no long range. You can throw one extra weapon each time you take the Attack action, and thrown explosives can ricochet too."
+    }
+   ]
+  },
+  {
+   "name": "Weapon Specialist",
+   "cat": "Combat",
+   "key": "weapon's ability",
+   "cue": "Win or turn a dangerous fight with that weapon type.",
+   "scaling": "Attacks with that weapon type deal <strong>+1 damage per 3 SL</strong>, rounded down.",
+   "intro": "You choose one weapon type when you gain this Crawler Skill (for example: longsword, crossbow, frying pan). You can gain it more than once, choosing a different type each time.",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Familiar Grip.",
+     "text": "You are proficient with that weapon type, and gain +1 to attack rolls with it."
+    },
+    {
+     "lv": "5",
+     "name": "Second Nature.",
+     "text": "You can draw or stow the weapon as part of an attack with it."
+    },
+    {
+     "lv": "10",
+     "name": "Precise.",
+     "text": "Your attacks with that weapon type score a critical hit on a roll of 19 or 20."
+    },
+    {
+     "lv": "15",
+     "name": "Master.",
+     "text": "Critical hits on 18\u201320. The attack bonus becomes +2."
+    },
+    {
+     "lv": "20",
+     "name": "Living Weapon.",
+     "text": "<em>Limit Breaker only.</em> Critical hits with your chosen weapon type on 17\u201320. Your weapon of that type counts as magical, can't be disarmed, and returns to your hand as a free action."
+    }
+   ]
+  },
+  {
+   "name": "Dirty Fighting",
+   "cat": "Combat",
+   "key": "Strength",
+   "cue": "Win an exchange with a cheap trick: a trip, a shove, sand in the eyes.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to checks to shove.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Cheap Shot.",
+     "text": "Once per turn, when you hit a creature with a melee attack, you can also try to shove it or knock it prone, without using an action."
+    },
+    {
+     "lv": "5",
+     "name": "Riposte.",
+     "text": "When a creature within 5 feet misses you with a melee attack, you can use your reaction to make one melee attack against it."
+    },
+    {
+     "lv": "10",
+     "name": "Stay Down.",
+     "text": "A creature you knock prone cannot stand up until the end of its next turn."
+    },
+    {
+     "lv": "15",
+     "name": "Pocket Sand.",
+     "text": "When you use Cheap Shot, the target must also succeed on a Constitution save (Skill DC) or be blinded until the end of its next turn."
+    },
+    {
+     "lv": "20",
+     "name": "No Rules.",
+     "text": "<em>Limit Breaker only.</em> Cheap Shot and Pocket Sand work on every hit, not once per turn. Creatures you knock prone also lose their reaction until the end of their next turn."
+    }
+   ]
+  },
+  {
+   "name": "Bodyguard",
+   "cat": "Combat",
+   "key": "Constitution",
+   "cue": "Protect an ally from an attack that would have hurt them badly.",
+   "scaling": "Bodyguard range is <strong>5 feet + 5 feet per 5 SL</strong>.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Watch Out.",
+     "text": "When a creature you can see attacks an ally within range, you can use your reaction to give the attack disadvantage."
+    },
+    {
+     "lv": "5",
+     "name": "Take the Hit.",
+     "text": "You can instead use your reaction to become the target of that attack, if the attacker can reach you."
+    },
+    {
+     "lv": "10",
+     "name": "Braced.",
+     "text": "You have resistance to damage from attacks you redirect."
+    },
+    {
+     "lv": "15",
+     "name": "Wall.",
+     "text": "Once per round, you can use Watch Out or Take the Hit without using your reaction."
+    },
+    {
+     "lv": "20",
+     "name": "Immovable Object.",
+     "text": "<em>Limit Breaker only.</em> You have resistance to all damage while an ally is within your Bodyguard range. Damage you take for an ally is halved before resistance."
+    }
+   ]
+  },
+  {
+   "name": "Dead Eye",
+   "cat": "Combat",
+   "key": "Dexterity",
+   "cue": "Make a ranged shot that decides a fight.",
+   "scaling": "Ranged weapon attacks deal <strong>+1 damage per 3 SL</strong>, rounded down.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Steady Aim.",
+     "text": "As a bonus action, if you have not moved this turn, you gain advantage on your next ranged attack this turn. Your speed becomes 0 until the end of the turn."
+    },
+    {
+     "lv": "5",
+     "name": "Long Shot.",
+     "text": "Attacking at long range does not give you disadvantage on ranged weapon attacks."
+    },
+    {
+     "lv": "10",
+     "name": "Weak Spot.",
+     "text": "Your ranged weapon attacks score a critical hit on a roll of 19 or 20."
+    },
+    {
+     "lv": "15",
+     "name": "Called Shot.",
+     "text": "When you hit with an attack that used Steady Aim, the target must succeed on a Constitution save (Skill DC) or suffer one effect of your choice until the end of its next turn: blinded, deafened, or speed 0."
+    },
+    {
+     "lv": "20",
+     "name": "Thousand-Yard Stare.",
+     "text": "<em>Limit Breaker only.</em> Steady Aim works even if you moved. Ranged attacks you make with advantage score a critical hit on 18\u201320, and Called Shot can impose two effects at once."
+    }
+   ]
+  },
+  {
+   "name": "Two-Fisted",
+   "cat": "Combat",
+   "key": "Strength or Dexterity",
+   "cue": "Win or turn a fight with a weapon in each hand.",
+   "scaling": "Your off-hand attacks deal <strong>+1 damage per 3 SL</strong>, rounded down.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Dual Grip.",
+     "text": "You add your ability modifier to the damage of your off-hand attack. You can two-weapon fight with any one-handed melee weapons, including improvised weapons."
+    },
+    {
+     "lv": "5",
+     "name": "Guard Hands.",
+     "text": "You gain +1 AC while you hold a melee weapon in each hand."
+    },
+    {
+     "lv": "10",
+     "name": "Cross Cut.",
+     "text": "When your Attack action and your off-hand attack both hit the same target in one turn, it takes extra damage equal to your SL."
+    },
+    {
+     "lv": "15",
+     "name": "Blender.",
+     "text": "When you make an off-hand attack, you can make two off-hand attacks instead of one."
+    },
+    {
+     "lv": "20",
+     "name": "Whirlwind.",
+     "text": "<em>Limit Breaker only.</em> Once per turn, as part of your Attack action, you can make one attack with each weapon against every creature within your reach."
+    }
+   ]
+  },
+  {
+   "name": "Wrestler",
+   "cat": "Combat",
+   "key": "Strength",
+   "cue": "Grapple something that should not be grappled.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to checks to grapple and to keep a grapple.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Clinch.",
+     "text": "You can grapple creatures up to two sizes larger than you. You have advantage on attack rolls against a creature you are grappling."
+    },
+    {
+     "lv": "5",
+     "name": "Suplex.",
+     "text": "When you take the Attack action, you can replace one attack with a slam against a creature you are grappling. It takes <strong>1d8 + your Strength modifier</strong> bludgeoning damage and falls prone. The grapple continues."
+    },
+    {
+     "lv": "10",
+     "name": "Pin.",
+     "text": "A creature you are grappling is also restrained."
+    },
+    {
+     "lv": "15",
+     "name": "Piledriver.",
+     "text": "Your slam deals <strong>3d8 + your Strength modifier</strong> damage. The target must also succeed on a Constitution save (Skill DC) or be stunned until the end of your next turn."
+    },
+    {
+     "lv": "20",
+     "name": "Final Fall.",
+     "text": "<em>Limit Breaker only.</em> You can grapple a creature of any size. Your slam deals <strong>5d8 + your Strength modifier</strong> damage, and you can slam two grappled creatures into each other for the same damage to both."
+    }
+   ]
+  },
+  {
+   "name": "Backstab",
+   "cat": "Combat",
+   "key": "Dexterity",
+   "cue": "Strike an enemy who never saw you coming.",
+   "scaling": "When you hit a creature that is surprised or cannot see you, deal <strong>+1d6 per 3 SL</strong> (rounded up) extra damage, once per turn. This stacks with Sneak Attack.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "First Strike.",
+     "text": "You have advantage on attack rolls against creatures that have not taken a turn yet in this combat."
+    },
+    {
+     "lv": "5",
+     "name": "Fade.",
+     "text": "You can take the Hide action as a bonus action."
+    },
+    {
+     "lv": "10",
+     "name": "Twist the Knife.",
+     "text": "Any hit you score against a surprised creature is a critical hit."
+    },
+    {
+     "lv": "15",
+     "name": "Silent Kill.",
+     "text": "Once per long rest, when you hit a creature that cannot see you, and it has <strong>SL \u00d7 10</strong> hit points or fewer after the damage, it drops to 0 hit points. Bosses are immune."
+    },
+    {
+     "lv": "20",
+     "name": "Death by a Thousand Cuts.",
+     "text": "<em>Limit Breaker only.</em> Silent Kill works on any creature that is not a boss, recharges on a short rest, and against a boss deals 10d10 extra damage instead."
+    }
+   ]
+  },
+  {
+   "name": "Bloodlust",
+   "cat": "Combat",
+   "key": "Constitution",
+   "cue": "Keep fighting, and win, while badly hurt.",
+   "scaling": "While you are below half your hit points, your melee attacks deal <strong>+1 damage per 3 SL</strong> (rounded down, minimum 1).",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Blood Up.",
+     "text": "While you are below half your hit points, you have advantage on Strength checks and Strength saves."
+    },
+    {
+     "lv": "5",
+     "name": "Bloodthirst.",
+     "text": "When you reduce a creature to 0 hit points with a melee attack, you gain temporary hit points equal to <strong>SL + your Constitution modifier</strong>."
+    },
+    {
+     "lv": "10",
+     "name": "Red Mist.",
+     "text": "While you are below half your hit points, you have resistance to bludgeoning, piercing and slashing damage."
+    },
+    {
+     "lv": "15",
+     "name": "Refuse to Fall.",
+     "text": "Once per long rest, when you drop to 0 hit points and do not die outright, you drop to <strong>SL \u00d7 2</strong> hit points instead."
+    },
+    {
+     "lv": "20",
+     "name": "Berserker God.",
+     "text": "<em>Limit Breaker only.</em> While below half your hit points, you can make one extra attack whenever you take the Attack action, and you regain hit points equal to half the damage you deal with melee attacks."
+    }
+   ]
+  },
+  {
+   "name": "Bomb Surgeon",
+   "cat": "Combat",
+   "key": "Intelligence",
+   "cue": "Disarm, rewire or rebuild an explosive while it is dangerous.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to checks to disarm or modify explosives and mechanical traps.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Steady Hands.",
+     "text": "You have advantage on checks to disarm explosives. When you Inspect an explosive, you learn its damage, area and trigger."
+    },
+    {
+     "lv": "5",
+     "name": "Rewire.",
+     "text": "As an action, you can change the trigger of an explosive or explosive trap you can touch: timer, pressure plate, tripwire, or a spoken word."
+    },
+    {
+     "lv": "10",
+     "name": "Frankenbomb.",
+     "text": "During a short rest, you can combine two explosives into one. Add their damage dice together (maximum total dice equal to your SL). Its area is the larger area + 5 feet."
+    },
+    {
+     "lv": "15",
+     "name": "Defuse Anything.",
+     "text": "When an explosive within 30 feet of you is about to go off, you can use your reaction to make an Intelligence check against its save DC. On a success, it does not go off. You can do this PB times per long rest. Boss and System explosives are immune."
+    },
+    {
+     "lv": "20",
+     "name": "Bomb Whisperer.",
+     "text": "<em>Limit Breaker only.</em> Defuse Anything has no use limit, and works on boss and System explosives. When you defuse one, you can store it in your inventory, ready to use."
+    }
+   ]
+  },
+  {
+   "name": "Gunslinger",
+   "cat": "Combat",
+   "key": "Dexterity",
+   "cue": "Win or turn a fight with a firearm.",
+   "scaling": "Firearm attacks deal <strong>+1 damage per 3 SL</strong>, rounded down.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Trigger Discipline.",
+     "text": "You are proficient with firearms (see <span class=\"xref\">Firearms</span>). Being within 5 feet of a hostile creature does not give you disadvantage on attacks with pistols."
+    },
+    {
+     "lv": "5",
+     "name": "Speed Reload.",
+     "text": "You can reload a firearm as a bonus action. You can clear a misfire as a bonus action."
+    },
+    {
+     "lv": "10",
+     "name": "Dead Shot.",
+     "text": "Your firearm attacks score a critical hit on a roll of 19 or 20."
+    },
+    {
+     "lv": "15",
+     "name": "Fan the Hammer.",
+     "text": "Once per turn, when you take the Attack action with a pistol or revolver, you can make one extra attack with it."
+    },
+    {
+     "lv": "20",
+     "name": "Bullet Time.",
+     "text": "<em>Limit Breaker only.</em> Once per long rest, for 1 minute, you make two extra firearm attacks whenever you take the Attack action, and your firearms never misfire or need reloading."
+    }
+   ]
+  },
+  {
+   "name": "Tough as Nails",
+   "cat": "Survival",
+   "key": "Constitution",
+   "cue": "Survive a fight in which you drop below a quarter of your hit points.",
+   "scaling": "Your hit point maximum increases by <strong>1 per character level</strong> (SL 1\u20134), <strong>2</strong> (SL 5\u20139), or <strong>3</strong> (SL 10\u201315).",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Thick Skin.",
+     "text": "Scaling only."
+    },
+    {
+     "lv": "5",
+     "name": "Endurance.",
+     "text": "You have advantage on saves against exhaustion."
+    },
+    {
+     "lv": "10",
+     "name": "Shrug It Off.",
+     "text": "When you take damage, you can use your reaction to reduce it by your Constitution modifier + SL. You can do this PB times per long rest."
+    },
+    {
+     "lv": "15",
+     "name": "Unbreakable.",
+     "text": "Once per long rest, when you take damage, you can take none instead."
+    },
+    {
+     "lv": "20",
+     "name": "Invincible.",
+     "text": "<em>Limit Breaker only.</em> Unbreakable recharges on a short rest. While you have at least 1 hit point, you cannot be reduced below 1 hit point by a single hit."
+    }
+   ]
+  },
+  {
+   "name": "Cockroach",
+   "cat": "Survival",
+   "key": "Constitution",
+   "cue": "Come back from 0 hit points.",
+   "scaling": "When you regain hit points while at 0, you regain <strong>SL extra</strong> hit points.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Still Kicking.",
+     "text": "You have advantage on death saving throws."
+    },
+    {
+     "lv": "5",
+     "name": "Get Up.",
+     "text": "When you are stabilized, you regain 1 hit point and can stand up using 5 feet of movement."
+    },
+    {
+     "lv": "10",
+     "name": "Not Today.",
+     "text": "Once per long rest, when you fail a death saving throw, you succeed instead and regain hit points equal to your character level."
+    },
+    {
+     "lv": "15",
+     "name": "Unkillable.",
+     "text": "You can use Not Today PB times per long rest."
+    },
+    {
+     "lv": "20",
+     "name": "Can't Stay Dead.",
+     "text": "<em>Limit Breaker only.</em> Once per floor, when you die, you return to life at the start of your next turn with hit points equal to your level, unless your body was destroyed."
+    }
+   ]
+  },
+  {
+   "name": "Escape Artist",
+   "cat": "Survival",
+   "key": "Dexterity",
+   "cue": "Escape a grab, trap, restraint, or a fight you should not be in.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to checks and saves to escape grapples and restraints.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Slippery.",
+     "text": "You have advantage on checks and saves to escape grapples and restraints. Nonmagical restraints cannot hold you for more than 1 minute."
+    },
+    {
+     "lv": "5",
+     "name": "Footwork.",
+     "text": "Difficult terrain does not slow you. Opportunity attacks against you have disadvantage."
+    },
+    {
+     "lv": "10",
+     "name": "Blink.",
+     "text": "Once per long rest, when you are hit by an attack, you can use your reaction to teleport up to 30 feet to a space you can see. The attack misses."
+    },
+    {
+     "lv": "15",
+     "name": "Gone.",
+     "text": "You can use Blink PB times per long rest."
+    },
+    {
+     "lv": "20",
+     "name": "Houdini.",
+     "text": "<em>Limit Breaker only.</em> You cannot be grappled or restrained unless you allow it. Blink no longer uses your reaction, and the attack misses everyone nearby, not only you."
+    }
+   ]
+  },
+  {
+   "name": "Iron Stomach",
+   "cat": "Survival",
+   "key": "Constitution",
+   "cue": "Eat, drink or breathe something that should have hurt you.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to saves against poison and disease.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Strong Gut.",
+     "text": "You have advantage on saves against poison and disease. You can safely eat anything that is not actively poisonous."
+    },
+    {
+     "lv": "5",
+     "name": "Toxin Tolerance.",
+     "text": "You have resistance to poison damage."
+    },
+    {
+     "lv": "10",
+     "name": "Purge.",
+     "text": "You cannot be poisoned."
+    },
+    {
+     "lv": "15",
+     "name": "Immune.",
+     "text": "You are immune to poison damage. You can drink a potion as a bonus action."
+    },
+    {
+     "lv": "20",
+     "name": "Bottomless.",
+     "text": "<em>Limit Breaker only.</em> You are immune to disease and the poisoned condition, and you can drink any potion as a free action. Potions you drink have twice their normal effect."
+    }
+   ]
+  },
+  {
+   "name": "Night Eyes",
+   "cat": "Survival",
+   "key": "Wisdom",
+   "cue": "Spot something important in darkness or bad visibility.",
+   "scaling": "You have darkvision to <strong>50 feet + 10 feet per SL</strong> (60 feet at SL 1). If you already have darkvision, use whichever is longer, +30 feet.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Low Light.",
+     "text": "Scaling only."
+    },
+    {
+     "lv": "5",
+     "name": "Fog Sight.",
+     "text": "Smoke, fog and dust do not obscure your vision within 30 feet."
+    },
+    {
+     "lv": "10",
+     "name": "Void Sight.",
+     "text": "You can see normally in magical darkness within 30 feet."
+    },
+    {
+     "lv": "15",
+     "name": "True Eyes.",
+     "text": "You have truesight to 30 feet."
+    },
+    {
+     "lv": "20",
+     "name": "All-Seeing.",
+     "text": "<em>Limit Breaker only.</em> Your truesight range becomes 120 feet, and you can see through walls up to 5 feet thick."
+    }
+   ]
+  },
+  {
+   "name": "Trap Sense",
+   "cat": "Survival",
+   "key": "Wisdom",
+   "cue": "Find, avoid or disarm a dangerous trap.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to checks to find and disarm traps.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Wary.",
+     "text": "You have advantage on checks to find and disarm traps. You remember every trap you have found, and never set off one of them by accident."
+    },
+    {
+     "lv": "5",
+     "name": "Flinch.",
+     "text": "You have advantage on saves against traps, and resistance to damage from traps."
+    },
+    {
+     "lv": "10",
+     "name": "Sixth Sense.",
+     "text": "You automatically notice any trap within 10 feet of you."
+    },
+    {
+     "lv": "15",
+     "name": "Redirect.",
+     "text": "Sixth Sense range becomes 30 feet. When you trigger a trap, you can use your reaction to choose a different target in its area."
+    },
+    {
+     "lv": "20",
+     "name": "Trap Lord.",
+     "text": "<em>Limit Breaker only.</em> Sixth Sense range becomes 60 feet. Traps never affect you, and you can rearm any trap you find to work for you."
+    }
+   ]
+  },
+  {
+   "name": "First Aid",
+   "cat": "Survival",
+   "key": "Wisdom",
+   "cue": "Keep an ally alive in a fight or a crisis.",
+   "scaling": "Healing you give with a healer's kit or a potion restores <strong>+SL</strong> extra hit points.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Patch Up.",
+     "text": "You are proficient with healer's kits. As an action, you can spend one use of a healer's kit to restore <strong>1d6 + SL</strong> hit points to a creature. Each creature can benefit once per short rest. You can stabilize a creature as a bonus action."
+    },
+    {
+     "lv": "5",
+     "name": "Field Medic.",
+     "text": "You can give a potion to another creature within 5 feet as a bonus action."
+    },
+    {
+     "lv": "10",
+     "name": "Surgeon.",
+     "text": "During a short rest, you can end one disease or the poisoned condition, or remove one level of exhaustion, for up to PB creatures."
+    },
+    {
+     "lv": "15",
+     "name": "Not on My Watch.",
+     "text": "Once per long rest, when an ally within 30 feet would die, you can use your reaction to make it stable at 0 hit points instead. This does not work against effects that leave no body."
+    },
+    {
+     "lv": "20",
+     "name": "Miracle Medic.",
+     "text": "<em>Limit Breaker only.</em> Not on My Watch recharges on a short rest. Your Patch Up restores <strong>5d6 + SL</strong> hit points and can be used as a bonus action."
+    }
+   ]
+  },
+  {
+   "name": "Parkour",
+   "cat": "Survival",
+   "key": "Dexterity",
+   "cue": "Cross dangerous ground, or escape, by climbing, jumping or sliding.",
+   "scaling": "Your long and high jump distances increase by <strong>1 foot per SL</strong>.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Free Runner.",
+     "text": "You have a climbing speed equal to your walking speed. You can make running jumps without a run-up."
+    },
+    {
+     "lv": "5",
+     "name": "Wall Run.",
+     "text": "You can move along vertical surfaces for up to half your speed in a turn. You fall if you end your turn on one."
+    },
+    {
+     "lv": "10",
+     "name": "Roll With It.",
+     "text": "When you fall, you can use your reaction to reduce the falling damage by <strong>5 \u00d7 SL</strong>. You land on your feet."
+    },
+    {
+     "lv": "15",
+     "name": "Untouchable Line.",
+     "text": "When you Dash, you can move through hostile creatures' spaces, and you do not provoke opportunity attacks."
+    },
+    {
+     "lv": "20",
+     "name": "Gravity Optional.",
+     "text": "<em>Limit Breaker only.</em> You can move along walls and ceilings for your whole turn without falling, and you take no falling damage."
+    }
+   ]
+  },
+  {
+   "name": "Sneak",
+   "cat": "Survival",
+   "key": "Dexterity",
+   "cue": "Get past serious danger without being seen.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to Dexterity (Stealth) checks.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Quiet Feet.",
+     "text": "You can move at full speed without a penalty to Stealth."
+    },
+    {
+     "lv": "5",
+     "name": "Blend In.",
+     "text": "You can try to hide when you are only lightly obscured, or in a crowd of creatures your size or larger."
+    },
+    {
+     "lv": "10",
+     "name": "Ghost.",
+     "text": "If you are hidden and you miss with an attack, you stay hidden."
+    },
+    {
+     "lv": "15",
+     "name": "Not Here.",
+     "text": "Once per long rest, as an action, you become invisible for 1 minute (concentration). It ends early if you attack or cast a spell."
+    },
+    {
+     "lv": "20",
+     "name": "Phantom.",
+     "text": "<em>Limit Breaker only.</em> Not Here no longer needs concentration, recharges on a short rest, and does not end when you attack."
+    }
+   ]
+  },
+  {
+   "name": "Forager",
+   "cat": "Survival",
+   "key": "Wisdom",
+   "cue": "Find food, water, or useful material in a hostile place.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to Survival checks to forage, track, and identify plants and monster parts.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Live off the Land.",
+     "text": "Each day, you can find food and water for up to PB creatures, if any exists nearby. You know if a monster part is edible."
+    },
+    {
+     "lv": "5",
+     "name": "Harvester.",
+     "text": "After a fight, you can spend 10 minutes harvesting monster parts. They count as crafting materials for Tinkerer and Alchemy (GM sets the value)."
+    },
+    {
+     "lv": "10",
+     "name": "Trail Boss.",
+     "text": "Difficult terrain does not slow your party's travel pace. Your party cannot be surprised while it travels with you."
+    },
+    {
+     "lv": "15",
+     "name": "Alchemical Eye.",
+     "text": "You can learn every property of a plant, potion or monster part by handling it for 1 minute."
+    },
+    {
+     "lv": "20",
+     "name": "Dungeon Gourmet.",
+     "text": "<em>Limit Breaker only.</em> When you harvest, every creature gives two extra Monster Parts or Essence. Food you forage counts as a Cooking meal with one Chef's Special."
+    }
+   ]
+  },
+  {
+   "name": "Cooking",
+   "cat": "Utility",
+   "key": "Wisdom",
+   "cue": "Cook a meal for the party in a dangerous place, or with strange dungeon ingredients.",
+   "scaling": "Each creature that eats your meal gains temporary hit points equal to <strong>your character level + SL</strong>.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Hot Meal.",
+     "text": "During a short or long rest, you can cook a meal for up to 6 creatures (needs food and heat)."
+    },
+    {
+     "lv": "5",
+     "name": "Comfort Food.",
+     "text": "Each creature that eats also has advantage on its next saving throw within 8 hours."
+    },
+    {
+     "lv": "10",
+     "name": "Chef's Special.",
+     "text": "Choose a bonus for the meal, which lasts 8 hours: +10 feet speed, resistance to one damage type, or +1 to attack rolls."
+    },
+    {
+     "lv": "15",
+     "name": "Feast.",
+     "text": "Choose two Chef's Special bonuses. Each creature that eats also removes one level of exhaustion."
+    },
+    {
+     "lv": "20",
+     "name": "Five-Star Chef.",
+     "text": "<em>Limit Breaker only.</em> Meals give all three Chef's Special bonuses, the temporary hit points are doubled, and each diner regains one spent Hit Die."
+    }
+   ]
+  },
+  {
+   "name": "Lock and Key",
+   "cat": "Utility",
+   "key": "Dexterity",
+   "cue": "Open a lock that matters, under time pressure or danger.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to checks with thieves' tools.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Picks.",
+     "text": "You are proficient with thieves' tools."
+    },
+    {
+     "lv": "5",
+     "name": "Quick Hands.",
+     "text": "You add double your PB to checks with thieves' tools. You can pick a lock as a bonus action."
+    },
+    {
+     "lv": "10",
+     "name": "Skeleton Key.",
+     "text": "Once per long rest, you can open one magical lock or seal without a check. Floor boss and System seals are immune."
+    },
+    {
+     "lv": "15",
+     "name": "Master Key.",
+     "text": "You can use Skeleton Key PB times per long rest."
+    },
+    {
+     "lv": "20",
+     "name": "Open Sesame.",
+     "text": "<em>Limit Breaker only.</em> Skeleton Key has no use limit, and works on boss seals. You can lock any door or container so only you can open it."
+    }
+   ]
+  },
+  {
+   "name": "Cartographer",
+   "cat": "Utility",
+   "key": "Wisdom",
+   "cue": "Find a route, shortcut, or stairwell under time pressure.",
+   "scaling": "Travelling through explored areas costs <strong>1 floor turn per 3 areas</strong> (normally 2). At SL 10, 1 per 4 areas.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Pathfinder.",
+     "text": "You have advantage on checks to find secret doors, hidden passages and shortcuts. Once per floor, you can ask the GM \"Is there a shorter way?\" and get a true answer."
+    },
+    {
+     "lv": "5",
+     "name": "Read the Signs.",
+     "text": "When you enter an area, you can ask the GM one question, such as \"Is a boss near?\", \"Has anything big been through here?\" or \"Is there a safe room within 3 areas?\" The GM answers truthfully. Once per area."
+    },
+    {
+     "lv": "10",
+     "name": "Stairwell Sense.",
+     "text": "You always know the direction to the nearest stairwell, and roughly how far it is (near, far, or very far)."
+    },
+    {
+     "lv": "15",
+     "name": "Survey.",
+     "text": "When you arrive on a new floor, the GM tells you its neighbourhood themes, roughly where each one is, and where one stairwell is. The GM can hand you a rough sketch instead."
+    },
+    {
+     "lv": "20",
+     "name": "Living Atlas.",
+     "text": "<em>Limit Breaker only.</em> When you arrive on a new floor, the GM tells you where every stairwell and safe room is."
+    }
+   ]
+  },
+  {
+   "name": "Pack Rat",
+   "cat": "Utility",
+   "key": "Dexterity",
+   "cue": "Pull the right item out of your inventory at the right moment.",
+   "scaling": "Your inventory gains <strong>2 slots per SL</strong>.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Organized.",
+     "text": "Scaling only."
+    },
+    {
+     "lv": "5",
+     "name": "Juggler.",
+     "text": "You can store or retrieve two items with one free object interaction."
+    },
+    {
+     "lv": "10",
+     "name": "Quick Swap.",
+     "text": "Once per turn, you can swap the item in your hand with one in your inventory, with no action."
+    },
+    {
+     "lv": "15",
+     "name": "Pocket Catch.",
+     "text": "When a nonmagical object or projectile that fits in one slot is thrown or shot at you, you can use your reaction to store it in your inventory. The attack misses."
+    },
+    {
+     "lv": "20",
+     "name": "Bag of Everything.",
+     "text": "<em>Limit Breaker only.</em> Your inventory gains 50 slots. Once per long rest, you can pull out any mundane item worth 10 gp or less that you do not have."
+    }
+   ]
+  },
+  {
+   "name": "Tinkerer",
+   "cat": "Utility",
+   "key": "Intelligence",
+   "cue": "Repair, build or rig something that gets the party out of trouble.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to checks with tinker's tools.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Fixer.",
+     "text": "You are proficient with tinker's tools. During a short rest, you can use dungeon scrap to repair a broken item, or build a simple trap or tool (GM approval)."
+    },
+    {
+     "lv": "5",
+     "name": "Salvage.",
+     "text": "You can break down a common magic item into crafting material. Use it to add a minor property to another item (light, waterproof, returns to your inventory, and so on)."
+    },
+    {
+     "lv": "10",
+     "name": "Craftsman.",
+     "text": "In a safe room, you can craft uncommon magic items at half the normal time and cost."
+    },
+    {
+     "lv": "15",
+     "name": "Artificer.",
+     "text": "Craftsman applies to rare magic items too."
+    },
+    {
+     "lv": "20",
+     "name": "Mad Inventor.",
+     "text": "<em>Limit Breaker only.</em> Craftsman applies to very rare magic items, and you can craft one item per floor at no gold cost (materials still needed)."
+    }
+   ]
+  },
+  {
+   "name": "Appraisal",
+   "cat": "Utility",
+   "key": "Intelligence",
+   "cue": "Judge loot, or a deal, correctly when it matters.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to checks to identify items and judge their value.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Price Tag.",
+     "text": "When you Inspect an item, you learn its value, and whether it is magical."
+    },
+    {
+     "lv": "5",
+     "name": "Identify.",
+     "text": "When you Inspect a magic item, you also learn its properties, except curses."
+    },
+    {
+     "lv": "10",
+     "name": "Curse Check.",
+     "text": "Inspect also shows curses, charges and attunement needs."
+    },
+    {
+     "lv": "15",
+     "name": "Loot Sense.",
+     "text": "Once per floor, when you open a loot box, the GM rolls its contents twice and you choose one result."
+    },
+    {
+     "lv": "20",
+     "name": "Treasure Hunter.",
+     "text": "<em>Limit Breaker only.</em> Loot Sense works on every loot box you open, not once per floor."
+    }
+   ]
+  },
+  {
+   "name": "Haggler",
+   "cat": "Utility",
+   "key": "Charisma",
+   "cue": "Get a deal from a shopkeeper, NPC or sponsor that should not have happened.",
+   "scaling": "Shop prices are <strong>2% lower per SL</strong> for you. Items you sell earn <strong>2% more per SL</strong>.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Bargain.",
+     "text": "You have advantage on Charisma checks to haggle with merchants."
+    },
+    {
+     "lv": "5",
+     "name": "Full Price.",
+     "text": "Safe room shops buy your items at full value, not half."
+    },
+    {
+     "lv": "10",
+     "name": "Back Stock.",
+     "text": "Each shop visit, the shop shows you one extra item from a better loot table."
+    },
+    {
+     "lv": "15",
+     "name": "Black Market.",
+     "text": "Once per floor, you can buy one item of a rarity the shops do not normally sell on this floor."
+    },
+    {
+     "lv": "20",
+     "name": "Shopkeeper's Nightmare.",
+     "text": "<em>Limit Breaker only.</em> Your discount is 50%, and once per floor you can buy one legendary item from any shop."
+    }
+   ]
+  },
+  {
+   "name": "Pet Trainer",
+   "cat": "Utility",
+   "key": "Wisdom",
+   "cue": "Your pet does something that matters to the fight or the story.",
+   "scaling": "Your pet's hit point maximum increases by <strong>2 \u00d7 SL</strong>.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Companion.",
+     "text": "Your pet (see the <em>Pets</em> handbook) adds your PB to its AC, attack rolls, damage rolls and saves. You can tame creatures of CR 1/4 or lower."
+    },
+    {
+     "lv": "5",
+     "name": "Partner.",
+     "text": "You can tame and keep pets of CR 1 or lower. You can command your pet to attack as part of your Attack action."
+    },
+    {
+     "lv": "10",
+     "name": "Shared Pain.",
+     "text": "You can tame and keep pets of CR 3 or lower, and its attacks count as magical. When your pet takes damage, you can use your reaction to take that damage instead."
+    },
+    {
+     "lv": "15",
+     "name": "Evolution.",
+     "text": "You can tame and keep pets of CR 5 or lower. Your pet gains one evolution from the Evolutions table in the <em>Pets</em> handbook."
+    },
+    {
+     "lv": "20",
+     "name": "Beast King.",
+     "text": "<em>Limit Breaker only.</em> You can tame and keep pets of CR 10 or lower. Your pet gains one more evolution, and attacks twice when commanded to attack."
+    }
+   ]
+  },
+  {
+   "name": "Sticky Fingers",
+   "cat": "Utility",
+   "key": "Dexterity",
+   "cue": "Steal something important while someone is watching.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to Dexterity (Sleight of Hand) checks.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Quick Pocket.",
+     "text": "When you steal an item, you can store it in your inventory as part of the same action."
+    },
+    {
+     "lv": "5",
+     "name": "Light Touch.",
+     "text": "You can make a Sleight of Hand check, or take the Use an Object action, as a bonus action."
+    },
+    {
+     "lv": "10",
+     "name": "Snatch.",
+     "text": "When you take the Attack action, you can replace one attack with a Sleight of Hand check against the target's Athletics or Acrobatics. On a success, you take one one-handed item it is holding and store it in your inventory."
+    },
+    {
+     "lv": "15",
+     "name": "Grand Theft.",
+     "text": "Snatch also works on two-handed items, and on worn items other than armor."
+    },
+    {
+     "lv": "20",
+     "name": "Phantom Thief.",
+     "text": "<em>Limit Breaker only.</em> Snatch works on armor and on items a creature is holding with both hands. You can Snatch once on every hit."
+    }
+   ]
+  },
+  {
+   "name": "Smooth Talker",
+   "cat": "Utility",
+   "key": "Charisma",
+   "cue": "Talk your way out of, or into, serious trouble.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to Charisma (Persuasion) and Charisma (Deception) checks.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Silver Tongue.",
+     "text": "Once per long rest, you can reroll a Persuasion or Deception check. Use the new roll."
+    },
+    {
+     "lv": "5",
+     "name": "Read the Room.",
+     "text": "You can make a Wisdom (Insight) check as a bonus action. On a success, you also learn the creature's attitude toward you."
+    },
+    {
+     "lv": "10",
+     "name": "Calm Down.",
+     "text": "As an action, choose a hostile creature within 30 feet that can understand you. It must succeed on a Wisdom save (Skill DC) or not attack you for 1 minute, unless you or your allies harm it. You can do this once per short rest."
+    },
+    {
+     "lv": "15",
+     "name": "Deal Maker.",
+     "text": "Once per long rest, choose a creature that is not a boss and can understand you. It must succeed on a Wisdom save (Skill DC) or be charmed by you for 1 hour."
+    },
+    {
+     "lv": "20",
+     "name": "Silver-Tongued Devil.",
+     "text": "<em>Limit Breaker only.</em> Deal Maker works on bosses, recharges on a short rest, and lasts 24 hours."
+    }
+   ]
+  },
+  {
+   "name": "Crowd Pleaser",
+   "cat": "Showmanship",
+   "key": "Charisma",
+   "cue": "Do something spectacular in front of the cameras.",
+   "scaling": "None.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Showboat.",
+     "text": "Once per long rest, when you reduce a creature to 0 hit points with a critical hit, a stunt, or anything the GM finds entertaining, you gain Inspiration."
+    },
+    {
+     "lv": "5",
+     "name": "Share the Spotlight.",
+     "text": "You can use Showboat twice per long rest. You can give your Inspiration to an ally within 30 feet as a bonus action."
+    },
+    {
+     "lv": "10",
+     "name": "Crowd Favorite.",
+     "text": "When you spend Inspiration, roll two extra d20s and use any one of the three rolls."
+    },
+    {
+     "lv": "15",
+     "name": "Superstar.",
+     "text": "You can use Showboat PB times per long rest."
+    },
+    {
+     "lv": "20",
+     "name": "Fan Favorite.",
+     "text": "<em>Limit Breaker only.</em> Showboat has no use limit. Whenever you spend Inspiration, every ally within 30 feet also gains advantage on its next d20 roll."
+    }
+   ]
+  },
+  {
+   "name": "Trash Talk",
+   "cat": "Showmanship",
+   "key": "Charisma",
+   "cue": "Make a dangerous enemy lose its temper and make a mistake.",
+   "scaling": "A creature that fails the save takes psychic damage equal to <strong>half SL</strong> (rounded up).",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Taunt.",
+     "text": "As a bonus action, insult a creature within 30 feet that can hear you. It must succeed on a Wisdom save (Skill DC) or have disadvantage on attacks against creatures other than you until the end of its next turn."
+    },
+    {
+     "lv": "5",
+     "name": "Cutting Words.",
+     "text": "Add your Charisma modifier to the psychic damage."
+    },
+    {
+     "lv": "10",
+     "name": "Heckler.",
+     "text": "You can target up to two creatures with one Taunt."
+    },
+    {
+     "lv": "15",
+     "name": "Tilted.",
+     "text": "A creature that fails the save also cannot take reactions until the end of its next turn."
+    },
+    {
+     "lv": "20",
+     "name": "Roast Battle.",
+     "text": "<em>Limit Breaker only.</em> Taunt targets every creature you choose within 30 feet. A creature that fails the save also takes psychic damage equal to your SL."
+    }
+   ]
+  },
+  {
+   "name": "Hype Man",
+   "cat": "Showmanship",
+   "key": "Charisma",
+   "cue": "Rally the party when it is losing.",
+   "scaling": "Pep Talk gives temporary hit points equal to <strong>SL + your Charisma modifier</strong>.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Pep Talk.",
+     "text": "As a bonus action, choose one ally within 30 feet that can hear you. It gains the temporary hit points. You can do this PB times per long rest."
+    },
+    {
+     "lv": "5",
+     "name": "Momentum.",
+     "text": "The target of Pep Talk also adds 1d4 to its next attack roll or saving throw."
+    },
+    {
+     "lv": "10",
+     "name": "Team Spirit.",
+     "text": "Pep Talk can target up to three allies."
+    },
+    {
+     "lv": "15",
+     "name": "Encore.",
+     "text": "Once per long rest, as a bonus action, every ally within 60 feet ends the charmed and frightened conditions on itself and gains the benefit of Pep Talk."
+    },
+    {
+     "lv": "20",
+     "name": "Hype Train.",
+     "text": "<em>Limit Breaker only.</em> Pep Talk targets every ally within 60 feet. Encore recharges on a short rest."
+    }
+   ]
+  },
+  {
+   "name": "Dramatic Entrance",
+   "cat": "Showmanship",
+   "key": "Charisma",
+   "cue": "Start a fight in a way the audience will remember.",
+   "scaling": "Add <strong>half SL</strong> (rounded down) to initiative rolls.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Make an Entrance.",
+     "text": "On your first turn in a combat, your speed increases by 10 feet, and your first hit deals +1d6 damage."
+    },
+    {
+     "lv": "5",
+     "name": "Stunned Silence.",
+     "text": "When you roll initiative, choose one creature that can see you. It must succeed on a Wisdom save (Skill DC) or be unable to take reactions until the end of its first turn."
+    },
+    {
+     "lv": "10",
+     "name": "All Eyes on Me.",
+     "text": "Stunned Silence can target up to PB creatures."
+    },
+    {
+     "lv": "15",
+     "name": "Showstopper.",
+     "text": "You cannot be surprised. On your first turn in a combat, you can take one extra action: Attack, Dash, or Use an Object."
+    },
+    {
+     "lv": "20",
+     "name": "Main Character.",
+     "text": "<em>Limit Breaker only.</em> Showstopper's extra action can be any action, and you get it on your first two turns of every combat."
+    }
+   ]
+  },
+  {
+   "name": "Mana Well",
+   "cat": "Magic",
+   "key": "Intelligence",
+   "cue": "Run your mana pool to empty in a dangerous fight.",
+   "scaling": "Your mana pool increases by <strong>SL</strong>.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Reserve.",
+     "text": "Scaling only."
+    },
+    {
+     "lv": "5",
+     "name": "Surge.",
+     "text": "When you roll initiative, you regain 2 mana."
+    },
+    {
+     "lv": "10",
+     "name": "Deep Well.",
+     "text": "When you finish a short rest, you regain half your mana pool + SL."
+    },
+    {
+     "lv": "15",
+     "name": "Overflow.",
+     "text": "Once per long rest, when you have 0 mana, you can regain half your mana pool as a bonus action."
+    },
+    {
+     "lv": "20",
+     "name": "Infinite Reserve.",
+     "text": "<em>Limit Breaker only.</em> When you roll initiative, you regain mana equal to your SL. Overflow recharges on a short rest."
+    }
+   ]
+  },
+  {
+   "name": "Tome Scholar",
+   "cat": "Magic",
+   "key": "Intelligence",
+   "cue": "Learn a new tome, or use a tome spell to solve a problem in a new way.",
+   "scaling": "None.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Speed Reader.",
+     "text": "You can learn tome spells one spell level higher than your normal limit. You learn a tome in 1 action instead of 1 minute."
+    },
+    {
+     "lv": "5",
+     "name": "Efficient.",
+     "text": "Tome spells cost 1 less mana to cast (minimum 1)."
+    },
+    {
+     "lv": "10",
+     "name": "Deep Study.",
+     "text": "When you read a duplicate tome, the spell gains 2 ranks instead of 1."
+    },
+    {
+     "lv": "15",
+     "name": "Archmage.",
+     "text": "You can cast each tome spell of 6th level or higher twice per long rest, not once."
+    },
+    {
+     "lv": "20",
+     "name": "Grand Archmage.",
+     "text": "<em>Limit Breaker only.</em> Tome spells cost half their normal mana (rounded up). You can cast tome spells of 6th level or higher three times per long rest each."
+    }
+   ]
+  },
+  {
+   "name": "Signature Spell",
+   "cat": "Magic",
+   "key": "Intelligence",
+   "cue": "Cast the chosen spell at a turning point in a fight.",
+   "scaling": "None.",
+   "intro": "Choose one tome spell you know when you gain this Crawler Skill. You can gain it more than once, choosing a different spell each time.",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Favorite.",
+     "text": "You can cast the spell once per long rest without spending mana."
+    },
+    {
+     "lv": "5",
+     "name": "Practiced.",
+     "text": "You can cast it twice per long rest without spending mana."
+    },
+    {
+     "lv": "10",
+     "name": "Perfected.",
+     "text": "When you cast the spell, you can roll its damage twice and use either total."
+    },
+    {
+     "lv": "15",
+     "name": "Instinct.",
+     "text": "Once per long rest, you can cast the spell as a bonus action, if its casting time is 1 action."
+    },
+    {
+     "lv": "20",
+     "name": "Spell of Legend.",
+     "text": "<em>Limit Breaker only.</em> Your signature spell costs no mana and can be cast as a bonus action once per round."
+    }
+   ]
+  },
+  {
+   "name": "Alchemy",
+   "cat": "Magic",
+   "key": "Intelligence",
+   "cue": "Brew something that saves the day.",
+   "scaling": "Healing potions you brew restore <strong>+SL</strong> extra hit points. The save DC of poisons you brew increases by <strong>+1 per 5 SL</strong>.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Brewer.",
+     "text": "You are proficient with alchemist's supplies. During a long rest, you can brew one common healing potion from dungeon ingredients."
+    },
+    {
+     "lv": "5",
+     "name": "Batch.",
+     "text": "During a long rest, you can brew up to PB items in any mix: healing potion, antitoxin, alchemist's fire, or basic poison (Constitution save, Skill DC, 2d6 poison damage and poisoned for 1 minute on a failure)."
+    },
+    {
+     "lv": "10",
+     "name": "Greater Brew.",
+     "text": "Once per long rest in a safe room, you can brew a greater healing potion, or an uncommon potion you have identified before."
+    },
+    {
+     "lv": "15",
+     "name": "Master Alchemist.",
+     "text": "Once per long rest in a safe room, you can brew a superior healing potion, or a rare potion you have identified before."
+    },
+    {
+     "lv": "20",
+     "name": "Philosopher's Stone.",
+     "text": "<em>Limit Breaker only.</em> Once per long rest in a safe room, you can brew a very rare potion you have identified before. Potions you brew last twice as long."
+    }
+   ]
+  },
+  {
+   "name": "Mana Shield",
+   "cat": "Magic",
+   "key": "Intelligence",
+   "cue": "Survive a big hit by burning mana.",
+   "scaling": "Each mana you spend on Barrier prevents <strong>2 damage</strong> (3 at SL 5, 4 at SL 10, 5 at SL 15).",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Barrier.",
+     "text": "When you take damage, you can use your reaction to spend up to PB mana to reduce the damage."
+    },
+    {
+     "lv": "5",
+     "name": "Ward Ally.",
+     "text": "You can use Barrier when an ally within 30 feet takes damage."
+    },
+    {
+     "lv": "10",
+     "name": "Spell Sink.",
+     "text": "When you succeed on a saving throw against a spell, you regain 2 mana."
+    },
+    {
+     "lv": "15",
+     "name": "Aegis.",
+     "text": "Once per round, you can use Barrier without using your reaction."
+    },
+    {
+     "lv": "20",
+     "name": "Arcane Fortress.",
+     "text": "<em>Limit Breaker only.</em> Each mana you spend on Barrier prevents 10 damage, and you can spend any amount of mana at once."
+    }
+   ]
+  },
+  {
+   "name": "Spellblade",
+   "cat": "Magic",
+   "key": "Intelligence",
+   "cue": "Mix weapon attacks and tome magic in a fight that matters.",
+   "scaling": "Charged Strike deals <strong>1d6 force damage, +1d6 per 5 SL</strong>.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Charged Strike.",
+     "text": "Once per turn, when you hit with a weapon, you can spend 1 mana to add the force damage."
+    },
+    {
+     "lv": "5",
+     "name": "War Caster.",
+     "text": "You have advantage on Constitution saves to keep concentration on tome spells. You can cast tome spells with your hands full."
+    },
+    {
+     "lv": "10",
+     "name": "Blade and Spell.",
+     "text": "When you take the Attack action, you can replace one attack with a tome cantrip."
+    },
+    {
+     "lv": "15",
+     "name": "Arcane Surge.",
+     "text": "When you cast a tome spell with a casting time of 1 action, you can make one weapon attack as a bonus action."
+    },
+    {
+     "lv": "20",
+     "name": "Blade Arcana.",
+     "text": "<em>Limit Breaker only.</em> Charged Strike costs no mana and can be used on every hit. Blade and Spell can replace any number of attacks with tome cantrips."
+    }
+   ]
+  },
+  {
+   "name": "Quick Cast",
+   "cat": "Magic",
+   "key": "Intelligence",
+   "cue": "Get a spell off at the last possible moment.",
+   "scaling": "None.",
+   "intro": "",
+   "ms": [
+    {
+     "lv": "1",
+     "name": "Snap.",
+     "text": "Once per long rest, you can cast a tome cantrip or a 1st-level tome spell with a casting time of 1 action as a bonus action instead."
+    },
+    {
+     "lv": "5",
+     "name": "Quick.",
+     "text": "You can use Snap PB times per long rest, on tome spells of 3rd level or lower."
+    },
+    {
+     "lv": "10",
+     "name": "Counter.",
+     "text": "You know <em>counterspell</em> as a tome spell, without a tome."
+    },
+    {
+     "lv": "15",
+     "name": "Double Cast.",
+     "text": "Once per long rest, as an action, you can cast two tome spells that each have a casting time of 1 action. Pay mana for both. Only one can need concentration."
+    },
+    {
+     "lv": "20",
+     "name": "Spell Storm.",
+     "text": "<em>Limit Breaker only.</em> Double Cast recharges on a short rest, and both spells can need concentration."
+    }
+   ]
+  }
+ ],
+ "prestige": {
+  "Barbarian": {
+   "scaling": "Rage damage <strong>+1 per 2 prestige levels</strong>. One extra Rage per long rest every 4 prestige levels.",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Endless Rage",
+     "text": "Your Rage only ends early if you choose. When you start raging, gain temporary hit points equal to your Barbarian level."
+    },
+    {
+     "rank": "II",
+     "name": "Titan's Grip",
+     "text": "You can wield a two-handed weapon in one hand. Your heavy weapons' damage dice increase by one size."
+    },
+    {
+     "rank": "III",
+     "name": "Unstoppable",
+     "text": "While raging, you cannot be charmed, frightened or stunned."
+    },
+    {
+     "rank": "IV",
+     "name": "Earthshaker",
+     "text": "Once per turn, when you hit while raging, creatures of your choice within 10 feet of the target must succeed on a Strength save or fall prone."
+    },
+    {
+     "rank": "V",
+     "name": "Avatar of Wrath",
+     "text": "Once per long rest, for 1 minute: you become Huge, your reach increases by 5 feet, you have resistance to all damage, and your weapon hits deal +2d12 damage."
+    }
+   ]
+  },
+  "Bard": {
+   "scaling": "Your Bardic Inspiration die gains +1 to its result per 2 prestige levels.",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Encore",
+     "text": "When a creature succeeds on a roll using your Bardic Inspiration, you regain that use."
+    },
+    {
+     "rank": "II",
+     "name": "Standing Ovation",
+     "text": "When you roll initiative, every ally within 30 feet gains one of your Bardic Inspiration dice for free. Once per session, gain +2 Audience points."
+    },
+    {
+     "rank": "III",
+     "name": "Showstopper",
+     "text": "Once per short rest, cast a bard spell of 5th level or lower without spending mana."
+    },
+    {
+     "rank": "IV",
+     "name": "Magnum Opus",
+     "text": "Learn two spells from any class's spell list, of any level you can cast. They count as bard spells."
+    },
+    {
+     "rank": "V",
+     "name": "Final Act",
+     "text": "Once per long rest, as an action: every ally within 60 feet regains all its hit points, ends all conditions on itself, and has advantage on all rolls until the end of its next turn."
+    }
+   ]
+  },
+  "Cleric": {
+   "scaling": "One extra use of Channel Divinity per long rest every 4 prestige levels.",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Chosen",
+     "text": "Once per long rest, your Divine Intervention automatically works."
+    },
+    {
+     "rank": "II",
+     "name": "Radiant Soul",
+     "text": "Add your Wisdom modifier to the damage and healing rolls of your cleric spells."
+    },
+    {
+     "rank": "III",
+     "name": "Sanctified Ground",
+     "text": "Once per long rest, as an action, bless a 30-foot radius for 1 minute. Allies there regain 2 \u00d7 PB hit points at the start of each of their turns; undead and fiends there have disadvantage on attacks."
+    },
+    {
+     "rank": "IV",
+     "name": "Miracle Worker",
+     "text": "Once per long rest, cast a cleric spell of 7th level or lower without spending mana."
+    },
+    {
+     "rank": "V",
+     "name": "Hand of God",
+     "text": "Once per long rest, when an ally within 60 feet would die, it instead regains all its hit points."
+    }
+   ]
+  },
+  "Druid": {
+   "scaling": "One extra use of Wild Shape per long rest every 4 prestige levels.",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Nature's Arsenal",
+     "text": "While in Wild Shape, your natural attacks count as magical, use your Wisdom modifier for attack rolls if it is higher, and deal extra damage equal to your Wisdom modifier."
+    },
+    {
+     "rank": "II",
+     "name": "Living Fortress",
+     "text": "When you Wild Shape, gain temporary hit points equal to 3 \u00d7 your Druid level."
+    },
+    {
+     "rank": "III",
+     "name": "Many Shapes",
+     "text": "You can Wild Shape into monstrosities and plants, not only beasts, using your normal Wild Shape CR limit. An owlbear is now on the menu."
+    },
+    {
+     "rank": "IV",
+     "name": "Verdant Rebirth",
+     "text": "Once per long rest, when you drop to 0 hit points, you instead return to half your hit points in a burst of flowers."
+    },
+    {
+     "rank": "V",
+     "name": "Avatar of the Wild",
+     "text": "Once per long rest, for 1 minute: Wild Shape into any beast, monstrosity or dragon of CR 10 or lower (GM approves the stat block). You keep your spellcasting."
+    }
+   ]
+  },
+  "Fighter": {
+   "scaling": "One extra Action Surge per short rest every 4 prestige levels.",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Weapon Master",
+     "text": "Your weapon attacks score a critical hit on a roll of 19 or 20 (or one lower than your current range, if it is already wider)."
+    },
+    {
+     "rank": "II",
+     "name": "Relentless",
+     "text": "When you roll initiative with no Action Surge left, you regain one use."
+    },
+    {
+     "rank": "III",
+     "name": "Extra Extra Attack",
+     "text": "You make one more attack whenever you take the Attack action."
+    },
+    {
+     "rank": "IV",
+     "name": "Indomitable Will",
+     "text": "You gain two more uses of Indomitable. When you succeed on a save with it, you have advantage on your next attack roll."
+    },
+    {
+     "rank": "V",
+     "name": "Living Legend",
+     "text": "Once per long rest, for 1 minute: once per turn, you can turn a missed attack into a hit."
+    }
+   ]
+  },
+  "Monk": {
+   "scaling": "Your Martial Arts damage gains +1 per 2 prestige levels. You gain 2 extra Focus (ki) points per prestige level.",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Endless Flow",
+     "text": "At the start of each of your turns, if you have no Focus points, regain 1."
+    },
+    {
+     "rank": "II",
+     "name": "Hundred Fists",
+     "text": "Flurry of Blows makes four unarmed strikes instead of two."
+    },
+    {
+     "rank": "III",
+     "name": "Perfect Body",
+     "text": "You are immune to disease, poison and exhaustion, and you no longer need food or water."
+    },
+    {
+     "rank": "IV",
+     "name": "Pressure Points",
+     "text": "Once per turn, you can use Stunning Strike without spending Focus."
+    },
+    {
+     "rank": "V",
+     "name": "Ascended Master",
+     "text": "Once per long rest, for 1 minute: your speed doubles, your unarmed strikes deal +2d10 force damage, and you do not provoke opportunity attacks."
+    }
+   ]
+  },
+  "Paladin": {
+   "scaling": "Your auras' range increases by 10 feet every 4 prestige levels.",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Blessed Smite",
+     "text": "Your Divine Smite deals +1d8 radiant damage."
+    },
+    {
+     "rank": "II",
+     "name": "Bulwark Aura",
+     "text": "At dawn, choose a damage type. Allies in your aura have resistance to it."
+    },
+    {
+     "rank": "III",
+     "name": "Holy Champion",
+     "text": "Once per long rest, for 1 minute: you sprout wings (fly 60 feet), your weapon hits deal +2d8 radiant damage, and allies in your aura regain 10 hit points at the start of their turns."
+    },
+    {
+     "rank": "IV",
+     "name": "Oathkeeper",
+     "text": "When an ally in your aura takes damage, you can use your reaction to take it instead, with resistance."
+    },
+    {
+     "rank": "V",
+     "name": "Final Judgment",
+     "text": "Once per long rest, when you hit with a melee attack, the target must succeed on a Constitution save or drop to 0 hit points. On a success, it takes 10d10 radiant damage. Gods are immune."
+    }
+   ]
+  },
+  "Ranger": {
+   "scaling": "Your Hunter's Mark (or favored-enemy) damage gains +1d4 every 4 prestige levels.",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Apex Hunter",
+     "text": "Hunter's Mark costs no mana and does not need concentration."
+    },
+    {
+     "rank": "II",
+     "name": "Pack Tactics",
+     "text": "Your pet or companion makes two attacks when commanded to attack."
+    },
+    {
+     "rank": "III",
+     "name": "Ghost of the Wilds",
+     "text": "While you are lightly or heavily obscured and have not attacked this turn, you are invisible."
+    },
+    {
+     "rank": "IV",
+     "name": "Volley",
+     "text": "When you take the Attack action with a ranged weapon, you can instead make one attack against every creature of your choice within a 10-foot radius you can see."
+    },
+    {
+     "rank": "V",
+     "name": "Death Sentence",
+     "text": "Once per long rest, mark a creature you can see. For 24 hours, all your hits against it are critical hits."
+    }
+   ]
+  },
+  "Rogue": {
+   "scaling": "Sneak Attack <strong>+1d6 per 2 prestige levels</strong>.",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Twice Sneaky",
+     "text": "You can deal Sneak Attack damage twice per round: once on your turn, and once on another creature's turn."
+    },
+    {
+     "rank": "II",
+     "name": "Untouchable",
+     "text": "You can use Uncanny Dodge twice per round (the second costs no reaction)."
+    },
+    {
+     "rank": "III",
+     "name": "Master Thief",
+     "text": "Cunning Action also lets you pick a lock, disarm a trap, make a Sleight of Hand check, or use an object."
+    },
+    {
+     "rank": "IV",
+     "name": "Shadowstep",
+     "text": "As a bonus action, teleport up to 60 feet from one area of dim light or darkness to another."
+    },
+    {
+     "rank": "V",
+     "name": "Stroke of Fate",
+     "text": "Once per short rest, turn a missed attack into a hit, or a failed ability check into a 20."
+    }
+   ]
+  },
+  "Sorcerer": {
+   "scaling": "+2 sorcery points per prestige level.",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Overchannel",
+     "text": "Once per long rest, when you cast a sorcerer spell that deals damage, it deals maximum damage."
+    },
+    {
+     "rank": "II",
+     "name": "Metamagic Master",
+     "text": "Learn two more Metamagic options. You can apply two Metamagic options to one spell."
+    },
+    {
+     "rank": "III",
+     "name": "Wellspring",
+     "text": "When you roll initiative with fewer than half your sorcery points, regain 4 sorcery points."
+    },
+    {
+     "rank": "IV",
+     "name": "Living Spell",
+     "text": "Once per long rest, cast a sorcerer spell of 8th level or lower without spending mana."
+    },
+    {
+     "rank": "V",
+     "name": "Unbound",
+     "text": "Once per long rest, for 1 minute, your spells cost no mana. The once-per-long-rest limit on 6th\u20139th level spells still applies."
+    }
+   ]
+  },
+  "Warlock": {
+   "scaling": "+7 Pact Mana per prestige level (see <span class=\"xref\">Mana</span>).",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Patron's Favor",
+     "text": "Gain one more Mystic Arcanum, of any level from 6th to 9th that you do not already have."
+    },
+    {
+     "rank": "II",
+     "name": "Invocation Master",
+     "text": "Learn two more Eldritch Invocations."
+    },
+    {
+     "rank": "III",
+     "name": "Pact Surge",
+     "text": "Your pact level becomes 6th. Spells cast with Pact Mana are cast at 6th level and cost 9 Pact Mana."
+    },
+    {
+     "rank": "IV",
+     "name": "Patron's Avatar",
+     "text": "Once per long rest, summon an avatar of your patron for 1 minute. It uses a stat block of CR up to half your Warlock level, chosen with the GM, and obeys you."
+    },
+    {
+     "rank": "V",
+     "name": "Dark Bargain",
+     "text": "Once per long rest, ask your patron for anything (as the <em>wish</em> spell). Your patron will name a price."
+    }
+   ]
+  },
+  "Wizard": {
+   "scaling": "Add 1 spell to your spellbook for free each prestige level. Arcane Recovery restores 1 more spell level every 2 prestige levels.",
+   "features": [
+    {
+     "rank": "I",
+     "name": "Spell Mastery+",
+     "text": "Choose a 3rd-level wizard spell in your spellbook. You can cast it at its lowest level without spending mana."
+    },
+    {
+     "rank": "II",
+     "name": "Arcane Library",
+     "text": "Copying a spell into your spellbook takes 1 minute and costs half as much."
+    },
+    {
+     "rank": "III",
+     "name": "Archmage",
+     "text": "Once per short rest, cast a wizard spell of 5th level or lower without spending mana."
+    },
+    {
+     "rank": "IV",
+     "name": "Twin Thought",
+     "text": "Once per long rest, cast two spells with one action. Pay mana for both, and only one can need concentration."
+    },
+    {
+     "rank": "V",
+     "name": "Rewrite Reality",
+     "text": "Once per long rest, cast <em>wish</em> without spending mana and without its stress."
+    }
+   ]
+  }
+ },
+ "boxTypes": [
+  "Adventurer",
+  "Demolitionist",
+  "Firearms",
+  "Swordsman",
+  "Archer",
+  "Pugilist",
+  "Armory",
+  "Chatter",
+  "Shadow",
+  "Tome",
+  "Skill",
+  "Pet",
+  "Divine",
+  "Fan",
+  "Spicy",
+  "Murder",
+  "Boss",
+  "Class",
+  "Mystery"
+ ],
+ "rarities": [
+  "Bronze",
+  "Silver",
+  "Gold",
+  "Legendary",
+  "Celestial"
+ ]
+}

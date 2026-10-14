@@ -3435,6 +3435,7 @@ io.on('connection', (socket) => {
             const owned = await db.query(
               `SELECT id, name FROM creatures
                 WHERE is_player_character = true AND player_owner = $1
+                  AND (crawler_state IS NULL OR crawler_state = '{}'::jsonb)
                 ORDER BY id DESC`,
               [socket.data.name]
             );
@@ -11350,6 +11351,10 @@ server.listen(PORT, async () => {
     // client-side from the character's class + level; only the
     // mutable "used" count needs to round-trip.
     await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS resource_state JSONB DEFAULT '{}'`);
+    // World Dungeon crawler sheet: setting-specific state (Crawler Skills, loot boxes, mana, levels).
+    // A creature with a non-empty crawler_state belongs to the crawler sheet app and is hidden from
+    // Tabletop Forge's own library and lobby.
+    await db.query(`ALTER TABLE creatures ADD COLUMN IF NOT EXISTS crawler_state JSONB DEFAULT '{}'`);
     // A single Bardic Inspiration die granted by a Bard. Any character
     // can hold one at a time; "" / null when none. Format is just the
     // die label ("d6" / "d8" / "d10" / "d12") so the UI can render
@@ -11940,6 +11945,25 @@ server.listen(PORT, async () => {
     // GM accounts: one login, with the sessions it is paired to. Runs before
     // the rest so a session row can carry its owner from the first boot.
     await gmAccounts.migrate(db);
+
+    // WHERE THE 5ETOOLS MIRROR IS, AS THE GM SET IT.
+    //
+    // Read once at boot and handed to the compendium, so a server that has
+    // been pointed at a different mirror comes back up pointed at the same
+    // one. Saving a new address through /api/settings applies it immediately;
+    // this is only for the restart after.
+    try {
+      const saved = (await db.query(
+        "SELECT value FROM app_settings WHERE key='compendium_url'"
+      )).rows[0]?.value;
+      const url = typeof saved === 'string' ? saved : saved?.url;
+      if (url) {
+        require('./compendium').setBaseUrl(url);
+        console.log('Compendium mirror:', require('./compendium').baseUrl(), '(from settings)');
+      }
+    } catch (err) {
+      console.warn('Could not read the saved compendium URL:', err.message);
+    }
     await patrols.migrate(db);
     await detection.migrate(db);
     await movement.migrate(db);

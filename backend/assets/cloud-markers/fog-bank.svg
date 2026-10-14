@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 576" width="768" height="576">
+<!-- Fog Bank — a low blanket, seen from above.
+
+     Flatter and far more even than Cloud Bank: fog has no lobes and no lit
+     tops, it is a uniform haze that thins towards its edges. So this is one
+     broad wash with a few soft density variations, and much lower contrast. -->
+<defs>
+  <radialGradient id="fbWash" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#eef2f7" stop-opacity="0.66"/>
+    <stop offset="55%"  stop-color="#e2e9f1" stop-opacity="0.42"/>
+    <stop offset="100%" stop-color="#d7e0ea" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="fbDense" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.30"/>
+    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<ellipse cx="384" cy="288" rx="376" ry="272" fill="url(#fbWash)"/>
+<ellipse cx="384" cy="300" rx="300" ry="210" fill="url(#fbWash)"/>
+<g>
+  <ellipse cx="250" cy="248" rx="170" ry="120" fill="url(#fbDense)"/>
+  <ellipse cx="500" cy="268" rx="190" ry="134" fill="url(#fbDense)"/>
+  <ellipse cx="366" cy="360" rx="210" ry="118" fill="url(#fbDense)"/>
+  <ellipse cx="384" cy="210" rx="238" ry="96"  fill="url(#fbDense)"/>
+</g>
+</svg>

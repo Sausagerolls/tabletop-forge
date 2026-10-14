@@ -4633,6 +4633,71 @@ export default function DMView() {
     return () => { cancelled = true; };
   }, []);
 
+  // ── Where the 5eTools mirror lives ──────────────────────────────────────
+  //
+  // The compendium — every creature, spell, item and rule the Look up panel
+  // and the importer read — is served by a 5eTools mirror on the GM's own
+  // network. Its address used to be baked into the server, so moving the
+  // mirror meant editing a file and restarting; it is a setting now, and the
+  // server applies it on save rather than on the next boot.
+  const [compendium, setCompendium] = useState(null);     // { url, source, saved, default, env }
+  const [compendiumDraft, setCompendiumDraft] = useState('');
+  const [compendiumBusy, setCompendiumBusy] = useState(false);
+  const [compendiumTest, setCompendiumTest] = useState(null);  // { ok, message }
+
+  const loadCompendium = useCallback(async () => {
+    try {
+      const info = await fetch('/api/settings/compendium/info').then((r) => (r.ok ? r.json() : null));
+      if (!info) return;
+      setCompendium(info);
+      setCompendiumDraft(info.saved || info.url || '');
+    } catch { /* an older server with no such route — leave the panel empty */ }
+  }, []);
+  useEffect(() => { loadCompendium(); }, [loadCompendium]);
+
+  // Ask the server whether the mirror actually answers, rather than whether the
+  // address looks plausible: a typo and a box that is switched off read the
+  // same in a text field.
+  const testCompendium = useCallback(async () => {
+    setCompendiumBusy(true);
+    setCompendiumTest(null);
+    try {
+      const r = await fetch('/api/compendium/status').then((x) => x.json());
+      // "fetch failed" on its own tells a GM nothing. The address it failed
+      // against is the half that matters.
+      setCompendiumTest(r.ok
+        ? { ok: true, message: `Answering at ${r.url}` }
+        : { ok: false, message: `No answer from ${r.url}${r.error ? ` — ${r.error}` : ''}` });
+    } catch (err) {
+      setCompendiumTest({ ok: false, message: err.message });
+    } finally {
+      setCompendiumBusy(false);
+    }
+  }, []);
+
+  const saveCompendium = useCallback(async (value) => {
+    setCompendiumBusy(true);
+    setCompendiumTest(null);
+    try {
+      const body = { value };
+      const r = value
+        ? await fetch('/api/settings/compendium_url', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        })
+        : await fetch('/api/settings/compendium_url', { method: 'DELETE' });
+      const data = await r.json().catch(() => ({}));
+      if (data.compendium) {
+        setCompendium(data.compendium);
+        setCompendiumDraft(data.compendium.saved || data.compendium.url || '');
+      } else {
+        await loadCompendium();
+      }
+    } finally {
+      setCompendiumBusy(false);
+    }
+    await testCompendium();
+  }, [loadCompendium, testCompendium]);
+
   // On-device provider availability (Apple Intelligence). Only the native
   // macOS app built with --apple-intelligence reports present:true; every
   // other build (web, Docker, plain .dmg) returns present:false, so the
@@ -11530,6 +11595,89 @@ export default function DMView() {
 
                 <CollapsibleSection id="dice_reference" title="Quick Dice Reference">
                   <DiceRoller rolls={diceRolls} />
+                </CollapsibleSection>
+
+                {/* ── Where the compendium is read from ── */}
+                <CollapsibleSection id="compendium_source" title="Compendium (5eTools mirror)" defaultOpen={false}>
+                  <div className="bg-gray-800 rounded-xl p-4 space-y-3">
+                    <p className="text-xs text-gray-400 leading-snug">
+                      The Look up panel, the creature importer and the spell and item libraries all read
+                      from a 5eTools mirror. Point the app at yours — a box on your network, or any host
+                      serving the same files.
+                    </p>
+
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Mirror address</label>
+                      <input
+                        type="url"
+                        inputMode="url"
+                        spellCheck={false}
+                        className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm
+                                   focus:outline-none focus:border-dnd-gold"
+                        placeholder={compendium?.default || 'http://192.168.1.10:5050'}
+                        value={compendiumDraft}
+                        onChange={(e) => { setCompendiumDraft(e.target.value); setCompendiumTest(null); }}
+                      />
+                      <p className="text-[11px] text-gray-500 mt-1 leading-snug">
+                        Scheme and port, no trailing path — the mirror's own home page address.
+                        Leave it empty to fall back to{' '}
+                        {compendium?.env
+                          ? <>the server's <code className="text-gray-400">COMPENDIUM_URL</code></>
+                          : <>the built-in <code className="text-gray-400">{compendium?.default || ''}</code></>}.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={compendiumBusy || (compendiumDraft || '') === (compendium?.saved || '')}
+                        onClick={() => saveCompendium(compendiumDraft.trim())}
+                        className="px-3 py-2 rounded-lg bg-dnd-gold text-gray-900 text-sm font-semibold
+                                   disabled:opacity-40"
+                      >{compendiumBusy ? 'Saving…' : 'Save and test'}</button>
+                      <button
+                        type="button"
+                        disabled={compendiumBusy}
+                        onClick={testCompendium}
+                        className="px-3 py-2 rounded-lg bg-gray-700 border border-gray-600 text-gray-100 text-sm
+                                   disabled:opacity-40"
+                      >Test now</button>
+                      {compendium?.saved && (
+                        <button
+                          type="button"
+                          disabled={compendiumBusy}
+                          onClick={() => saveCompendium('')}
+                          className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 text-sm
+                                     disabled:opacity-40"
+                        >Reset to default</button>
+                      )}
+                    </div>
+
+                    {compendiumTest && (
+                      <div className={`text-xs rounded-lg px-2.5 py-2 border leading-snug ${
+                        compendiumTest.ok
+                          ? 'bg-emerald-900/30 border-emerald-700/60 text-emerald-200'
+                          : 'bg-red-900/30 border-red-700/60 text-red-200'}`}>
+                        {compendiumTest.ok ? '✓ ' : '✕ '}{compendiumTest.message}
+                      </div>
+                    )}
+
+                    {compendium && (
+                      <p className="text-[11px] text-gray-500 leading-snug">
+                        In use: <span className="text-gray-300 font-mono">{compendium.url}</span>
+                        {' · '}
+                        {compendium.source === 'setting' ? 'from this setting'
+                          : compendium.source === 'environment' ? 'from the server environment'
+                            : 'the built-in default'}
+                      </p>
+                    )}
+
+                    <p className="text-[11px] text-gray-500 leading-snug">
+                      Changing it takes effect at once: everything read from the old mirror — the creature
+                      index, cached files, artwork lookups — is dropped, and the next search rebuilds
+                      against the new one.
+                    </p>
+                  </div>
                 </CollapsibleSection>
 
                 {/* ── AI Settings ── */}

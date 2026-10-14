@@ -19,11 +19,54 @@
 // every list is bounded, and a monster that fails to convert is skipped rather
 // than allowed to throw.
 
+// WHERE THE MIRROR IS.
+//
+// Three answers, in order: what the GM saved in the app's settings, then the
+// COMPENDIUM_URL environment variable, then this address — the one this
+// project was built against. The setting wins because the mirror is the one
+// piece of this server that lives on somebody else's machine: a GM who moves
+// it, renames the host or runs a public instance should be able to say so in
+// the app rather than edit a file and restart.
 const DEFAULT_BASE = 'http://192.168.50.131:5050';
 
+// Set from app_settings at boot and whenever the GM saves a new one; null
+// means "nothing saved, fall through".
+let savedBase = null;
+
+const tidyBase = (raw) => String(raw || '').trim().replace(/\/+$/, '');
+
 function baseUrl() {
-  const raw = String(process.env.COMPENDIUM_URL || DEFAULT_BASE).trim();
-  return raw.replace(/\/+$/, '');
+  return tidyBase(savedBase || process.env.COMPENDIUM_URL || DEFAULT_BASE);
+}
+
+/**
+ * Point the compendium at a different mirror.
+ *
+ * Everything read from the old one is dropped, here and in reference.js: an
+ * index built from one server's files has nothing to do with another's, and a
+ * stale entry would open a card whose art 404s against the new host.
+ */
+function setBaseUrl(url) {
+  const next = tidyBase(url);
+  const changed = next !== tidyBase(savedBase || '');
+  savedBase = next || null;
+  if (changed) {
+    clearCaches();
+    try { require('./reference').clearCaches(); } catch { /* reference may not be loaded */ }
+  }
+  return baseUrl();
+}
+
+// What a client needs to show the setting: the address in use, and where it
+// came from, so "it is still pointing at the old box" is answerable.
+function baseUrlInfo() {
+  return {
+    url: baseUrl(),
+    source: savedBase ? 'setting' : (process.env.COMPENDIUM_URL ? 'environment' : 'default'),
+    saved: savedBase || '',
+    default: DEFAULT_BASE,
+    env: String(process.env.COMPENDIUM_URL || ''),
+  };
 }
 
 // ── 5etools markup ───────────────────────────────────────────────────────────
@@ -643,6 +686,21 @@ async function fluffImages(entry, fluffList, depth = 0) {
 // worth remembering as a hit, and the fallback below asks about several
 // candidates per creature.
 const headCache = new Map(); // path -> boolean
+
+// Everything read from the mirror, dropped in one go.
+//
+// Called when the GM points the app at a different server: the bestiary index,
+// the parsed files, the fluff, the source map and the "does this image exist"
+// answers were all facts about the OLD host, and every one of them would be
+// wrong against the new one.
+function clearCaches() {
+  indexPromise = null;
+  indexBuiltAt = 0;
+  sourceMapPromise = null;
+  fileCache.clear();
+  fluffCache.clear();
+  headCache.clear();
+}
 async function mirrorHas(path) {
   if (headCache.has(path)) return headCache.get(path);
   let ok = false;
@@ -764,7 +822,7 @@ async function getMonster(name, source) {
 }
 
 module.exports = {
-  baseUrl, stripTags, entriesToText, blockList, ABILITY_WORDS,
+  baseUrl, setBaseUrl, baseUrlInfo, clearCaches, stripTags, entriesToText, blockList, ABILITY_WORDS,
   getJson, searchCreatures, getMonster, creatureIndex, monsterToCreature, artPaths,
   crText, typeText, sizeWord, sourceRank, dedupeBySource, editionOf,
 };

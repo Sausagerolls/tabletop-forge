@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- Wormhole — looking straight down the throat, so the rings nest inside one
+     another and brighten towards the far end. -->
+<defs>
+  <radialGradient id="whMouth" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#f0e6ff" stop-opacity="0.95"/>
+    <stop offset="18%"  stop-color="#a855f7" stop-opacity="0.72"/>
+    <stop offset="55%"  stop-color="#4c1d95" stop-opacity="0.55"/>
+    <stop offset="88%"  stop-color="#2a0f52" stop-opacity="0.30"/>
+    <stop offset="100%" stop-color="#2a0f52" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="whSwirl" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#e0d4ff" stop-opacity="0.42"/>
+    <stop offset="100%" stop-color="#e0d4ff" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<circle cx="256" cy="256" r="252" fill="url(#whMouth)"/>
+<g opacity="0.8">
+  <ellipse cx="256" cy="256" rx="204" ry="72" fill="url(#whSwirl)" transform="rotate(12 256 256)"/>
+  <ellipse cx="256" cy="256" rx="168" ry="58" fill="url(#whSwirl)" transform="rotate(74 256 256)"/>
+  <ellipse cx="256" cy="256" rx="132" ry="46" fill="url(#whSwirl)" transform="rotate(136 256 256)"/>
+</g>
+<!-- Nested rings, tighter and brighter towards the centre. -->
+<g fill="none" stroke="#c4a6ff">
+  <circle cx="256" cy="256" r="228" stroke-width="3" opacity="0.30"/>
+  <circle cx="256" cy="256" r="186" stroke-width="3" opacity="0.40"/>
+  <circle cx="256" cy="256" r="146" stroke-width="3" opacity="0.52"/>
+  <circle cx="256" cy="256" r="110" stroke-width="3" opacity="0.65"/>
+  <circle cx="256" cy="256" r="78"  stroke-width="3" opacity="0.78"/>
+  <circle cx="256" cy="256" r="50"  stroke-width="3" opacity="0.90"/>
+</g>
+<circle cx="256" cy="256" r="26" fill="#f4ecff" opacity="0.92"/>
+</svg>

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- Storm Column — a pillar of cloud, seen from directly above.
+
+     From overhead a column is a tight circular knot, not a tall shape: you are
+     looking down the length of it. Dense and dark at the rim where you see
+     through the most vapour, brighter at the centre where you look straight
+     down the shaft. The height only exists in the 3D view. -->
+<defs>
+  <radialGradient id="scShaft" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.72"/>
+    <stop offset="30%"  stop-color="#dfe6ef" stop-opacity="0.60"/>
+    <stop offset="62%"  stop-color="#8e9cb0" stop-opacity="0.62"/>
+    <stop offset="86%"  stop-color="#6e7c92" stop-opacity="0.40"/>
+    <stop offset="100%" stop-color="#6e7c92" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="scCurl" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.34"/>
+    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<circle cx="256" cy="256" r="238" fill="url(#scShaft)"/>
+<!-- Curls breaking off the shaft, so the rim isn't a drawn circle. -->
+<g>
+  <ellipse cx="150" cy="188" rx="86" ry="62" fill="url(#scCurl)"/>
+  <ellipse cx="344" cy="196" rx="78" ry="56" fill="url(#scCurl)"/>
+  <ellipse cx="322" cy="348" rx="90" ry="64" fill="url(#scCurl)"/>
+  <ellipse cx="168" cy="336" rx="74" ry="54" fill="url(#scCurl)"/>
+  <ellipse cx="256" cy="256" rx="96" ry="88" fill="url(#scCurl)"/>
+</g>
+</svg>

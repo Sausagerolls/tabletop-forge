@@ -58,12 +58,12 @@ const CREATURE_FIELDS = [
   'spells', 'spell_slots', 'loot', 'movement_actions',
   'race_state',
   'background', 'background_state', 'tool_proficiencies', 'weapon_proficiencies',
-  'class_state', 'multiclasses', 'resource_state', 'inspiration_die',
+  'class_state', 'multiclasses', 'resource_state', 'crawler_state', 'inspiration_die',
   'hit_dice_used_by_type',
   'base_color', 'base_opacity', 'token_height_ft',
 ];
 
-const JSONB_FIELDS = ['wildshape_forms', 'special_abilities', 'actions', 'bonus_actions', 'reactions', 'legendary_actions', 'senses', 'inventory', 'spells', 'spell_slots', 'loot', 'movement_actions', 'class_features', 'feats', 'skill_expertise', 'race_state', 'background_state', 'class_state', 'multiclasses', 'resource_state', 'hit_dice_used_by_type', 'hit_dice_pool'];
+const JSONB_FIELDS = ['wildshape_forms', 'special_abilities', 'actions', 'bonus_actions', 'reactions', 'legendary_actions', 'senses', 'inventory', 'spells', 'spell_slots', 'loot', 'movement_actions', 'class_features', 'feats', 'skill_expertise', 'race_state', 'background_state', 'class_state', 'multiclasses', 'resource_state', 'crawler_state', 'hit_dice_used_by_type', 'hit_dice_pool'];
 
 function parseBody(body) {
   const data = {};
@@ -101,7 +101,7 @@ function parseBody(body) {
 // GET /api/creatures
 router.get('/', async (req, res) => {
   try {
-    const { search, filter, player_owner } = req.query;
+    const { search, filter, player_owner, include_crawlers, crawlers_only } = req.query;
     const conditions = [];
     const params = [];
 
@@ -117,6 +117,13 @@ router.get('/', async (req, res) => {
     if (player_owner) {
       params.push(player_owner);
       conditions.push(`player_owner = $${params.length}`);
+    }
+    // Crawler sheet characters (World Dungeon) are not for use in Tabletop Forge:
+    // hidden unless the crawler app asks for them.
+    if (crawlers_only === '1') {
+      conditions.push(`(crawler_state IS NOT NULL AND crawler_state <> '{}'::jsonb)`);
+    } else if (include_crawlers !== '1') {
+      conditions.push(`(crawler_state IS NULL OR crawler_state = '{}'::jsonb)`);
     }
 
     let query = 'SELECT * FROM creatures';

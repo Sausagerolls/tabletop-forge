@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 192" width="768" height="192">
+<!-- Fog Wall — a long narrow barrier.
+
+     Fades along its length as well as across it, so the ends dissolve instead
+     of stopping square. Rotate the placement to lay it across a corridor. -->
+<defs>
+  <linearGradient id="fwLen" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%"   stop-color="#ffffff" stop-opacity="0"/>
+    <stop offset="14%"  stop-color="#ffffff" stop-opacity="0.85"/>
+    <stop offset="86%"  stop-color="#ffffff" stop-opacity="0.85"/>
+    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="fwCross" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%"   stop-color="#dbe4f0" stop-opacity="0"/>
+    <stop offset="30%"  stop-color="#f2f6fb" stop-opacity="0.62"/>
+    <stop offset="58%"  stop-color="#ffffff" stop-opacity="0.70"/>
+    <stop offset="100%" stop-color="#b9c6d8" stop-opacity="0"/>
+  </linearGradient>
+  <mask id="fwMask"><rect width="768" height="192" fill="url(#fwLen)"/></mask>
+  <radialGradient id="fwBulge" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.34"/>
+    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<g mask="url(#fwMask)">
+  <rect width="768" height="192" fill="url(#fwCross)"/>
+  <ellipse cx="170" cy="96" rx="120" ry="62" fill="url(#fwBulge)"/>
+  <ellipse cx="384" cy="88" rx="140" ry="66" fill="url(#fwBulge)"/>
+  <ellipse cx="600" cy="100" rx="126" ry="60" fill="url(#fwBulge)"/>
+</g>
+</svg>

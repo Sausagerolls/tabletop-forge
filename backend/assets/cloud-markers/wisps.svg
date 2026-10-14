@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 384" width="640" height="384">
+<!-- Wisps — torn shreds of vapour with gaps between them.
+
+     The point of this one is that it does NOT read as a mass: it is several
+     separate streaks, drawn thin and stretched along one axis, with clear board
+     visible between them. Rotate the placement to change which way they run. -->
+<defs>
+  <radialGradient id="wpStreak" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.58"/>
+    <stop offset="55%"  stop-color="#eaf0f7" stop-opacity="0.28"/>
+    <stop offset="100%" stop-color="#dbe4f0" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="wpFleck" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.40"/>
+    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<g>
+  <ellipse cx="196" cy="112" rx="176" ry="34" fill="url(#wpStreak)"/>
+  <ellipse cx="430" cy="150" rx="196" ry="30" fill="url(#wpStreak)"/>
+  <ellipse cx="270" cy="222" rx="216" ry="38" fill="url(#wpStreak)"/>
+  <ellipse cx="472" cy="286" rx="152" ry="28" fill="url(#wpStreak)"/>
+  <ellipse cx="150" cy="300" rx="128" ry="26" fill="url(#wpStreak)"/>
+</g>
+<g>
+  <ellipse cx="96"  cy="168" rx="62" ry="20" fill="url(#wpFleck)"/>
+  <ellipse cx="560" cy="212" rx="58" ry="18" fill="url(#wpFleck)"/>
+  <ellipse cx="330" cy="66"  rx="70" ry="18" fill="url(#wpFleck)"/>
+  <ellipse cx="386" cy="334" rx="64" ry="18" fill="url(#wpFleck)"/>
+</g>
+</svg>

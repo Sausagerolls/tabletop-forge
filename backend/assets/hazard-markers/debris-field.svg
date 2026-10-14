@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- Debris Field — dust ring with rocks scattered through it, thinning towards
+     the rim. Irregular lumps rather than circles: a field of dots reads as a
+     pattern, and a field of chipped shapes reads as rubble. -->
+<defs>
+  <radialGradient id="dfDust" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#b9a993" stop-opacity="0.05"/>
+    <stop offset="22%"  stop-color="#b9a993" stop-opacity="0.34"/>
+    <stop offset="62%"  stop-color="#6b6153" stop-opacity="0.30"/>
+    <stop offset="100%" stop-color="#4a4238" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="dfBand" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#d6c8ad" stop-opacity="0.30"/>
+    <stop offset="100%" stop-color="#d6c8ad" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<circle cx="256" cy="256" r="252" fill="url(#dfDust)"/>
+<g opacity="0.8">
+  <ellipse cx="256" cy="256" rx="212" ry="76" fill="url(#dfBand)" transform="rotate(18 256 256)"/>
+  <ellipse cx="256" cy="256" rx="186" ry="66" fill="url(#dfBand)" transform="rotate(102 256 256)"/>
+</g>
+<g fill="#8a8177" stroke="#524a41" stroke-width="1.5">
+  <path d="M148 176 l18 -6 12 12 -8 16 -18 2 -8 -14z"/>
+  <path d="M330 150 l14 -4 10 10 -6 13 -15 2 -6 -12z"/>
+  <path d="M362 292 l20 -7 13 13 -9 18 -20 2 -8 -15z"/>
+  <path d="M196 336 l16 -5 11 11 -7 15 -17 2 -7 -13z"/>
+  <path d="M268 226 l22 -8 15 15 -10 20 -22 3 -9 -17z"/>
+  <path d="M112 288 l12 -4 8 8 -5 11 -12 1 -5 -10z"/>
+  <path d="M296 372 l13 -4 9 9 -6 12 -13 1 -5 -11z"/>
+  <path d="M226 116 l11 -4 8 8 -5 10 -11 1 -5 -9z"/>
+  <path d="M396 208 l10 -3 7 7 -4 9 -10 1 -4 -9z"/>
+  <path d="M132 372 l9 -3 6 6 -4 8 -9 1 -4 -8z"/>
+</g>
+<g fill="#a39a8c" opacity="0.75">
+  <circle cx="176" cy="248" r="4"/><circle cx="318" cy="214" r="5"/>
+  <circle cx="240" cy="300" r="3.5"/><circle cx="352" cy="342" r="4"/>
+  <circle cx="152" cy="316" r="3"/><circle cx="288" cy="140" r="3.5"/>
+  <circle cx="384" cy="256" r="3"/><circle cx="208" cy="392" r="3.5"/>
+</g>
+</svg>

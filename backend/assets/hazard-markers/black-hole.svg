@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- Black Hole, from above — which is the one view where an accretion disc is
+     a ring rather than a bar. Genuinely black in the middle: the whole point of
+     the object is that nothing comes out of it, and a dark-grey centre reads as
+     a sphere instead of a hole. -->
+<defs>
+  <radialGradient id="bhDisc" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#000000" stop-opacity="1"/>
+    <stop offset="26%"  stop-color="#000000" stop-opacity="1"/>
+    <stop offset="31%"  stop-color="#fff0c2" stop-opacity="0.95"/>
+    <stop offset="40%"  stop-color="#ffb457" stop-opacity="0.85"/>
+    <stop offset="62%"  stop-color="#c2450f" stop-opacity="0.60"/>
+    <stop offset="85%"  stop-color="#5c1c06" stop-opacity="0.28"/>
+    <stop offset="100%" stop-color="#2a0e03" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="bhHalo" cx="50%" cy="50%" r="50%">
+    <stop offset="55%"  stop-color="#ffb457" stop-opacity="0"/>
+    <stop offset="100%" stop-color="#ffb457" stop-opacity="0.16"/>
+  </radialGradient>
+  <radialGradient id="bhArm" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ffd79a" stop-opacity="0.55"/>
+    <stop offset="100%" stop-color="#ffd79a" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<circle cx="256" cy="256" r="256" fill="url(#bhHalo)"/>
+<!-- Spiral arms, under the disc wash so they read as structure within it. -->
+<g opacity="0.75">
+  <ellipse cx="256" cy="256" rx="196" ry="64" fill="url(#bhArm)" transform="rotate(24 256 256)"/>
+  <ellipse cx="256" cy="256" rx="176" ry="58" fill="url(#bhArm)" transform="rotate(96 256 256)"/>
+  <ellipse cx="256" cy="256" rx="186" ry="60" fill="url(#bhArm)" transform="rotate(158 256 256)"/>
+</g>
+<circle cx="256" cy="256" r="250" fill="url(#bhDisc)"/>
+<!-- Photon ring: a hard bright edge right on the horizon. -->
+<circle cx="256" cy="256" r="76" fill="none" stroke="#fff3d0" stroke-width="4" opacity="0.9"/>
+<circle cx="256" cy="256" r="66" fill="#000000"/>
+</svg>

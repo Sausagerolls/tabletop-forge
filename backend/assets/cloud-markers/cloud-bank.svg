@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 512" width="768" height="512">
+<!-- Cloud Bank — the flat map's view of an obscuring cloud.
+
+     Seen from above, so this is a soft mass with no silhouette: overlapping
+     radial gradients that fade to nothing at the edges rather than a drawn
+     outline. A cloud with a hard border reads as a rock on an overhead map,
+     which is exactly the thing it isn't.
+
+     Deliberately translucent. Scenery normally sits ON the board and hides
+     what's under it; a cloud is something you look through, and the map should
+     say so before anyone switches to 3D. The 3D view ignores this art entirely
+     and builds its own billboard bank (see makeCloudGroup in Map3DView). -->
+<defs>
+  <radialGradient id="cbCore" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.82"/>
+    <stop offset="45%"  stop-color="#f2f6fb" stop-opacity="0.52"/>
+    <stop offset="100%" stop-color="#dbe4f0" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="cbShade" cx="50%" cy="62%" r="55%">
+    <stop offset="0%"   stop-color="#9fb0c6" stop-opacity="0.38"/>
+    <stop offset="60%"  stop-color="#8b9db4" stop-opacity="0.16"/>
+    <stop offset="100%" stop-color="#8b9db4" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="cbWisp" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.34"/>
+    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+
+<!-- Underside first: a dim mass that gives the bank some weight, so the
+     white lobes above read as lit tops rather than as flat paint. -->
+<g>
+  <ellipse cx="300" cy="300" rx="250" ry="150" fill="url(#cbShade)"/>
+  <ellipse cx="500" cy="286" rx="210" ry="132" fill="url(#cbShade)"/>
+  <ellipse cx="392" cy="330" rx="286" ry="126" fill="url(#cbShade)"/>
+</g>
+
+<!-- Lit lobes. Sizes and centres are irregular on purpose — an evenly spaced
+     row of equal circles reads as a cartoon cloud stamp. -->
+<g>
+  <ellipse cx="236" cy="252" rx="168" ry="120" fill="url(#cbCore)"/>
+  <ellipse cx="392" cy="222" rx="196" ry="140" fill="url(#cbCore)"/>
+  <ellipse cx="548" cy="252" rx="156" ry="112" fill="url(#cbCore)"/>
+  <ellipse cx="316" cy="300" rx="150" ry="104" fill="url(#cbCore)"/>
+  <ellipse cx="470" cy="306" rx="140" ry="96"  fill="url(#cbCore)"/>
+  <ellipse cx="150" cy="286" rx="104" ry="76"  fill="url(#cbCore)"/>
+  <ellipse cx="632" cy="288" rx="96"  ry="70"  fill="url(#cbCore)"/>
+</g>
+
+<!-- Wisps trailing off the ends, so the bank dissolves into the map instead of
+     stopping at the bounding box. -->
+<g>
+  <ellipse cx="74"  cy="266" rx="78" ry="44" fill="url(#cbWisp)"/>
+  <ellipse cx="700" cy="272" rx="70" ry="40" fill="url(#cbWisp)"/>
+  <ellipse cx="392" cy="150" rx="132" ry="52" fill="url(#cbWisp)"/>
+  <ellipse cx="360" cy="392" rx="176" ry="56" fill="url(#cbWisp)"/>
+</g>
+</svg>

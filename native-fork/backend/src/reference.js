@@ -1176,7 +1176,19 @@ async function getEntry(kind, keyOrName, source = '') {
 // The spell-shape helpers are exported for import_5etools_spells.js: the
 // importer writes the same fields this module renders, and two copies of
 // "what is a casting time" would drift the moment one was corrected.
+// Everything this module read from the mirror. Dropped when the GM points the
+// app at a different one — see compendium.setBaseUrl, which calls this. Local
+// files are re-read too; that costs one disk read and keeps the rule simple.
+function clearCaches() {
+  indexes.clear();
+  fileCache.clear();
+  spellListPromise = null;
+  spellListBuiltAt = 0;
+  localFilesPromise = null;
+}
+
 module.exports = {
+  clearCaches,
   KINDS, searchKind, searchAll, getEntry, index, spellsForClass,
   SCHOOLS, timeText, rangeText, durationText, componentsText, spellListIndex,
   resolveSpellNames,

@@ -68,6 +68,8 @@ const io = new Server(server, {
 const { schedule: sneakWatch } = detection.createScheduler(db, io);
 
 app.use(cors());
+// The World Dungeon GM tools store whole maps, past the 100kb default below.
+app.use('/api/world-dungeon', express.json({ limit: '10mb' }), require('./routes/world_dungeon'));
 app.use(express.json());
 // Uploads are content-addressed by name: every file is written under a fresh
 // uuid, and replacing a map's art writes a NEW name rather than overwriting an

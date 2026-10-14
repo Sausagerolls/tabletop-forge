@@ -4,8 +4,16 @@ import { newCrawler, fromCreature, toCreature, derive } from './character.js';
 import Builder from './Builder.jsx';
 import Sheet from './Sheet.jsx';
 
+// Served from a Tabletop Forge server (its /crawler/ page): that server is the
+// only one, so the sheet never asks for it.
+const HOSTED = !!import.meta.env.VITE_SAME_ORIGIN;
+const HOST = HOSTED ? location.origin : '';
+
 export default function App() {
-  const [conn, setConn] = useState(() => loadConnection());
+  const [conn, setConn] = useState(() => {
+    const c = loadConnection();
+    return HOSTED && c && c.server !== HOST ? null : c;
+  });
   const [screen, setScreen] = useState(conn ? 'list' : 'connect');
   const [open, setOpen] = useState(null); // { id, st }
 
@@ -100,8 +108,7 @@ function Editor({ conn, open, screen, setScreen, setOpen }) {
 }
 
 function Connect({ initial, onConnected }) {
-  // Served from a Tabletop Forge server (its /crawler/ page), the default is that same server.
-  const [server, setServer] = useState(initial?.server || import.meta.env.VITE_DEFAULT_SERVER || (import.meta.env.VITE_SAME_ORIGIN ? location.origin : ''));
+  const [server, setServer] = useState(HOST || initial?.server || import.meta.env.VITE_DEFAULT_SERVER || '');
   const [session, setSession] = useState(initial?.session || '');
   const [player, setPlayer] = useState(initial?.player || '');
   const [busy, setBusy] = useState(false);
@@ -121,7 +128,7 @@ function Connect({ initial, onConnected }) {
     }
     setBusy(false);
   };
-  const recent = recentCharacters();
+  const recent = recentCharacters().filter((r) => !HOSTED || r.server === HOST);
   return (
     <div>
       <div className="hero">
@@ -132,8 +139,8 @@ function Connect({ initial, onConnected }) {
       <div className="page">
         {err && <div className="err">{err}</div>}
         <div className="card">
-          <div className="field"><span className="lab">Tabletop Forge server</span>
-            <input className="f" value={server} onChange={(e) => setServer(e.target.value)} placeholder="http://192.168.1.20" inputMode="url" autoCapitalize="none" /></div>
+          {!HOSTED && <div className="field"><span className="lab">Tabletop Forge server</span>
+            <input className="f" value={server} onChange={(e) => setServer(e.target.value)} placeholder="http://192.168.1.20" inputMode="url" autoCapitalize="none" /></div>}
           <div className="field"><span className="lab">Session code (optional)</span>
             <input className="f" value={session} onChange={(e) => setSession(e.target.value.toUpperCase())} placeholder="ABC123" autoCapitalize="characters" /></div>
           <div className="field"><span className="lab">Your player name</span>
@@ -146,7 +153,7 @@ function Connect({ initial, onConnected }) {
             <h2 className="sec">Recent crawlers</h2>
             <div className="list">{recent.map((r) => (
               <div className="li" key={r.server + r.id}>
-                <div className="grow"><b>{r.name}</b><div className="small muted">{r.player} · {r.server}</div></div>
+                <div className="grow"><b>{r.name}</b><div className="small muted">{r.player}{HOSTED ? '' : ` · ${r.server}`}</div></div>
                 <button className="btn sm dark" onClick={() => onConnected({ server: r.server, session: r.session || '', player: r.player, sessionName: '' })}>Use</button>
               </div>))}</div>
           </div>
@@ -165,14 +172,14 @@ function CharacterList({ conn, onOpen, onNew, onDisconnect }) {
   return (
     <div>
       <div className="top">
-        <div className="t"><div className="k">{conn.sessionName || conn.server}</div><h1>{conn.player}'s crawlers</h1></div>
+        <div className="t"><div className="k">{conn.sessionName || (HOSTED ? 'Tabletop Forge' : conn.server)}</div><h1>{conn.player}'s crawlers</h1></div>
         <button className="iconbtn" onClick={onDisconnect}>Switch</button>
       </div>
       <div className="page">
         {err && <div className="err">{err}</div>}
         <button className="btn primary block" onClick={onNew} style={{ marginBottom: 12 }}>+ Create a new crawler</button>
         {rows === null && <p className="muted">Loading…</p>}
-        {rows && !rows.length && <div className="sys">No crawlers saved under "{conn.player}" on {conn.server} yet. Create one, or tap Switch to check the server and player name.</div>}
+        {rows && !rows.length && <div className="sys">No crawlers saved under "{conn.player}"{HOSTED ? '' : ` on ${conn.server}`} yet. Create one, or tap Switch to check {HOSTED ? 'your' : 'the server and'} player name.</div>}
         {rows && rows.map((r) => {
           let st = r.crawler_state; if (typeof st === 'string') { try { st = JSON.parse(st); } catch { st = null; } }
           return (

@@ -19,7 +19,7 @@ export default function LevelTab({ st, d, update }) {
       <div className="card">
         <div className="row between"><h2 className="sec" style={{ margin: 0 }}>Floor</h2>
           <Stepper value={st.floor} min={1} max={18} onChange={(v) => update({ floor: v })} /></div>
-        <p className="small muted">Set this when you take the stairs. Class and species selection opens on Floor 3. <RulesLink page="class-selection">Class selection</RulesLink> · <RulesLink page="leveling">Leveling</RulesLink></p>
+        <p className="small muted">Set this when you take the stairs. Class and species selection opens on Floor 3. <RulesLink page="class-selection">Class selection</RulesLink> · <RulesLink page="race-selection">Race selection</RulesLink> · <RulesLink page="leveling">Leveling</RulesLink></p>
       </div>
 
       {canSelect && (
@@ -150,7 +150,7 @@ function ClassSelect({ st, d, update, onClose }) {
       <span className="lab">Species (2024)</span>
       <select className="f" value={speciesId} onChange={(e) => { setSpecies(e.target.value); setSubrace(''); setSpPicks({}); }} style={{ marginBottom: 8 }}>
         <option value="">Choose a species…</option>{SPECIES.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-      <p className="small muted" style={{ marginTop: 0 }}>Until now you were an ordinary person. Species traits only apply from this choice on, Human included.</p>
+      <p className="small muted" style={{ marginTop: 0 }}>Until now you were an ordinary person. Species traits only apply from this choice on, Human included. <RulesLink page="race-selection">Race rules</RulesLink></p>
       {sp?.subraces?.length > 0 && (
         <select className="f" value={subraceId} onChange={(e) => { setSubrace(e.target.value); setSpPicks({}); }} style={{ marginBottom: 8 }}>
           <option value="">Choose {sp.subraceLabel ? `a ${sp.subraceLabel.toLowerCase()}` : 'a lineage'}…</option>{sp.subraces.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>)}

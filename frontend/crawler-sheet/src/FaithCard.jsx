@@ -4,12 +4,14 @@ import { Pick, Stepper } from './bits.jsx';
 import { RulesLink } from './rulesLinks.jsx';
 import {
   GODS, findGod, shortName, rankOf, RANKS, LAPSE_STAGES, SMITE_DICE, SMITE_LASTS, faithOf, boonsFor, addLapse, leaveGod, joinGod, MEETINGS,
+  CRIMES, greatCrime, slayGod, isSlain, brandedBy,
 } from './faith.js';
 
 // Gods you have met (rules/gods.md, Meeting a God), and the Divine Offer each meeting brings.
 function GodsMet({ f, setF }) {
   const [meet, setMeet] = useState('');
   const [offer, setOffer] = useState('');
+  const [crimeGod, setCrimeGod] = useState('');
   const met = f.met || [];
   const g = findGod(offer);
   const current = findGod(f.god);
@@ -20,9 +22,24 @@ function GodsMet({ f, setF }) {
       <div className="lab">Gods met</div>
       <div className="chips">{GODS.map((x) => {
         const isMet = met.includes(x.name);
-        const apo = (f.apostate || []).includes(x.name);
-        return <Pick key={x.name} on={isMet} lock={apo} onClick={() => { if (!isMet && !apo) { setMeet(x.name); setOffer(''); } }}>{shortName(x.name)}{apo ? ' (apostate)' : ''}</Pick>;
+        const brand = brandedBy(f).find((b) => b.name === x.name);
+        const dead = isSlain(f, x.name);
+        const tag = dead ? ' (slain)' : brand ? (brand.why === 'rival' ? ' (rival)' : ' (apostate)') : '';
+        return <Pick key={x.name} on={isMet} lock={!!brand || dead} onClick={() => { if (!isMet && !brand && !dead) { setMeet(x.name); setOffer(''); } }}>{shortName(x.name)}{tag}</Pick>;
       })}</div>
+      {brandedBy(f).length > 0 && <p className="small" style={{ marginTop: 4 }}><b>Hostile to you:</b> {brandedBy(f).map((b) => `${shortName(b.name)}'s followers (${b.why === 'rival' ? 'rival of your god' : isSlain(f, b.name) ? 'apostate of a slain god' : 'apostate'})`).join('; ')}.</p>}
+      <details className="feat"><summary><span>Great Crimes and slain gods</span></summary>
+        <p className="small muted">A Great Crime brands you a god's apostate and it smites you. A slain god's religion ends for everyone. <RulesLink page="gods" anchor="Slaying a God">Rules</RulesLink></p>
+        <div className="row wrap">
+          <select className="f" style={{ flex: 1, minWidth: 0 }} value={crimeGod} onChange={(e) => setCrimeGod(e.target.value)}>
+            <option value="">God…</option>{GODS.filter((x) => !isSlain(f, x.name)).map((x) => <option key={x.name} value={x.name}>{shortName(x.name)}</option>)}</select>
+          <select className="f" style={{ flex: 2, minWidth: 0 }} value="" disabled={!crimeGod} onChange={(e) => {
+            const c = CRIMES[Number(e.target.value)]; if (!c) return;
+            setF((x) => { greatCrime(x, crimeGod, c[0], c[1]); }); setCrimeGod('');
+          }}><option value="">Great Crime…</option>{CRIMES.map((c, k) => <option key={c[0]} value={k}>{c[0]} ({SMITE_DICE[c[1]]}d10)</option>)}</select>
+          <button className="btn sm" disabled={!crimeGod} onClick={() => { setF((x) => { slayGod(x, crimeGod); }); setCrimeGod(''); }}>Slain</button>
+        </div>
+      </details>
       {meet && (
         <div className="sys" style={{ fontSize: 13 }}>
           <b>Meet {shortName(meet)}.</b> How did it happen? <span className="muted">Calling: {findGod(meet)?.calling}</span>
@@ -69,7 +86,7 @@ export default function FaithCard({ st, update }) {
         <GodsMet f={f} setF={setF} />
         <div className="lab" style={{ marginTop: 10 }}>Take a vow at a shrine (gods you have met)</div>
         {f.apostate.length > 0 && <p className="small"><b>Apostate of:</b> {f.apostate.map(shortName).join(', ')}. Their worshippers are hostile to you.</p>}
-        <div className="chips">{GODS.filter((g) => (f.met || []).includes(g.name) && !f.apostate.includes(g.name)).map((g) => (
+        <div className="chips">{GODS.filter((g) => (f.met || []).includes(g.name) && !brandedBy(f).some((b) => b.name === g.name) && !isSlain(f, g.name)).map((g) => (
           <Pick key={g.name} on={pick === g.name} onClick={() => setPick(g.name)}>{shortName(g.name)}</Pick>))}</div>
         {!(f.met || []).some((n) => !f.apostate.includes(n)) && <p className="small muted">No gods met yet.</p>}
         {chosen && (
@@ -83,6 +100,18 @@ export default function FaithCard({ st, update }) {
       </details>);
   }
 
+  if (isSlain(f, god.name)) {
+    return (
+      <div className="card">
+        <h2 className="sec" style={{ margin: 0 }}>Faith: {shortName(god.name)} (slain)</h2>
+        <div className="warn" style={{ fontSize: 13, marginTop: 8 }}>{shortName(god.name)} has been slain. Its religion is over: no Boons, no Lapses, no Rites, Offerings or Taboos, and its smites have ended. Remove any spells its Boons gave you from your tome. You can join another god with no smite.</div>
+        <button className="btn sm primary" onClick={() => setF((x) => {
+          x.log = [{ text: `Released from ${shortName(x.god)} (slain).`, at: Date.now() }, ...(x.log || [])];
+          Object.assign(x, { god: '', favor: 0, lapses: 0, riteDone: false, offeringDone: false, greatDeedDone: false, lapsedThisFloor: false });
+        })}>Set the Mark aside</button>
+        <GodsMet f={f} setF={setF} />
+      </div>);
+  }
   const rank = rankOf(f.favor);
   const stage = LAPSE_STAGES[f.lapses];
   const next = RANKS.find(([, at]) => at > f.favor);

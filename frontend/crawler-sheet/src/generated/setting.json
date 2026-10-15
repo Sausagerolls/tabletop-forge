@@ -14591,7 +14591,7 @@
    "id": "wd-prayer-beads-of-the-fence-sitter",
    "name": "Prayer Beads of the Fence-Sitter",
    "rarity": "Rare",
-   "description": "Two strings of beads knotted together, each with a different god's symbol. While attuned, you can secretly worship two major gods at once (keep two Favor and Lapse tracks). Each god's Rite and Offering must be done separately.\n\n- Found out. If either god's avatar, minor deity or Chosen worshipper Inspects you, both gods know. You gain 2 Lapses with each.\n- The beads snap if the two gods are rivals.",
+   "description": "Two strings of beads knotted together, each with a different god's symbol. While attuned, you can secretly worship two major gods at once (keep two Favor and Lapse tracks). Each god's Rite and Offering must be done separately.\n\n- Found out. If either god, one of its minor deities or its Chosen worshipper Inspects you, both gods know. You gain 2 Lapses with each.\n- The beads snap if the two gods are rivals.",
    "source": "Divine Gear",
    "attunement": true,
    "item_type": "gear"
@@ -15102,8 +15102,8 @@
     },
     {
      "rank": "IV",
-     "name": "Patron's Avatar",
-     "text": "Once per long rest, summon an avatar of your patron for 1 minute. It uses a stat block of CR up to half your Warlock level, chosen with the GM, and obeys you."
+     "name": "Patron's Herald",
+     "text": "Once per long rest, summon a herald of your patron for 1 minute. It uses a stat block of CR up to half your Warlock level, chosen with the GM, and obeys you."
     },
     {
      "rank": "V",

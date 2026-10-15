@@ -1,6 +1,6 @@
 // The optional Gods module (rules/gods.md): religion, Favor and Lapses.
 // Stored on the crawler as st.faith = { god, favor, lapses, riteDone, offeringDone,
-// lapsedThisFloor, ability, apostate: [god names], leftRank }.
+// lapsedThisFloor, ability, apostate: [god names], met: [god names], slain: [god names], leftRank }.
 import SETTING from './generated/setting.json';
 
 export const GODS = SETTING.gods || [];
@@ -23,12 +23,27 @@ export const LAPSE_STAGES = [
 export const SMITE_DICE = { Initiate: 4, Devotee: 8, Zealot: 12, Chosen: 16 };
 export const SMITE_LASTS = { Initiate: 'until the end of the floor', Devotee: 'until the end of the next floor', Zealot: 'for three floors', Chosen: 'permanently' };
 
-export const faithOf = (st) => ({ god: '', favor: 0, lapses: 0, apostate: [], ...(st.faith || {}) });
+export const faithOf = (st) => ({ god: '', favor: 0, lapses: 0, apostate: [], met: [], slain: [], ...(st.faith || {}) });
+export const isSlain = (f, name) => (f.slain || []).includes(name);
+// The rival of a god, as a god entry ("Embrix" -> Embrix the Unquenched).
+export const rivalOf = (name) => {
+  const g = findGod(name);
+  if (!g) return null;
+  const r = g.rival.toLowerCase().replace(/^the /, '');
+  return GODS.find((x) => x.name.toLowerCase().includes(r)) || null;
+};
+// Gods whose followers are hostile to you: apostate of (left, Forsaken or a Great Crime), or branded by your god's rival.
+export function brandedBy(f) {
+  const out = (f.apostate || []).map((n) => ({ name: n, why: 'apostate' }));
+  const rival = f.god && !isSlain(f, f.god) ? rivalOf(f.god) : null;
+  if (rival && !out.some((x) => x.name === rival.name)) out.push({ name: rival.name, why: 'rival' });
+  return out;
+}
 
 // Which boons work now: by rank, minus the ones Lapses switch off.
 export function boonsFor(f) {
   const g = findGod(f.god);
-  if (!g) return [];
+  if (!g || isSlain(f, f.god)) return []; // a slain god's religion has no effects
   const top = rankIndex(rankOf(f.favor));
   return g.boons.map((b, i) => {
     const earned = i <= top;
@@ -40,7 +55,7 @@ export function boonsFor(f) {
 // One more Lapse (and the Favor it costs).
 export function addLapse(s, why) {
   const f = faithOf(s);
-  if (!f.god) return s;
+  if (!f.god || isSlain(f, f.god)) return s;
   f.lapses = Math.min(5, f.lapses + 1);
   f.favor = Math.max(0, f.favor - LAPSE_STAGES[f.lapses].lose);
   f.lapsedThisFloor = true;
@@ -52,7 +67,7 @@ export function addLapse(s, why) {
 // Long rest: a day without the Rite is a Lapse.
 export function faithLongRest(s) {
   const f = faithOf(s);
-  if (!f.god) return s;
+  if (!f.god || isSlain(f, f.god)) return s;
   if (!f.riteDone) addLapse(s, 'a day without the Rite');
   s.faith = { ...faithOf(s), riteDone: false };
   return s;
@@ -61,7 +76,7 @@ export function faithLongRest(s) {
 // Taking the stairs: no Offering is a Lapse; a clean floor removes one.
 export function faithStairs(s) {
   const f = faithOf(s);
-  if (!f.god) return s;
+  if (!f.god || isSlain(f, f.god)) return s;
   if (!f.offeringDone) addLapse(s, 'took the stairs without the Offering');
   const after = faithOf(s);
   if (!after.lapsedThisFloor && after.lapses > 0) after.lapses -= 1;
@@ -87,4 +102,25 @@ export function joinGod(x, name, how) {
   x.log = [{ text: first ? `Accepted ${shortName(name)}'s Divine Offer (+2 Favor).` : `Took the vow of ${shortName(name)} at a shrine.`, at: Date.now() }, ...(x.log || [])];
   return x;
 }
-export const MEETINGS = ['Avatar', 'Herald', 'Calling', 'Answered prayer'];
+export const MEETINGS = ['In person', 'Herald', 'Calling', 'Answered prayer'];
+export const CRIMES = [
+  ['Desecrated or destroyed its temple or shrine', 'Devotee'],
+  ['Stole from its temple, or destroyed a holy relic', 'Devotee'],
+  ['Killed a worshipper at its shrine, or one who surrendered', 'Devotee'],
+  ['Killed one of its minor deities, or its Chosen', 'Zealot'],
+  ['Broke one of its Taboos on purpose, in its temple', 'Initiate'],
+];
+// A Great Crime: the god brands you its apostate and smites you at the crime's rank.
+export function greatCrime(x, name, crime, rank) {
+  const god = findGod(name);
+  if (x.god === name) { Object.assign(x, { god: '', favor: 0, lapses: 0, riteDone: false, offeringDone: false, greatDeedDone: false, lapsedThisFloor: false }); }
+  x.apostate = [...new Set([...(x.apostate || []), name])];
+  x.log = [{ text: `Great Crime against ${shortName(name)} (${crime}): branded apostate, smitten (${god?.smite?.name || 'smite'}, ${SMITE_DICE[rank]}d10, lasting effect ${SMITE_LASTS[rank]}).`, at: Date.now() }, ...(x.log || [])];
+  return x;
+}
+// A god is slain: its religion ends for everyone (apostates stay apostates).
+export function slayGod(x, name) {
+  x.slain = [...new Set([...(x.slain || []), name])];
+  x.log = [{ text: `${shortName(name)} has been slain. Its Boons, Lapses and smites end.`, at: Date.now() }, ...(x.log || [])];
+  return x;
+}

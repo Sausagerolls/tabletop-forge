@@ -68,3 +68,23 @@ export function faithStairs(s) {
   s.faith = { ...after, offeringDone: false, lapsedThisFloor: false, greatDeedDone: false };
   return s;
 }
+
+// Leave the current god: apostate, smite noted in the log. `extraLapses` for joining its rival.
+export function leaveGod(x, why) {
+  if (!x.god) return x;
+  const god = findGod(x.god);
+  x.apostate = [...new Set([...(x.apostate || []), x.god])];
+  x.leftRank = rankOf(x.favor);
+  x.log = [{ text: `Left ${shortName(x.god)} as ${x.leftRank}${why ? ` (${why})` : ''}: smitten (${god?.smite?.name || 'smite'}, ${SMITE_DICE[x.leftRank]}d10).`, at: Date.now() }, ...(x.log || [])];
+  Object.assign(x, { god: '', favor: 0, lapses: 0, riteDone: false, offeringDone: false, greatDeedDone: false, lapsedThisFloor: false });
+  return x;
+}
+
+// Join a god you have met: favor 2 when accepting the Divine Offer, 0 at a shrine.
+export function joinGod(x, name, how) {
+  const first = how === 'offer';
+  Object.assign(x, { god: name, favor: first ? 2 : 0, lapses: 0, riteDone: false, offeringDone: false, lapsedThisFloor: false, greatDeedDone: false });
+  x.log = [{ text: first ? `Accepted ${shortName(name)}'s Divine Offer (+2 Favor).` : `Took the vow of ${shortName(name)} at a shrine.`, at: Date.now() }, ...(x.log || [])];
+  return x;
+}
+export const MEETINGS = ['Avatar', 'Herald', 'Calling', 'Answered prayer'];

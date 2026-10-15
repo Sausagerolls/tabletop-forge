@@ -3,8 +3,51 @@ import React, { useState } from 'react';
 import { Pick, Stepper } from './bits.jsx';
 import { RulesLink } from './rulesLinks.jsx';
 import {
-  GODS, findGod, shortName, rankOf, RANKS, LAPSE_STAGES, SMITE_DICE, SMITE_LASTS, faithOf, boonsFor, addLapse,
+  GODS, findGod, shortName, rankOf, RANKS, LAPSE_STAGES, SMITE_DICE, SMITE_LASTS, faithOf, boonsFor, addLapse, leaveGod, joinGod, MEETINGS,
 } from './faith.js';
+
+// Gods you have met (rules/gods.md, Meeting a God), and the Divine Offer each meeting brings.
+function GodsMet({ f, setF }) {
+  const [meet, setMeet] = useState('');
+  const [offer, setOffer] = useState('');
+  const met = f.met || [];
+  const g = findGod(offer);
+  const current = findGod(f.god);
+  const isRival = (a, b) => b.name.toLowerCase().includes(a.rival.toLowerCase().replace(/^the /, ''));
+  const rivalOfCurrent = current && g && (isRival(current, g) || isRival(g, current));
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div className="lab">Gods met</div>
+      <div className="chips">{GODS.map((x) => {
+        const isMet = met.includes(x.name);
+        const apo = (f.apostate || []).includes(x.name);
+        return <Pick key={x.name} on={isMet} lock={apo} onClick={() => { if (!isMet && !apo) { setMeet(x.name); setOffer(''); } }}>{shortName(x.name)}{apo ? ' (apostate)' : ''}</Pick>;
+      })}</div>
+      {meet && (
+        <div className="sys" style={{ fontSize: 13 }}>
+          <b>Meet {shortName(meet)}.</b> How did it happen? <span className="muted">Calling: {findGod(meet)?.calling}</span>
+          <div className="row wrap" style={{ marginTop: 6 }}>{MEETINGS.map((m) => (
+            <button key={m} className="btn sm" onClick={() => { setF((x) => {
+              x.met = [...new Set([...(x.met || []), meet])];
+              x.log = [{ text: `Met ${shortName(meet)} (${m}).`, at: Date.now() }, ...(x.log || [])];
+            }); setOffer(meet); setMeet(''); }}>{m}</button>))}
+            <button className="btn sm" onClick={() => setMeet('')}>Cancel</button></div>
+        </div>)}
+      {g && (
+        <div className="warn" style={{ fontSize: 13 }}>
+          <b>DIVINE OFFER.</b> {shortName(g.name)} would like to add you to their followers.
+          <div className="small" style={{ marginTop: 4 }}>"{g.pitch}" · {g.domains}<br /><b>Rite:</b> {g.devotions.Rite}<br /><b>Taboos:</b> {g.taboos}</div>
+          {current && <div className="small" style={{ marginTop: 4 }}>Accepting means leaving {shortName(current.name)}: {current.smite?.name}, {SMITE_DICE[rankOf(f.favor)]}d10.{rivalOfCurrent ? ' They are rivals: you take 2 extra Lapses first, so the smite is as Forsaken.' : ''}</div>}
+          <div className="row wrap" style={{ marginTop: 6 }}>
+            <button className="btn sm primary" onClick={() => { setF((x) => {
+              if (x.god) leaveGod(x, `accepted ${shortName(g.name)}${rivalOfCurrent ? ', a rival' : ''}`);
+              joinGod(x, g.name, 'offer');
+            }); setOffer(''); }}>Accept: "{g.vow.replace(/".*$/, '')}" (+2 Favor)</button>
+            <button className="btn sm" onClick={() => setOffer('')}>Decline</button>
+          </div>
+        </div>)}
+    </div>);
+}
 
 const GAIN = { Rite: 1, Offering: 3, 'Great Deed': 5 };
 const DONE_KEY = { Rite: 'riteDone', Offering: 'offeringDone', 'Great Deed': 'greatDeedDone' };
@@ -22,20 +65,20 @@ export default function FaithCard({ st, update }) {
     return (
       <details className="card skillbox">
         <summary><h2 className="sec" style={{ margin: 0 }}>Faith</h2><span className="chip" style={{ marginLeft: 'auto', marginRight: 8 }}>Optional</span></summary>
-        <p className="small muted">Only if your GM uses the Gods module. Take a god's vow at a shrine, then keep its Rites. <RulesLink page="gods">Gods and worship</RulesLink> · <RulesLink page="pantheon">The Pantheon</RulesLink></p>
+        <p className="small muted">Only if your GM uses the Gods module. You can worship a god once you have met it: accept its Divine Offer when you meet it, or take its vow later at a shrine. <RulesLink page="gods" anchor="Meeting a God">Meeting a god</RulesLink> · <RulesLink page="pantheon">The Pantheon</RulesLink></p>
+        <GodsMet f={f} setF={setF} />
+        <div className="lab" style={{ marginTop: 10 }}>Take a vow at a shrine (gods you have met)</div>
         {f.apostate.length > 0 && <p className="small"><b>Apostate of:</b> {f.apostate.map(shortName).join(', ')}. Their worshippers are hostile to you.</p>}
-        <div className="chips">{GODS.map((g) => (
-          <Pick key={g.name} on={pick === g.name} lock={f.apostate.includes(g.name)} onClick={() => !f.apostate.includes(g.name) && setPick(g.name)}>{shortName(g.name)}</Pick>))}</div>
+        <div className="chips">{GODS.filter((g) => (f.met || []).includes(g.name) && !f.apostate.includes(g.name)).map((g) => (
+          <Pick key={g.name} on={pick === g.name} onClick={() => setPick(g.name)}>{shortName(g.name)}</Pick>))}</div>
+        {!(f.met || []).some((n) => !f.apostate.includes(n)) && <p className="small muted">No gods met yet.</p>}
         {chosen && (
           <div style={{ marginTop: 8 }}>
             <p className="small"><b>{chosen.name}</b> · {chosen.domains} · rival: {chosen.rival}</p>
             <p className="small muted">"{chosen.pitch}"</p>
             <p className="small"><b>Rite:</b> {chosen.devotions.Rite}<br /><b>Taboos:</b> {chosen.taboos}</p>
             <div className="chips">{['WIS', 'CHA'].map((a) => <Pick key={a} on={(f.ability || 'WIS') === a} onClick={() => setF((x) => { x.ability = a; })}>{a === 'WIS' ? 'Wisdom' : 'Charisma'} for spell boons</Pick>)}</div>
-            <button className="btn primary block" onClick={() => setF((x) => {
-              Object.assign(x, { god: chosen.name, favor: 0, lapses: 0, riteDone: false, offeringDone: false, lapsedThisFloor: false, greatDeedDone: false,
-                log: [{ text: `Took the vow of ${shortName(chosen.name)}.`, at: Date.now() }] });
-            })}>Take the vow: "{chosen.vow}"</button>
+            <button className="btn primary block" onClick={() => setF((x) => { joinGod(x, chosen.name, 'shrine'); })}>Take the vow at a shrine: "{chosen.vow.replace(/".*$/, '')}"</button>
           </div>)}
       </details>);
   }
@@ -98,17 +141,14 @@ export default function FaithCard({ st, update }) {
         <details className="feat"><summary><span>Gag table (d6)</span></summary>
           <ol className="small">{god.gags.map((g) => <li key={g}>{g}</li>)}</ol></details>)}
 
+      <details className="feat"><summary><span>Gods met and Divine Offers</span></summary><GodsMet f={f} setF={setF} /></details>
+
       <h3 className="it">Leaving</h3>
       <p className="small"><b>Apostate's Smite: {god.smite?.name}.</b> {SMITE_DICE[rank]}d10 at your rank, no save (it can't drop you below 1 hit point unless you are Forsaken). {god.smite?.text} The lasting effect lasts {SMITE_LASTS[rank]}.</p>
       {!leaving
         ? <button className="btn sm" onClick={() => setLeaving(true)}>Leave {shortName(god.name)}…</button>
         : <div className="row wrap">
-          <button className="btn sm primary" onClick={() => { setLeaving(false); setF((x) => {
-            x.apostate = [...new Set([...(x.apostate || []), x.god])];
-            x.leftRank = rankOf(x.favor);
-            x.log = [{ text: `Left ${shortName(x.god)} as ${x.leftRank}: smitten (${god.smite?.name}).`, at: Date.now() }, ...(x.log || [])];
-            Object.assign(x, { god: '', favor: 0, lapses: 0, riteDone: false, offeringDone: false, greatDeedDone: false, lapsedThisFloor: false });
-          }); }}>Renounce and take the smite</button>
+          <button className="btn sm primary" onClick={() => { setLeaving(false); setF((x) => { leaveGod(x, 'renounced'); }); }}>Renounce and take the smite</button>
           <button className="btn sm" onClick={() => setLeaving(false)}>Stay</button></div>}
 
       {(f.log || []).length > 0 && (

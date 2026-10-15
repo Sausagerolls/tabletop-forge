@@ -7,6 +7,7 @@ import { api } from './api.js';
 import { spellCapacityFor, learnableSpellsFor } from '@ttf/data/classes.js';
 import { subclassPreparedSpells } from '@ttf/data/subclasses.js';
 import { speciesTraits } from './ttf.js';
+import { faithOf, boonsFor, shortName } from './faith.js';
 
 export const WD_SPELLS = SETTING.spells;
 const BY_NAME = new Map(WD_SPELLS.map((sp) => [sp.name.toLowerCase(), sp]));
@@ -162,6 +163,13 @@ export function grantedSpells(st, d) {
       const always = desc.match(/always have the ([A-Z][\w' /-]+?) spells? prepared/);
       if (always) always[1].split(/ and |, /).forEach((n) => add(n, 1, true));
     }
+  }
+  // Gods module: boons that teach a spell ("You learn Patch Job and Not Today.").
+  const f = faithOf(st);
+  for (const b of boonsFor(f).filter((x) => x.earned)) {
+    const m = b.text.match(/You learn ([^.]+?)(?:\.|, and you| In )/);
+    if (!m) continue;
+    m[1].split(/ and |, /).forEach((n) => push(n.trim(), { source: 'Feature', sourceName: shortName(f.god), ability: f.ability || 'WIS', free: true }));
   }
   return out;
 }

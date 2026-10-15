@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { sign } from '../rules.js';
+import { faithLongRest } from '../faith.js';
 import { classResources } from '../ttf.js';
 import ClassFeatures from './ClassFeatures.jsx';
 import WildShape from './WildShape.jsx';
@@ -48,6 +49,7 @@ export default function MainTab({ st, d, update, conn, charId }) {
       const take = Math.min(back, used[die] || 0); used[die] = (used[die] || 0) - take; back -= take;
     }
     s.hitDiceUsed = used;
+    faithLongRest(s); // a day without your god's Rite is a Lapse (Gods module)
     return s;
   });
 

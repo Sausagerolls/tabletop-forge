@@ -8,6 +8,7 @@ import FeatEditor from '../FeatEditor.jsx';
 import { featChoices, featDone, newFeat, featBase } from '../featRules.js';
 import { classChoicesFor, choiceDone, speciesChoices, speciesChoiceDone } from '../choices.js';
 import { ClassChoiceFields, SpeciesChoiceFields } from '../ChoiceFields.jsx';
+import FaithCard from '../FaithCard.jsx';
 
 function Feat({ name, text, tag, html, rules }) {
   return (
@@ -41,6 +42,8 @@ export default function FeaturesTab({ st, d, update, conn }) {
       <div className="card"><h2 className="sec">Survivor features</h2>
         <p className="small muted">Kept for good, even after you choose a class.</p>
         {survivorFeatures(d.level, st).map((f) => <Feat key={f.name} name={f.name} text={f.text} tag={`Lv ${f.lv}`} rules={['crawler', f.name.includes(':') ? f.name.split(':')[1].trim() : f.name]} />)}</div>
+
+      <FaithCard st={st} update={update} />
 
       {st.speciesId && (
         <div className="card"><h2 className="sec">{st.speciesName || 'Species'} traits</h2>

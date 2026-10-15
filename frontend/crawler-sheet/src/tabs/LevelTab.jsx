@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CLASSES, HIT_DIE, DIE_FIXED } from '../rules.js';
+import { faithStairs } from '../faith.js';
 import { SPECIES, findSpecies, subclassGroups, findFeat } from '../ttf.js';
 import { classChoicesFor, choiceDone, speciesChoices, speciesChoiceDone } from '../choices.js';
 import { ClassChoiceFields, SpeciesChoiceFields } from '../ChoiceFields.jsx';
@@ -18,7 +19,7 @@ export default function LevelTab({ st, d, update }) {
     <>
       <div className="card">
         <div className="row between"><h2 className="sec" style={{ margin: 0 }}>Floor</h2>
-          <Stepper value={st.floor} min={1} max={18} onChange={(v) => update({ floor: v })} /></div>
+          <Stepper value={st.floor} min={1} max={18} onChange={(v) => update((s) => { if (v > s.floor) faithStairs(s); s.floor = v; return s; })} /></div>
         <p className="small muted">Set this when you take the stairs. Class and species selection opens on Floor 3. <RulesLink page="class-selection">Class selection</RulesLink> · <RulesLink page="race-selection">Race selection</RulesLink> · <RulesLink page="leveling">Leveling</RulesLink></p>
       </div>
 

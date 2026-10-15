@@ -12521,6 +12521,360 @@
    "rank": 5
   }
  },
+ "gods": [
+  {
+   "name": "Mother Moldra, the Rot Queen",
+   "devotions": {
+    "Rite": "Eat something spoiled, raw or rotten (a monster part counts). Constitution save DC 10, or you are Poisoned for 1 hour.",
+    "Offering": "Leave a corpse of CR at least equal to the floor number to rot in soil or at a shrine, with a mushroom planted on it.",
+    "Great Deed": "Kill a floor boss and leave its body to rot, untouched and unlooted, for 1 hour."
+   },
+   "boons": [
+    {
+     "rank": "Initiate",
+     "name": "Iron Gut",
+     "text": "You are immune to disease, and you have advantage on saving throws against the Poisoned condition."
+    },
+    {
+     "rank": "Devotee",
+     "name": "Fruiting Body",
+     "text": "Once per long rest, when you drop to 0 hit points, you drop to 1 instead, and soft fungus sprouts over your wounds: you gain temporary hit points equal to your level."
+    },
+    {
+     "rank": "Zealot",
+     "name": "Mother's Gifts",
+     "text": "You learn Patch Job and Not Today. In soil or rot, Patch Job heals its maximum."
+    },
+    {
+     "rank": "Chosen",
+     "name": "Rebirth",
+     "text": "Once per floor, when you die, your body is wrapped in a fungal cocoon. One minute later you burst out with half your hit points and 1 Exhaustion level, unless the cocoon (AC 10, 30 hit points) is destroyed first."
+    }
+   ],
+   "taboos": "Burning a corpse. Preserving food or a body by magic (Freshness Seal and the like). Killing a fungus creature that didn't attack you first.",
+   "domains": "Death, Life, Nature",
+   "rival": "Embrix",
+   "symbol": "a mushroom growing out of a skull",
+   "pitch": "Everything rots. Everything grows back. Mother is very patient. Mother is also very hungry.",
+   "vow": "Everything rots. Everything grows back. I will feed the Mother.",
+   "displeasure": "Food rots in your hands. Rations, potions and food you open have a 50% chance to have gone off: a spoiled potion heals half, a spoiled meal gives no benefit.",
+   "wrath": "Mold creeps over you. Your hit point maximum drops by twice your level, and Heal Self can't heal you.",
+   "atonement": "Eat a full meal of rot in front of a shrine: Constitution save DC 15, or you are Poisoned until your next long rest.",
+   "smite": {
+    "name": "Composted",
+    "text": "Necrotic damage, as the flesh of your face blooms with mushrooms. Lasting effect: you can't regain hit points from spells or potions, and you have disadvantage on Charisma checks. Fungus creatures treat you as food."
+   }
+  },
+  {
+   "name": "Embrix the Unquenched",
+   "devotions": {
+    "Rite": "Light a fire (a real one: a torch, a campfire, a burning goblin) and let it burn out on its own.",
+    "Offering": "Burn something valuable at a shrine: an item worth at least 50 gp \u00d7 the floor number.",
+    "Great Deed": "Kill a floor boss with fire damage."
+   },
+   "boons": [
+    {
+     "rank": "Initiate",
+     "name": "Torchbearer",
+     "text": "You learn Torch. You can't be Blinded by bright light or by fire."
+    },
+    {
+     "rank": "Devotee",
+     "name": "Hotter",
+     "text": "Your fire damage ignores resistance to fire (not immunity)."
+    },
+    {
+     "rank": "Zealot",
+     "name": "Glory Burn",
+     "text": "You learn Kaboom."
+    },
+    {
+     "rank": "Chosen",
+     "name": "Halo of Flame",
+     "text": "You are immune to fire. Once per turn, when you score a critical hit or drop a creature to 0 hit points, fire bursts from you: each creature you choose within 10 feet takes 3d6 fire damage."
+    }
+   ],
+   "taboos": "Putting out a fire on purpose (including by magic). Hiding in darkness when you could carry light. Running from a fight while it is on camera.",
+   "domains": "Light, War",
+   "rival": "Moldra",
+   "symbol": "a torch that is never put out",
+   "pitch": "Let it burn bright. Let it burn on camera. Ratings are a kind of heat, too.",
+   "vow": "I will burn bright. I will never let the fire die.",
+   "displeasure": "Fires won't light for you. Your fire spells fizzle (the mana is spent) and torches you hold go out.",
+   "wrath": "You are always smoldering. You have vulnerability to fire damage, and you shed dim light in a 10-foot radius you can't put out.",
+   "atonement": "Walk through a fire at a shrine (you take 4d10 fire damage) without stopping, screaming or using magic.",
+   "smite": {
+    "name": "Immolation",
+    "text": "Fire damage, as a pillar of flame comes down from the ceiling. Lasting effect: you can't benefit from resistance or immunity to fire, and you shed bright light in a 10-foot radius: you can't hide in darkness."
+   }
+  },
+  {
+   "name": "Saint Payola, Patron of Sponsors",
+   "devotions": {
+    "Rite": "Say a sponsor's slogan out loud, on camera, with feeling.",
+    "Offering": "Tithe at a shrine: 10% of the gold you gained on this floor (at least 10 gp).",
+    "Great Deed": "Close a deal that should be impossible: sell something to a boss, buy your way past a fight, or get a monster to pay you."
+   },
+   "boons": [
+    {
+     "rank": "Initiate",
+     "name": "Member Pricing",
+     "text": "Safe room shops sell to you at 10% off."
+    },
+    {
+     "rank": "Devotee",
+     "name": "Lucky Pull",
+     "text": "Once per floor, when you roll on a loot box table, you can roll the d100 again and choose either result."
+    },
+    {
+     "rank": "Zealot",
+     "name": "Fortune",
+     "text": "You have 3 Luck Points (as the Lucky feat), regained on a long rest."
+    },
+    {
+     "rank": "Chosen",
+     "name": "Sponsored",
+     "text": "Once per floor, choose any item a safe room shop on this floor sells. It appears in your inventory. Pay its price back before you take the stairs, or gain 2 Lapses."
+    }
+   ],
+   "taboos": "Giving something away for free to anyone outside your party. Breaking a deal. Stealing from a shop.",
+   "domains": "Knowledge, Trickery",
+   "rival": "Hearthmother Tuul",
+   "symbol": "a gold coin with a logo on both sides",
+   "pitch": "Everything has a price. Prayer is just a subscription. Have you considered the premium tier?",
+   "vow": "Everything has a price. I will always pay mine.",
+   "displeasure": "Bad credit. Shops charge you double and won't buy anything from you.",
+   "wrath": "Late fees. Each time you finish a long rest, you lose 10% of your gold.",
+   "atonement": "Pay a double tithe: 20% of all the gold you are carrying.",
+   "smite": {
+    "name": "Repossession",
+    "text": "Force damage, as an invisible collector shakes you down. Lasting effect: your most valuable magic item (the GM decides) is repossessed and vanishes, shops refuse to serve you, and you subtract 10 from every loot box roll."
+   }
+  },
+  {
+   "name": "Thrumm, the Thunder That Remembers",
+   "devotions": {
+    "Rite": "Add a name to your Grudge List (a creature that wronged you or your party) or read the whole list aloud.",
+    "Offering": "Cross a name off: kill a creature on your Grudge List.",
+    "Great Deed": "Avenge an ally's death on the floor it happened, by killing the creature that killed them."
+   },
+   "boons": [
+    {
+     "rank": "Initiate",
+     "name": "Never Forget",
+     "text": "You have advantage on Wisdom (Perception and Survival) checks to find or track creatures on your Grudge List."
+    },
+    {
+     "rank": "Devotee",
+     "name": "Rolling Thunder",
+     "text": "Once per turn, when you hit a creature on your Grudge List, it takes an extra 1d6 thunder damage."
+    },
+    {
+     "rank": "Zealot",
+     "name": "Storm Called",
+     "text": "You learn Storm Chaser."
+    },
+    {
+     "rank": "Chosen",
+     "name": "The Thunder Remembers",
+     "text": "You can't be surprised. When a creature on your Grudge List damages you, you can use your reaction to strike it with lightning: 4d10 lightning damage, no save."
+    }
+   ],
+   "taboos": "Forgiving a grudge out loud. Retreating from a creature on your Grudge List while it can see you. Working with a worshipper of the Brass Warden for a whole floor.",
+   "domains": "Tempest, War",
+   "rival": "the Brass Warden",
+   "symbol": "a lightning bolt carved over a list of names",
+   "pitch": "Thrumm forgets nothing. Thrumm forgives nothing. Thrumm is also very, very loud.",
+   "vow": "I forget nothing. I forgive nothing. I will be the thunder.",
+   "displeasure": "Thunder follows you everywhere. You have disadvantage on Dexterity (Stealth) checks, and so does your party within 30 feet of you.",
+   "wrath": "The storm hunts you. Each time you finish a long rest outside a safe room, lightning strikes you for 4d10 lightning damage.",
+   "atonement": "Hunt down the oldest living name on your Grudge List and kill it.",
+   "smite": {
+    "name": "The Stroke",
+    "text": "Lightning damage, from a bolt that comes through any ceiling. Lasting effect: you have vulnerability to lightning damage, and your name is on every Grudge List: Thrumm's worshippers and minor deities hunt you on sight."
+   }
+  },
+  {
+   "name": "Nyx-Ra, the Quiet Dark",
+   "devotions": {
+    "Rite": "Before you sleep, whisper a secret no one else knows into the dark.",
+    "Offering": "Give a shrine a secret of this floor that you found: a hidden area, a boss's weakness, a hidden stash. Tell no one else.",
+    "Great Deed": "Put to rest a creature that should not be awake: destroy an undead boss, or a creature that came back from the dead."
+   },
+   "boons": [
+    {
+     "rank": "Initiate",
+     "name": "Night Eyes",
+     "text": "You gain Darkvision out to 60 feet, or your Darkvision increases by 60 feet."
+    },
+    {
+     "rank": "Devotee",
+     "name": "The Dark Is Mine",
+     "text": "You learn Lights Out, and you can see through any darkness you create."
+    },
+    {
+     "rank": "Zealot",
+     "name": "Hush",
+     "text": "Once per long rest, as a bonus action while you are in dim light or darkness, you become Invisible for 1 minute (as Stealth Mode)."
+    },
+    {
+     "rank": "Chosen",
+     "name": "The Last Word",
+     "text": "You don't need to sleep. When a creature you can see dies, you can use your reaction to ask it one question; it answers truthfully before its soul goes quiet."
+    }
+   ],
+   "taboos": "Revealing a secret someone told you in confidence. Casting a spell that brings the dead back to life (being brought back yourself doesn't count). Saying the name of a dead crawler out loud.",
+   "domains": "Grave, Twilight",
+   "rival": "Wobblegob",
+   "symbol": "a closed eye, embroidered in black on black",
+   "pitch": "Shh.",
+   "vow": "(whispered) \"What I know, I keep. What ends, stays ended.",
+   "displeasure": "Insomnia. Long rests don't give back any of your spent Hit Dice.",
+   "wrath": "You talk in your sleep. After each long rest, the GM tells the table one of your character's secrets, and you have disadvantage on Ambush Checks (monsters hear you mumbling).",
+   "atonement": "Spend a whole long rest at a shrine in total darkness and silence. Speaking, even once, ruins it.",
+   "smite": {
+    "name": "The Forgetting",
+    "text": "Psychic damage, as part of your mind goes quiet. Lasting effect: you lose access to one random spell in your tome (it reappears when the effect ends), and your highest Crawler Skill counts as 5 Skill Levels lower."
+   }
+  },
+  {
+   "name": "The Brass Warden",
+   "devotions": {
+    "Rite": "Make a promise out loud to someone (and then keep it).",
+    "Offering": "Build or repair something at a shrine: a door, a barricade, a weapon, a wall. Duct Tape or crafting counts.",
+    "Great Deed": "Guard a person or a place through a boss fight: they survive, and you never leave their side."
+   },
+   "boons": [
+    {
+     "rank": "Initiate",
+     "name": "Shoulder to Shoulder",
+     "text": "You have +1 AC while an ally is within 5 feet of you."
+    },
+    {
+     "rank": "Devotee",
+     "name": "The Shell",
+     "text": "You learn Protective Shell."
+    },
+    {
+     "rank": "Zealot",
+     "name": "Oathbound",
+     "text": "Once per long rest, when an ally within 30 feet of you is hit by an attack, you can use your reaction to take the hit instead. You have resistance to its damage."
+    },
+    {
+     "rank": "Chosen",
+     "name": "The Wall",
+     "text": "You can't be moved or knocked Prone against your will. Once per floor, you can cast Stonewall without mana or concentration (it lasts 10 minutes, then crumbles)."
+    }
+   ],
+   "taboos": "Breaking a promise. Breaking a door, wall or lock you could have opened another way. Attacking a creature that surrendered.",
+   "domains": "Forge, Order, Protection",
+   "rival": "Thrumm",
+   "symbol": "a brass key over a closed door",
+   "pitch": "The law is a wall. The Warden is the wall. Please stand behind the wall.",
+   "vow": "I will hold the line. I will keep my word. The law is the wall.",
+   "displeasure": "Your armor feels like lead. You have \u22121 AC and \u221210 feet of speed.",
+   "wrath": "Every door is against you. Locks you try to open have DC +5, and magic can't open them for you.",
+   "atonement": "Keep watch alone through a whole night at a shrine (no rest: you gain 1 Exhaustion level).",
+   "smite": {
+    "name": "Judgement",
+    "text": "Radiant damage, as a brass gavel the size of a car comes down. Lasting effect: glowing brass shackles bind your wrists and ankles: your speed is halved and you can't take the Dash action, and the Warden's bailiffs are sent after you (see god-stat-blocks)."
+   }
+  },
+  {
+   "name": "Wobblegob, the Laughing God",
+   "devotions": {
+    "Rite": "Play a prank on an ally (harmless, mostly), or tell a joke that makes someone laugh.",
+    "Offering": "Do something ridiculous in a boss room before the fight starts. The GM judges how ridiculous.",
+    "Great Deed": "Win a fight using only something absurd: a rubber chicken, a pie, a musical number."
+   },
+   "boons": [
+    {
+     "rank": "Initiate",
+     "name": "Second Take",
+     "text": "Once per long rest, reroll any d20. You must use the new roll."
+    },
+    {
+     "rank": "Devotee",
+     "name": "Canned Laughter",
+     "text": "You learn Laugh Track."
+    },
+    {
+     "rank": "Zealot",
+     "name": "Wild Card",
+     "text": "When you roll a 1 on a d20, roll on the Gag table below. The gag happens to the creature you were targeting, or near you if there wasn't one."
+    },
+    {
+     "rank": "Chosen",
+     "name": "Punchline",
+     "text": "Once per floor, when a creature scores a critical hit against you, it misses instead and takes the damage itself."
+    }
+   ],
+   "taboos": "Refusing a dare. Attacking someone because they pranked you. Explaining a joke.",
+   "domains": "Tempest, Trickery",
+   "rival": "Nyx-Ra",
+   "symbol": "a red rubber nose",
+   "pitch": "Honk honk.",
+   "vow": "Honk honk.\" (That's the whole vow. Wobblegob made the System accept it.)",
+   "displeasure": "Wobblegob pranks you. Once a day, at the worst possible moment, the GM rolls on the Gag table and it happens to you.",
+   "wrath": "Comedy timing. Whenever you roll a 20 on a d20, it counts as a 1.",
+   "atonement": "Let your whole party prank you, one after another, and laugh at every one.",
+   "smite": {
+    "name": "The Punchline",
+    "text": "Bludgeoning damage, from a mallet the size of a building. Lasting effect: everything you say comes out as clown honks. You can't cast spells with verbal components, and you have disadvantage on Charisma checks that need words."
+   },
+   "gags": [
+    "A sneeze of confetti: creatures within 5 feet are Blinded until the end of their next turn.",
+    "A cream pie hits the target in the face: it is Blinded until the end of its next turn.",
+    "Everyone within 30 feet hears the funniest thing ever: Wisdom save DC 15 or fall Prone laughing.",
+    "The target's weapon turns into a rubber chicken for 1 minute (it deals 1 damage).",
+    "The target teleports 30 feet in a random direction.",
+    "Balloons! You regain 2d8 hit points."
+   ]
+  },
+  {
+   "name": "Hearthmother Tuul",
+   "devotions": {
+    "Rite": "Share a meal with at least one other creature.",
+    "Offering": "Give away something useful, for free, to someone who needs it: worth at least 25 gp \u00d7 the floor number.",
+    "Great Deed": "Save a crawler outside your party from death, at real risk to yourself."
+   },
+   "boons": [
+    {
+     "rank": "Initiate",
+     "name": "Comfort Food",
+     "text": "Food and potions you give to others heal 2 extra hit points, and a meal you share counts as a Cooking meal (see crawler-skills)."
+    },
+    {
+     "rank": "Devotee",
+     "name": "Hearth Rest",
+     "text": "Once per floor, a short rest you lead outside a safe room needs no Ambush Check."
+    },
+    {
+     "rank": "Zealot",
+     "name": "Everyone In",
+     "text": "You learn Group Hug."
+    },
+    {
+     "rank": "Chosen",
+     "name": "Come Home",
+     "text": "Once per floor, as an action, you and up to eight willing creatures you can see teleport to the last safe room you rested in (as Hearthstone)."
+    }
+   ],
+   "taboos": "Letting an ally die alone (with no one at their side). Turning someone away from a safe room. Selling food or healing for profit.",
+   "domains": "Life, Peace",
+   "rival": "Saint Payola",
+   "symbol": "a ladle over a hearth",
+   "pitch": "Sit down. Eat something. You look terrible, dear.",
+   "vow": "Nobody eats alone. Nobody dies alone. Come home.",
+   "displeasure": "Nothing tastes right. Meals give you no benefit, and healing from other creatures heals you only half.",
+   "wrath": "So lonely. You can't benefit from the Help action, or from healing spells cast by other creatures.",
+   "atonement": "Cook a feast in a safe room for at least five creatures you don't know.",
+   "smite": {
+    "name": "Empty Table",
+    "text": "Cold damage, as all the warmth goes out of you. Lasting effect: you can't regain hit points from potions, food or other creatures' spells. Only Heal Self, Hit Dice and long rests heal you."
+   }
+  }
+ ],
  "prestige": {
   "Barbarian": {
    "scaling": "Rage damage <strong>+1 per 2 prestige levels</strong>. One extra Rage per long rest every 4 prestige levels.",

@@ -118,6 +118,7 @@ export function classSpellAllowance(st, d) {
 // ── Granted spells ────────────────────────────────────────────────────────
 // Spells a class feature names (2024 Player's Handbook), by class level.
 const CLASS_GRANTS = {
+  Bard: [[20, 'Power Word Heal'], [20, 'Power Word Kill']],
   Druid: [[1, 'Speak with Animals']],
   Paladin: [[2, 'Divine Smite'], [5, 'Find Steed']],
   Ranger: [[1, "Hunter's Mark"]],

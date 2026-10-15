@@ -90,9 +90,17 @@ export default function SpellsTab({ st, d, update, conn }) {
     const rank = how === 'pact' && sp.wd ? pactRank(sp) : rankOf(sp);
     const base = firstDamage(sp, rank);
     const up = base ? upcastDice(sp, lvl) : null;
-    const dmg = base && up ? { ...base, damage: `${base.damage}+${up.n}d${up.sides}` } : base;
+    let dmg = base && up ? { ...base, damage: `${base.damage}+${up.n}d${up.sides}` } : base;
+    // Agonizing Blast (Eldritch Invocation): + Charisma modifier to each hit's damage.
+    if (dmg && sp.agonizing && d.m.CHA) dmg = { ...dmg, damage: `${dmg.damage}${d.m.CHA > 0 ? '+' : ''}${d.m.CHA}` };
     const label = `${sp.name}${sp.wd ? (sp.level === 0 || rank > 1 ? ` (Rank ${ROMAN[rank]})` : '') : sp.level ? ` (${ORD[lvl]})` : ''}`;
-    if (isAttack(sp)) roll.test(`${label} attack`, d.atkFor(ab), { damage: dmg ? { label: `${sp.name} damage`, expr: dmg.damage, type: dmg.damage_type } : null });
+    // Pact Beam fires one beam per rank (up to four): each is its own attack and damage roll.
+    const beams = sp.wd && sp.name === 'Pact Beam' ? Math.min(4, rank) : 1;
+    if (isAttack(sp)) {
+      for (let n = 1; n <= beams; n += 1) {
+        roll.test(`${label}${beams > 1 ? ` beam ${n} of ${beams}` : ''} attack`, d.atkFor(ab), { damage: dmg ? { label: `${sp.name} damage`, expr: dmg.damage, type: dmg.damage_type } : null });
+      }
+    }
     else if (dmg) roll.damage(`${label}${isSave(sp) ? `, DC ${d.dcFor(ab)}` : ''}`, dmg.damage, { type: dmg.damage_type });
   }
   const startCast = (sp, how) => {
@@ -182,6 +190,8 @@ export default function SpellsTab({ st, d, update, conn }) {
                 {sp.level > 0 && <span className="chip">{cost(sp, levels[0])}{levels.length > 1 ? '+' : ''} mana</span>}
                 <button className="roll" onClick={() => startCast(sp, 'mana')}>Cast</button>
               </div>
+              {d.classes.Warlock && sp.level === 0 && firstDamage(sp, rank) && (
+                <label className="small" style={{ display: 'block', marginTop: 4 }}><input type="checkbox" checked={!!sp.agonizing} onChange={(e) => setSpell(sp, (x) => { x.agonizing = e.target.checked; })} /> Agonizing Blast (+{d.m.CHA} Charisma to damage{sp.name === 'Pact Beam' ? ', each beam' : ''})</label>)}
               {sp.free && <button className="btn sm teal" style={{ marginTop: 6 }} disabled={sp.freeUsed} onClick={() => startCast(sp, 'free')}>{sp.freeUsed ? 'Free cast used (long rest)' : 'Free cast (once per long rest)'}</button>}
               {open === key && (
                 <div style={{ marginTop: 8 }}>

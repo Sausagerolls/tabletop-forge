@@ -7051,14 +7051,14 @@
     "Two beams. Make a separate attack for each. They can hit the same target or different ones.",
     "Three beams.",
     "Four beams.",
-    "Four beams. The first beam that hits on each turn pushes the target 10 feet away from you."
+    "Four beams, 1d12 force damage each."
    ],
-   "note": "",
+   "note": "Terms of your pact have been updated. Please read them. Nobody ever reads them.",
    "wd": true,
    "casting_time": "1 action",
    "range_area": "120 feet",
    "duration": "Instantaneous",
-   "description": "Your patron lends you a beam of raw, crackling contract energy. Make a ranged spell attack. On a hit, the target takes 1d10 force damage.",
+   "description": "Your patron lends you a beam of raw, crackling contract energy. Make a ranged spell attack. On a hit, the target takes 1d10 force damage.\n\nPact Beam counts as eldritch blast for Eldritch Invocations and for any other feature that names eldritch blast. Each beam is its own attack: invocations such as Agonizing Blast and Repelling Blast work on every beam that hits (see Eldritch Invocations in spells-replacements).",
    "comp_v": true,
    "comp_s": true,
    "comp_m": false,
@@ -12500,21 +12500,17 @@
    "name": "Body Slam",
    "rank": 1
   },
-  "armor of shadows": {
-   "name": "Wisp Armor",
-   "rank": 1
-  },
-  "mask of many faces": {
-   "name": "Skin Suit",
-   "rank": 1
-  },
-  "silent image": {
-   "name": "Deepfake",
-   "rank": 1
-  },
   "speak with plants": {
    "name": "Pet Translator",
    "rank": 3
+  },
+  "silent image": {
+   "name": "Cardboard Cutout",
+   "rank": 3
+  },
+  "levitate": {
+   "name": "Soft Landing",
+   "rank": 5
   },
   "animal shapes": {
    "name": "Creature Feature",

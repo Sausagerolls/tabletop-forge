@@ -80,8 +80,8 @@ export default function FaithCard({ st, update }) {
   if (!god) {
     const chosen = findGod(pick);
     return (
-      <details className="card skillbox">
-        <summary><h2 className="sec" style={{ margin: 0 }}>Faith</h2><span className="chip" style={{ marginLeft: 'auto', marginRight: 8 }}>Optional</span></summary>
+      <div className="card">
+        <div className="row between"><h2 className="sec" style={{ margin: 0 }}>Faith</h2><span className="chip">Optional</span></div>
         <p className="small muted">Only if your GM uses the Gods module. You can worship a god once you have met it: accept its Divine Offer when you meet it, or take its vow later at a shrine. <RulesLink page="gods" anchor="Meeting a God">Meeting a god</RulesLink> · <RulesLink page="pantheon">The Pantheon</RulesLink></p>
         <GodsMet f={f} setF={setF} />
         <div className="lab" style={{ marginTop: 10 }}>Take a vow at a shrine (gods you have met)</div>
@@ -97,7 +97,7 @@ export default function FaithCard({ st, update }) {
             <div className="chips">{['WIS', 'CHA'].map((a) => <Pick key={a} on={(f.ability || 'WIS') === a} onClick={() => setF((x) => { x.ability = a; })}>{a === 'WIS' ? 'Wisdom' : 'Charisma'} for spell boons</Pick>)}</div>
             <button className="btn primary block" onClick={() => setF((x) => { joinGod(x, chosen.name, 'shrine'); })}>Take the vow at a shrine: "{chosen.vow.replace(/".*$/, '')}"</button>
           </div>)}
-      </details>);
+      </div>);
   }
 
   if (isSlain(f, god.name)) {

@@ -7,13 +7,15 @@ import SpellsTab from './tabs/SpellsTab.jsx';
 import GearTab from './tabs/GearTab.jsx';
 import FeaturesTab from './tabs/FeaturesTab.jsx';
 import LevelTab from './tabs/LevelTab.jsx';
+import FaithCard from './FaithCard.jsx';
+import { faithOf, isSlain, shortName } from './faith.js';
 import { featChoices, featDone } from './featRules.js';
 import { classSpellAllowance, grantedSpells, grantDone } from './spells.js';
 import { rulesHref } from './rulesLinks.jsx';
 
 const TABS = [
   ['main', 'Main', '♥'], ['combat', 'Combat', '⚔'], ['skills', 'Skills', '★'], ['spells', 'Spells', '✦'],
-  ['gear', 'Gear', '⛁'], ['features', 'Features', '❖'], ['level', 'Level', '▲'],
+  ['gear', 'Gear', '⛁'], ['features', 'Features', '❖'], ['faith', 'Faith', '☥'], ['level', 'Level', '▲'],
 ];
 
 export default function Sheet({ st, update, conn, status, error, onBack, charId }) {
@@ -26,6 +28,8 @@ export default function Sheet({ st, update, conn, status, error, onBack, charId 
   const spellTodo = allowance.filter((a) => a.cantripsKnown < a.cantrips || a.spellsKnown < a.spells).map((a) => a.cls);
   const grantTodo = grantedSpells(st, d).filter((g) => g.spell && !grantDone(st, g)).length;
   const rankTodo = allowance.reduce((t, a) => t + Math.max(0, a.rankUps - a.rankUpsSpent), 0);
+  const fth = faithOf(st);
+  const riteTodo = fth.god && !isSlain(fth, fth.god) && !fth.riteDone ? shortName(fth.god) : '';
   const go = (t) => { setTab(t); window.scrollTo(0, 0); };
   return (
     <div>
@@ -42,13 +46,14 @@ export default function Sheet({ st, update, conn, status, error, onBack, charId 
       </div>
       {status === 'error' && <div className="err" style={{ margin: 10 }}>Not saved to Tabletop Forge: {error}</div>}
       <div className="page">
-        {tab === 'main' && (st.statPointsUnspent > 0 || st.skillPicksUnspent > 0 || featTodo.length > 0 || spellTodo.length > 0 || grantTodo > 0 || rankTodo > 0) && (
+        {tab === 'main' && (st.statPointsUnspent > 0 || st.skillPicksUnspent > 0 || featTodo.length > 0 || spellTodo.length > 0 || grantTodo > 0 || rankTodo > 0 || riteTodo) && (
           <div className="warn">
             {st.statPointsUnspent > 0 && <div onClick={() => go('skills')}>You have {st.statPointsUnspent} unspent Stat Point{st.statPointsUnspent > 1 ? 's' : ''} (Skills tab, tap +1 on an ability).</div>}
             {st.skillPicksUnspent > 0 && <div onClick={() => go('skills')}>You have {st.skillPicksUnspent} unspent Skill Pick{st.skillPicksUnspent > 1 ? 's' : ''} (Skills tab).</div>}
             {featTodo.length > 0 && <div onClick={() => go('features')}>Feat choices to make: {featTodo.join(', ')} (Features tab).</div>}
             {spellTodo.length > 0 && <div onClick={() => go('spells')}>{spellTodo.join(', ')} spells to learn (Spells tab).</div>}
             {grantTodo > 0 && <div onClick={() => go('spells')}>{grantTodo} granted spell{grantTodo > 1 ? 's' : ''} to add (Spells tab).</div>}
+            {riteTodo && <div onClick={() => go('faith')}>{riteTodo}'s Rite not done today: a long rest without it is a Lapse (Faith tab).</div>}
             {rankTodo > 0 && <div onClick={() => go('spells')}>{rankTodo} spell Rank Up{rankTodo > 1 ? 's' : ''} to spend (Spells tab).</div>}
           </div>
         )}
@@ -58,6 +63,7 @@ export default function Sheet({ st, update, conn, status, error, onBack, charId 
         {tab === 'spells' && <SpellsTab {...props} />}
         {tab === 'gear' && <GearTab {...props} />}
         {tab === 'features' && <FeaturesTab {...props} />}
+        {tab === 'faith' && <FaithCard st={st} update={update} />}
         {tab === 'level' && <LevelTab {...props} />}
       </div>
       <nav className="tabs">{TABS.map(([k, l, ic]) => (

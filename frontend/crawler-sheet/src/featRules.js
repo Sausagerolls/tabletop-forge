@@ -3,6 +3,7 @@
 // Ability increases have no cap of 20 in the World Dungeon (no Floor Cap).
 import { ABILITIES, SKILLS } from './rules.js';
 import { FEATS } from './ttf.js';
+import { wdName } from './spells.js';
 
 const SKILL_NAMES = SKILLS.map(([s]) => s);
 const NAME_TO_AB = { strength: 'STR', dexterity: 'DEX', constitution: 'CON', intelligence: 'INT', wisdom: 'WIS', charisma: 'CHA' };
@@ -77,16 +78,16 @@ export function featChoices(f) {
       out.push({ key: 'weapon', label: 'Weapon kind for its mastery property (change on a long rest)', kind: 'text' });
       break;
     case 'fey-touched':
-      out.push({ key: 'spell', label: 'One level 1 Divination or Enchantment spell (also Misty Step; one free cast each per long rest)', kind: 'spells', count: 1, level: 1, school: /divination|enchantment/i, free: true, fixed: ['Misty Step'] });
+      out.push({ key: 'spell', label: `One level 1 Divination or Enchantment spell (also ${wdName('Misty Step')}; one free cast each per long rest)`, kind: 'spells', count: 1, level: 1, school: /divination|enchantment/i, free: true, fixed: [wdName('Misty Step')] });
       break;
     case 'shadow-touched':
-      out.push({ key: 'spell', label: 'One level 1 Illusion or Necromancy spell (also Invisibility; one free cast each per long rest)', kind: 'spells', count: 1, level: 1, school: /illusion|necromancy/i, free: true, fixed: ['Invisibility'] });
+      out.push({ key: 'spell', label: `One level 1 Illusion or Necromancy spell (also ${wdName('Invisibility')}; one free cast each per long rest)`, kind: 'spells', count: 1, level: 1, school: /illusion|necromancy/i, free: true, fixed: [wdName('Invisibility')] });
       break;
     case 'ritual-caster':
       out.push({ key: 'rituals', label: 'Level 1 Ritual spells (as many as your Proficiency Bonus)', kind: 'spells', count: '@pb', level: 1, ritual: true });
       break;
     case 'telekinetic':
-      out.push({ key: 'fixed', label: 'Mage Hand', kind: 'spells', count: 0, level: 0, fixed: ['Mage Hand'] });
+      out.push({ key: 'fixed', label: wdName('Mage Hand'), kind: 'spells', count: 0, level: 0, fixed: [wdName('Mage Hand')] });
       break;
     default:
   }

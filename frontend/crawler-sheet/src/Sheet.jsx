@@ -8,7 +8,7 @@ import GearTab from './tabs/GearTab.jsx';
 import FeaturesTab from './tabs/FeaturesTab.jsx';
 import LevelTab from './tabs/LevelTab.jsx';
 import { featChoices, featDone } from './featRules.js';
-import { classSpellAllowance } from './spells.js';
+import { classSpellAllowance, grantedSpells, grantDone } from './spells.js';
 import { rulesHref } from './rulesLinks.jsx';
 
 const TABS = [
@@ -22,7 +22,10 @@ export default function Sheet({ st, update, conn, status, error, onBack, charId 
   const props = { st, d, update, conn, charId };
   const cls = d.classNames.length ? d.classNames.map((c) => `${c} ${d.classes[c].level}`).join(' / ') : 'Crawler';
   const featTodo = st.feats.filter((f) => featChoices(f).length && !featDone(f, d, st.spells)).map((f) => f.name);
-  const spellTodo = classSpellAllowance(st, d).filter((a) => a.cantripsKnown < a.cantrips || a.spellsKnown < a.spells).map((a) => a.cls);
+  const allowance = classSpellAllowance(st, d);
+  const spellTodo = allowance.filter((a) => a.cantripsKnown < a.cantrips || a.spellsKnown < a.spells).map((a) => a.cls);
+  const grantTodo = grantedSpells(st, d).filter((g) => g.spell && !grantDone(st, g)).length;
+  const rankTodo = allowance.reduce((t, a) => t + Math.max(0, a.rankUps - a.rankUpsSpent), 0);
   const go = (t) => { setTab(t); window.scrollTo(0, 0); };
   return (
     <div>
@@ -39,12 +42,14 @@ export default function Sheet({ st, update, conn, status, error, onBack, charId 
       </div>
       {status === 'error' && <div className="err" style={{ margin: 10 }}>Not saved to Tabletop Forge: {error}</div>}
       <div className="page">
-        {tab === 'main' && (st.statPointsUnspent > 0 || st.skillPicksUnspent > 0 || featTodo.length > 0 || spellTodo.length > 0) && (
+        {tab === 'main' && (st.statPointsUnspent > 0 || st.skillPicksUnspent > 0 || featTodo.length > 0 || spellTodo.length > 0 || grantTodo > 0 || rankTodo > 0) && (
           <div className="warn">
             {st.statPointsUnspent > 0 && <div onClick={() => go('skills')}>You have {st.statPointsUnspent} unspent Stat Point{st.statPointsUnspent > 1 ? 's' : ''} (Skills tab, tap +1 on an ability).</div>}
             {st.skillPicksUnspent > 0 && <div onClick={() => go('skills')}>You have {st.skillPicksUnspent} unspent Skill Pick{st.skillPicksUnspent > 1 ? 's' : ''} (Skills tab).</div>}
             {featTodo.length > 0 && <div onClick={() => go('features')}>Feat choices to make: {featTodo.join(', ')} (Features tab).</div>}
             {spellTodo.length > 0 && <div onClick={() => go('spells')}>{spellTodo.join(', ')} spells to learn (Spells tab).</div>}
+            {grantTodo > 0 && <div onClick={() => go('spells')}>{grantTodo} granted spell{grantTodo > 1 ? 's' : ''} to add (Spells tab).</div>}
+            {rankTodo > 0 && <div onClick={() => go('spells')}>{rankTodo} spell Rank Up{rankTodo > 1 ? 's' : ''} to spend (Spells tab).</div>}
           </div>
         )}
         {tab === 'main' && <MainTab {...props} />}

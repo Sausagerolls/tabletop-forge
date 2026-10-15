@@ -2,6 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { Modal, Pick, Stepper } from '../bits.jsx';
 import LootTab from './LootTab.jsx';
+import SETTING from '../generated/setting.json';
+import { gateRank, ROMAN, RANK_GATE } from '../spells.js';
+import { UPGRADE, matsText, payUpgrade } from '../weaponRanks.js';
+import { RulesLink } from '../rulesLinks.jsx';
+
+const WD_ITEMS = SETTING.items || [];
+const isRankable = (it) => it.item_type === 'weapon' || /\b(wraps|knuckles|gauntlet)\b/i.test(it.name || '');
 
 const MATS = ['Monster Part', 'Scrap', 'Essence', 'Trophy Part'];
 const blankItem = { name: '', item_type: 'gear', qty: 1, description: '', damage: '', damage_type: '', properties: '', weapon_range: '', ac_base: '', armor_category: '', weapon_category: '', reload: '', rounds: '' };
@@ -55,6 +62,8 @@ export default function GearTab({ st, d, update, conn }) {
                     <label className="small"><input type="checkbox" checked={it.proficient === true} onChange={(e) => setItem(i, { proficient: e.target.checked })} /> Proficient</label>
                     <button className="btn sm" onClick={() => update((s) => { s.inventory.splice(i, 1); return s; })}>Remove</button>
                   </div>
+                  {isRankable(it) && <WeaponUpgrade it={it} i={i} st={st} d={d} update={update} />}
+                  {it.kit_rank && <UseKit kit={it} i={i} st={st} d={d} update={update} />}
                 </div>)}
             </div>))}
         </div>
@@ -121,28 +130,87 @@ export default function GearTab({ st, d, update, conn }) {
 function ItemLibrary({ conn, onClose, onAdd }) {
   const [q, setQ] = useState('');
   const [type, setType] = useState('');
+  const [src, setSrc] = useState('wd'); // 'wd' = World Dungeon items, 'ttf' = the Tabletop Forge library
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState('');
   useEffect(() => {
+    if (src === 'wd') {
+      const kind = (it) => (it.item_type === 'weapon' ? 'weapon' : it.item_type === 'armor' ? 'armor' : it.item_type === 'explosive' ? 'explosive' : 'item');
+      setRows(WD_ITEMS.filter((it) => (!type || kind(it) === type) && `${it.name} ${it.source}`.toLowerCase().includes(q.toLowerCase())));
+      return undefined;
+    }
     const t = setTimeout(() => {
       api.items(conn.server, { role: 'player', ...(q ? { search: q } : {}), ...(type ? { type } : {}), ...(conn.session ? { sessionCode: conn.session } : {}) })
         .then(setRows).catch((e) => { setErr(e.message); setRows([]); });
     }, 250);
     return () => clearTimeout(t);
-  }, [q, type, conn]);
+  }, [q, type, conn, src]);
   return (
     <Modal title="Item library" onClose={onClose}>
       {err && <div className="err">{err}</div>}
+      <div className="chips">{[['wd', 'World Dungeon'], ['ttf', 'Tabletop Forge library']].map(([k, l]) => <Pick key={k} on={src === k} onClick={() => { setRows(null); setSrc(k); }}>{l}</Pick>)}</div>
       <input className="f search-in" placeholder="Search items" value={q} onChange={(e) => setQ(e.target.value)} />
-      <div className="chips">{[['', 'All'], ['weapon', 'Weapons'], ['armor', 'Armor'], ['item', 'Gear']].map(([k, l]) => <Pick key={k} on={type === k} onClick={() => setType(k)}>{l}</Pick>)}</div>
+      <div className="chips">{[['', 'All'], ['weapon', 'Weapons'], ['armor', 'Armor'], ...(src === 'wd' ? [['explosive', 'Explosives']] : []), ['item', 'Gear']].map(([k, l]) => <Pick key={k} on={type === k} onClick={() => setType(k)}>{l}</Pick>)}</div>
+      {src === 'wd' && <p className="small muted">Setting items: firearms, explosives, dungeon items, divine gear and Weapon Upgrade Kits. Every weapon has a rank (I–V): raise it from the item in your inventory.</p>}
       {rows === null && <p className="muted">Loading…</p>}
-      {(rows || []).slice(0, 150).map((it) => (
+      {(rows || []).slice(0, 250).map((it) => (
         <details key={it.id} className="feat">
-          <summary><span>{it.name}</span><span className="small muted">{it.item_type}{it.rarity ? ` · ${it.rarity}` : ''}</span></summary>
+          <summary><span>{it.name}</span><span className="small muted">{it.item_type}{it.rarity ? ` · ${it.rarity}` : ''}{it.source ? ` · ${it.source}` : ''}</span></summary>
           <div className="small muted">{[it.damage_entries?.[0]?.damage && `${it.damage_entries[0].damage} ${it.damage_entries[0].damage_type || ''}`, it.properties, it.weapon_range, Number(it.ac_base) > 0 && `AC ${it.ac_base} ${it.armor_category}`, it.cost].filter(Boolean).join(' · ')}</div>
           {it.description && <div className="body">{it.description}</div>}
-          <button className="btn sm primary" style={{ marginTop: 6 }} onClick={() => onAdd(it)}>Add to inventory</button>
+          <button className="btn sm primary" style={{ marginTop: 6 }} onClick={() => onAdd(it.item_type === 'weapon' ? { ...it, rank: it.rank || 1 } : it)}>Add to inventory</button>
         </details>))}
     </Modal>
   );
+}
+
+// Raise a weapon's rank at the workbench, the Armory, or as a System award (rules/weapon-ranks.md).
+function WeaponUpgrade({ it, i, st, d, update }) {
+  const [err, setErr] = useState('');
+  const rank = Number(it.rank) || 1;
+  const next = rank + 1;
+  const u = UPGRADE[next];
+  const raise = (how) => update((s) => {
+    if (how !== 'award') { const e = payUpgrade(s, next, how === 'armory'); if (e) { setErr(e); return s; } }
+    setErr('');
+    s.inventory[i] = { ...s.inventory[i], rank: next };
+    s.boxLog = [{ text: `${it.name} raised to Rank ${ROMAN[next]} (${how === 'award' ? 'System award' : how === 'armory' ? 'Armory' : 'workbench'}).`, floor: s.floor, at: Date.now() }, ...(s.boxLog || [])];
+    return s;
+  });
+  return (
+    <div className="sys" style={{ fontSize: 13, marginTop: 8 }}>
+      <b>Rank {ROMAN[rank]}</b>{rank > gateRank(d.level) ? ` (works as ${ROMAN[gateRank(d.level)]} until level ${RANK_GATE[rank]})` : ''}. Set traits in the Combat tab. <RulesLink page="weapon-ranks" light>Weapon ranks</RulesLink>
+      {u ? <>
+        <div style={{ marginTop: 4 }}>To Rank {ROMAN[next]}: {u.gold.toLocaleString()} gp, {matsText(u)}, {u.turns} floor turns at a workbench{d.level < RANK_GATE[next] ? ` (works from level ${RANK_GATE[next]})` : ''}.</div>
+        <div className="row wrap" style={{ marginTop: 6 }}>
+          <button className="btn sm primary" onClick={() => raise('workbench')}>Workbench ({u.gold.toLocaleString()} gp)</button>
+          <button className="btn sm" onClick={() => raise('armory')}>Armory ({Math.ceil(u.gold * 1.5).toLocaleString()} gp)</button>
+          <button className="btn sm" onClick={() => raise('award')}>System award (free)</button>
+        </div>
+        {err && <div className="small" style={{ color: 'var(--pink)', marginTop: 4 }}>{err}</div>}
+      </> : <div style={{ marginTop: 4 }}>Rank V: the top rank.</div>}
+    </div>);
+}
+
+// Use a Weapon Upgrade Kit on a weapon in the inventory.
+function UseKit({ kit, i, st, d, update }) {
+  const targets = st.inventory.map((x, j) => ({ x, j })).filter(({ x }) => isRankable(x) && (Number(x.rank) || 1) < kit.kit_rank);
+  return (
+    <div className="row" style={{ marginTop: 8 }}>
+      <select className="f" style={{ flex: 1 }} value="" onChange={(e) => {
+        const j = Number(e.target.value);
+        if (Number.isNaN(j) || e.target.value === '') return;
+        update((s) => {
+          const w = s.inventory[j];
+          s.inventory[j] = { ...w, rank: (Number(w.rank) || 1) + 1 };
+          const k = s.inventory[i];
+          if ((Number(k.qty) || 1) > 1) k.qty -= 1; else s.inventory.splice(i, 1);
+          s.boxLog = [{ text: `Used ${kit.name} on ${w.name}: Rank ${ROMAN[(Number(w.rank) || 1) + 1]}.`, floor: s.floor, at: Date.now() }, ...(s.boxLog || [])];
+          return s;
+        });
+      }}>
+        <option value="">Use on a weapon (up to Rank {ROMAN[kit.kit_rank]})…</option>
+        {targets.map(({ x, j }) => <option key={j} value={j}>{x.name} (Rank {ROMAN[Number(x.rank) || 1]})</option>)}
+      </select>
+    </div>);
 }

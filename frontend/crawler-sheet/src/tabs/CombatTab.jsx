@@ -4,6 +4,9 @@ import { weaponCategory } from '../ttf.js';
 import { useRoller, AdvBar } from '../roller.jsx';
 import { RulesLink } from '../rulesLinks.jsx';
 import { weaponDamageModes, formatDamageWithMod } from '@ttf/utils/damage.js';
+import { gateRank, ROMAN, RANK_GATE } from '../spells.js';
+
+import { RANK_BONUS, RANK_DICE, TRAIT_SLOTS, TRAITS, heavyDice, addDice } from '../weaponRanks.js';
 
 const isExplosive = (i) => i.item_type === 'explosive';
 const isAmmo = (i) => i.item_type === 'ammo' || !isExplosive(i) && i.item_type !== 'weapon' && /\b(rounds?|bullets?|shells?|cartridges?|ammo|ammunition|rockets?)\b/i.test(i.name || '');
@@ -43,8 +46,14 @@ export function weaponLine(item, d, st, ammo) {
     || st.drills.includes(item.name) || (st.learning || []).some((l) => l.name === item.name && l.done);
   const pbPart = prof ? d.pb : Math.floor(d.pb / 2);
   const special = ammo ? roundSpecial(ammo.name) : null;
-  const toHit = d.m[stat] + pbPart + (Number(item.attack_bonus_misc) || 0) + (special?.hit || 0);
-  const dmgMod = d.m[stat] + (Number(item.damage_bonus_misc) || 0);
+  // Rank bonus doesn't stack with a magic weapon's own +N: use the higher.
+  const rank = Math.min(Number(item.rank) || 1, gateRank(d.level));
+  const magic = Number(item.attack_bonus_misc) || Number((String(item.name).match(/\+(\d)\b/) || [])[1]) || 0;
+  const rankExtra = Math.max(0, RANK_BONUS[rank] - magic);
+  const extraDice = RANK_DICE[rank] + heavyDice(d.m[stat]);
+  const traits = item.traits || [];
+  const toHit = d.m[stat] + pbPart + (Number(item.attack_bonus_misc) || 0) + rankExtra + (special?.hit || 0);
+  const dmgMod = d.m[stat] + (Number(item.damage_bonus_misc) || 0) + rankExtra;
   // Attack modes as Tabletop Forge splits them (One-Handed, Two-Handed, Thrown...).
   // An entry of another damage type, such as a Flame Tongue's Ablaze fire, is not
   // a way of swinging: it is rolled as a second damage roll on every hit.
@@ -60,16 +69,18 @@ export function weaponLine(item, d, st, ammo) {
   const isExtra = (m, i) => i > 0 && m.damage_type && String(m.damage_type).toLowerCase() !== baseType
     && !/versatile|hand|thrown|melee|ranged/i.test(m.label || '');
   const extras = modes.filter(isExtra).map((m) => ({ expr: m.damage, type: m.damage_type || '', note: m.label }));
+  traits.filter((t) => t.startsWith('Elemental')).forEach((t) => extras.push({ expr: '1d6', type: (t.match(/\((\w+)\)/) || [])[1] || '', note: 'Elemental' }));
   if (ammo) {
     const ammoEntries = (ammo.damage_entries || []).filter((e) => e && e.damage && !e.condition).map((e) => ({ expr: e.damage, type: e.damage_type || '', note: ammo.name }));
     extras.push(...(ammoEntries.length ? ammoEntries : (special?.parts || []).map((x) => ({ ...x, note: x.note || ammo.name }))));
   }
   const lines = modes.filter((m, i) => !isExtra(m, i)).map((m) => ({
     label: m.label, range: m.range || '',
-    parts: [{ expr: formatDamageWithMod(m.damage, dmgMod).replace(/\s+/g, ''), type: m.damage_type || '' }, ...extras],
+    parts: [{ expr: formatDamageWithMod(addDice(m.damage, extraDice), dmgMod).replace(/\s+/g, ''), type: m.damage_type || '' }, ...extras],
   }));
   const riders = (item.damage_entries || []).filter((e) => e && e.damage && e.condition);
-  return { toHit, lines, parts: lines[0]?.parts || [], stat, prof, cat, range: item.weapon_range || '', firearm, special, riders };
+  return { toHit, lines, parts: lines[0]?.parts || [], stat, prof, cat, range: item.weapon_range || '', firearm, special, riders,
+    rank, storedRank: Number(item.rank) || 1, traits, heavy: heavyDice(d.m[stat]) };
 }
 
 export default function CombatTab({ st, d, update }) {
@@ -78,8 +89,8 @@ export default function CombatTab({ st, d, update }) {
   const fistDie = fist >= 15 ? '1d12' : fist >= 10 ? '1d10' : fist >= 5 ? '1d8' : fist >= 1 ? '1d6' : '1d4';
   const unarmedStat = d.m.DEX > d.m.STR ? 'DEX' : 'STR';
   const builtIn = [
-    { name: 'Unarmed strike', toHit: d.m[unarmedStat] + d.pb, parts: [{ expr: `${fistDie}+${d.m[unarmedStat]}`, type: 'Bludgeoning' }], note: fist ? `Iron Fist ${fist}` : 'Scrappy' },
-    { name: 'Improvised weapon', toHit: d.m.STR + d.pb, parts: [{ expr: `1d6+${d.m.STR}`, type: 'Bludgeoning' }], note: '1d8 two-handed · thrown 20/60 · breaks on a 1 (d6)' },
+    { name: 'Unarmed strike', toHit: d.m[unarmedStat] + d.pb, parts: [{ expr: `${addDice(fistDie, heavyDice(d.m[unarmedStat]))}+${d.m[unarmedStat]}`, type: 'Bludgeoning' }], note: (fist ? `Iron Fist ${fist}` : 'Scrappy') + (heavyDice(d.m[unarmedStat]) ? ' · Heavy Hands' : '') },
+    { name: 'Improvised weapon', toHit: d.m.STR + d.pb, parts: [{ expr: `${addDice('1d6', heavyDice(d.m.STR))}+${d.m.STR}`, type: 'Bludgeoning' }], note: '1d8 two-handed · thrown 20/60 · breaks on a 1 (d6)' + (heavyDice(d.m.STR) ? ' · Heavy Hands' : '') },
   ];
   const weapons = st.inventory.map((it, idx) => ({ it, idx })).filter(({ it }) => isWeapon(it));
   const ammoItems = st.inventory.filter(isAmmo);
@@ -174,6 +185,7 @@ export default function CombatTab({ st, d, update }) {
                   <button className="roll alt" onClick={() => dmgOnly(it.name, ln)}>Dmg</button>
                 </div>))}
               {w.riders.map((r, i) => <div key={i} className="small muted">+ {r.damage} {r.damage_type} {r.condition}</div>)}
+              <WeaponRank it={it} idx={idx} w={w} d={d} update={update} />
               {w.firearm && (
                 <div className="gunbar">
                   <div className="row between">
@@ -220,4 +232,30 @@ export default function CombatTab({ st, d, update }) {
         </div>)}
     </>
   );
+}
+
+// Rank I–V and traits for one weapon (rules/weapon-ranks.md).
+function WeaponRank({ it, idx, w, d, update }) {
+  const set = (fn) => update((s) => { const x = { ...s.inventory[idx] }; fn(x); s.inventory[idx] = x; return s; });
+  const slots = TRAIT_SLOTS[w.storedRank];
+  const traits = w.traits;
+  return (
+    <div className="small" style={{ marginTop: 4 }}>
+      <span className="muted">Rank </span>
+      {[1, 2, 3, 4, 5].map((r) => (
+        <button key={r} type="button" className={`pick${w.storedRank === r ? ' on' : ''}`} style={{ padding: '2px 8px', fontSize: 12 }}
+          onClick={() => set((x) => { x.rank = r; x.traits = (x.traits || []).slice(0, TRAIT_SLOTS[r]); })}>{ROMAN[r]}</button>))}
+      {w.storedRank > w.rank && <span className="muted"> (works as {ROMAN[w.rank]} until level {RANK_GATE[w.storedRank]})</span>}
+      {w.heavy > 0 && <span className="chip" style={{ marginLeft: 6 }}>Heavy Hands +{w.heavy} {w.heavy > 1 ? 'dice' : 'die'}</span>}
+      {slots > 0 && (
+        <div style={{ marginTop: 4 }}>
+          {traits.map((t) => <span key={t} className="chip teal" style={{ marginRight: 4 }} onClick={() => set((x) => { x.traits = (x.traits || []).filter((y) => y !== t); })}>{t} ×</span>)}
+          {traits.length < slots && (
+            <select className="f" style={{ width: 'auto', padding: '3px 6px', fontSize: 12 }} value="" onChange={(e) => e.target.value && set((x) => { x.traits = [...(x.traits || []), e.target.value]; })}>
+              <option value="">+ trait ({traits.length}/{slots})</option>
+              {TRAITS.filter((t) => !traits.includes(t) && !(t === 'Sundering' && w.storedRank < 4)).map((t) => <option key={t}>{t}</option>)}
+            </select>)}
+          {traits.includes('Keen') && <span className="muted"> · crits on 19–20</span>}
+        </div>)}
+    </div>);
 }

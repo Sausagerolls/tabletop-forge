@@ -12875,6 +12875,1904 @@
    }
   }
  ],
+ "items": [
+  {
+   "id": "wd-junk-pistol",
+   "name": "Junk Pistol",
+   "item_type": "weapon",
+   "rarity": "Common",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "1d8",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "30/90",
+   "properties": "Light, reload 1, misfire, loud",
+   "reload": 1,
+   "cost": "25 gp",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-nail-gun",
+   "name": "Nail Gun",
+   "item_type": "weapon",
+   "rarity": "Common",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "1d6",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "20/60",
+   "properties": "Light, reload 30 (nails)",
+   "reload": 30,
+   "cost": "30 gp",
+   "description": "A builder's tool, not a weapon, which makes it quiet: it does not have the Loud property. It reloads from any box of nails.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-flare-gun",
+   "name": "Flare Gun",
+   "item_type": "weapon",
+   "rarity": "Common",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "1d6",
+     "damage_type": "Fire"
+    }
+   ],
+   "weapon_range": "60/180",
+   "properties": "Reload 1, loud",
+   "cost": "20 gp",
+   "description": "On a hit, a flammable target catches fire (1d6 fire damage at the start of each of its turns until it uses an action to put it out). You can fire it into the air to light a 40-foot radius with bright light for 1 minute.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-flintlock-pistol",
+   "name": "Flintlock Pistol",
+   "item_type": "weapon",
+   "rarity": "Common",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "1d10",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "30/90",
+   "properties": "Light, reload 1, misfire, loud",
+   "reload": 1,
+   "cost": "50 gp",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-service-pistol",
+   "name": "Service Pistol",
+   "item_type": "weapon",
+   "rarity": "Uncommon",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "2d6",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "50/150",
+   "properties": "Light, reload 15, loud",
+   "reload": 15,
+   "cost": "250 gp",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-revolver",
+   "name": "Revolver",
+   "item_type": "weapon",
+   "rarity": "Uncommon",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "2d8",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "40/120",
+   "properties": "Reload 6, loud",
+   "cost": "300 gp",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-pump-shotgun",
+   "name": "Pump Shotgun",
+   "item_type": "weapon",
+   "rarity": "Uncommon",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "2d8",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "30/90",
+   "properties": "Two-handed, reload 6, scatter, loud",
+   "reload": 6,
+   "cost": "300 gp",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-sawn-off-shotgun",
+   "name": "Sawn-Off Shotgun",
+   "item_type": "weapon",
+   "rarity": "Uncommon",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "2d10",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "15/45",
+   "properties": "Reload 2, scatter, loud",
+   "cost": "250 gp",
+   "description": "Point blank. When you use scatter, creatures within 5 feet of you take full damage even if they succeed on the save.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-hunting-rifle",
+   "name": "Hunting Rifle",
+   "item_type": "weapon",
+   "rarity": "Uncommon",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "2d10",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "150/600",
+   "properties": "Two-handed, reload 5, loud",
+   "reload": 5,
+   "cost": "400 gp",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-submachine-gun",
+   "name": "Submachine Gun",
+   "item_type": "weapon",
+   "rarity": "Rare",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "1d10",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "50/150",
+   "properties": "Reload 30, burst fire, loud",
+   "cost": "2,000 gp",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-assault-rifle",
+   "name": "Assault Rifle",
+   "item_type": "weapon",
+   "rarity": "Rare",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "2d8",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "120/480",
+   "properties": "Two-handed, reload 30, burst fire, loud",
+   "reload": 30,
+   "cost": "3,000 gp",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-sniper-rifle",
+   "name": "Sniper Rifle",
+   "item_type": "weapon",
+   "rarity": "Rare",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "2d12",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "300/1,200",
+   "properties": "Heavy, two-handed, reload 5, scoped, loud",
+   "reload": 5,
+   "cost": "3,000 gp",
+   "description": "Scoped. If you have not moved this turn, attacking at long range does not give you disadvantage.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-hand-cannon",
+   "name": "Hand Cannon",
+   "item_type": "weapon",
+   "rarity": "Rare",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "3d8",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "30/90",
+   "properties": "Heavy, reload 1, knockback, loud",
+   "reload": 1,
+   "cost": "2,500 gp",
+   "description": "Knockback. On a hit, a Large or smaller target is pushed 10 feet away from you.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-grenade-launcher",
+   "name": "Grenade Launcher",
+   "item_type": "weapon",
+   "rarity": "Rare",
+   "weapon_category": "Firearms",
+   "damage_entries": [],
+   "weapon_range": "150/450",
+   "properties": "Two-handed, reload 6, loud",
+   "reload": 6,
+   "cost": "4,000 gp",
+   "description": "Fires any explosive marked \"grenade\" (Frag, Concussion, Frost, Flashbang, Smoke Bomb, Sticky Bomb) to a point within range, instead of throwing it. A Sticky Bomb fired this way still needs an attack roll.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-rocket-launcher",
+   "name": "Rocket Launcher",
+   "item_type": "weapon",
+   "rarity": "Very rare",
+   "weapon_category": "Firearms",
+   "damage_entries": [],
+   "weapon_range": "300/1,200",
+   "properties": "Heavy, two-handed, reload 1, loud",
+   "reload": 1,
+   "cost": "10,000 gp",
+   "description": "Fires one rocket to a point within range. Rockets cost 1,000 gp each. A rocket explodes in a 20-foot radius: Dexterity save DC 16, 8d6 fire damage, half on a success. Double damage to objects and structures.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-minigun",
+   "name": "Minigun",
+   "item_type": "weapon",
+   "rarity": "Very rare",
+   "weapon_category": "Firearms",
+   "damage_entries": [
+    {
+     "damage": "2d8",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "100/400",
+   "properties": "Heavy, two-handed, reload 200, burst fire, Str 15, loud",
+   "reload": 200,
+   "cost": "15,000 gp",
+   "description": "You need Strength 15 or higher to use it. It has to spin up: you cannot use burst fire with it on the turn you draw it.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-ghost-gun",
+   "name": "Ghost Gun",
+   "rarity": "Rare",
+   "description": "A service pistol that makes no sound and never needs reloading. Attacks with it ignore half and three-quarters cover.",
+   "source": "Firearms",
+   "weapon_category": "Firearms",
+   "item_type": "weapon",
+   "damage_entries": [
+    {
+     "damage": "2d6",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "50/150",
+   "properties": "Light, reload 15, loud",
+   "reload": 15
+  },
+  {
+   "id": "wd-dragonbreath-shotgun",
+   "name": "Dragonbreath Shotgun",
+   "rarity": "Very rare",
+   "description": "A +2 pump shotgun. Its scatter is a 30-foot cone of fire: 4d8 fire damage instead of piercing, and flammable objects in the cone ignite.",
+   "source": "Firearms",
+   "weapon_category": "Firearms",
+   "item_type": "weapon",
+   "damage_entries": [
+    {
+     "damage": "2d8",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "30/90",
+   "properties": "Two-handed, reload 6, scatter, loud",
+   "reload": 6,
+   "attack_bonus_misc": 2,
+   "damage_bonus_misc": 2
+  },
+  {
+   "id": "wd-six-shooter-of-the-last-stand",
+   "name": "Six-Shooter of the Last Stand",
+   "rarity": "Very rare",
+   "description": "A +2 revolver. While you are below half your hit points, it scores a critical hit on a 19 or 20. Once per long rest, as an action, you can fan the hammer: make six attacks with it at disadvantage.",
+   "source": "Firearms",
+   "weapon_category": "Firearms",
+   "item_type": "weapon",
+   "damage_entries": [
+    {
+     "damage": "2d8",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "40/120",
+   "properties": "Reload 6, loud",
+   "attack_bonus_misc": 2,
+   "damage_bonus_misc": 2
+  },
+  {
+   "id": "wd-the-negotiator",
+   "name": "The Negotiator",
+   "rarity": "Legendary",
+   "description": "A +3 hand cannon. On a hit, the target must succeed on a Wisdom save (DC 17) or be frightened of you for 1 minute. While you hold it, you have advantage on Charisma (Intimidation) checks. It talks, and it has opinions.",
+   "source": "Firearms",
+   "weapon_category": "Firearms",
+   "item_type": "weapon",
+   "damage_entries": [
+    {
+     "damage": "3d8",
+     "damage_type": "Piercing"
+    }
+   ],
+   "weapon_range": "30/90",
+   "properties": "Heavy, reload 1, knockback, loud",
+   "reload": 1,
+   "attack_bonus_misc": 3,
+   "damage_bonus_misc": 3
+  },
+  {
+   "id": "wd-plasma-caster",
+   "name": "Plasma Caster",
+   "rarity": "Legendary",
+   "description": "An alien rifle. 4d8 radiant damage, range 150/600, two-handed, reload 20 (recharges at dawn). Once per long rest, fire a 100-foot line, 5 feet wide: Dexterity save DC 18, 10d8 radiant damage, half on a success.",
+   "source": "Firearms",
+   "weapon_category": "Firearms",
+   "item_type": "weapon",
+   "damage_entries": [
+    {
+     "damage": "4d8",
+     "damage_type": "Radiant"
+    }
+   ],
+   "weapon_range": "150/600,",
+   "reload": 20
+  },
+  {
+   "id": "wd-railgun",
+   "name": "Railgun",
+   "rarity": "Legendary",
+   "description": "4d10 lightning damage, range 500/2,000, heavy, two-handed, reload 1. Its shot pierces: it can hit every creature in a 5-foot-wide line up to its normal range. Make one attack roll and compare it to each creature's AC.",
+   "source": "Firearms",
+   "weapon_category": "Firearms",
+   "item_type": "weapon",
+   "damage_entries": [
+    {
+     "damage": "4d10",
+     "damage_type": "Lightning"
+    }
+   ],
+   "weapon_range": "500/2,000,",
+   "reload": 1
+  },
+  {
+   "id": "wd-box-of-rounds",
+   "name": "Box of Rounds",
+   "item_type": "ammo",
+   "rarity": "Common",
+   "description": "20 standard rounds of one type: pistol, rifle, or shotgun shells.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-speed-loader",
+   "name": "Speed Loader",
+   "item_type": "gear",
+   "rarity": "Common",
+   "description": "You can reload one firearm as a bonus action.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-holster",
+   "name": "Holster",
+   "item_type": "gear",
+   "rarity": "Common",
+   "description": "You can draw a pistol from it as part of the attack. You have +1 to initiative while it holds a pistol.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-bayonet",
+   "name": "Bayonet",
+   "item_type": "gear",
+   "rarity": "Common",
+   "description": "Fits a two-handed firearm. You can make a melee attack with it, as a spear (1d6 piercing).",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-laser-sight",
+   "name": "Laser Sight",
+   "item_type": "gear",
+   "rarity": "Uncommon",
+   "description": "Attachment. +1 to attack rolls with the firearm within its normal range.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-scope",
+   "name": "Scope",
+   "item_type": "gear",
+   "rarity": "Uncommon",
+   "description": "Attachment. The firearm gains the Scoped property (see Sniper Rifle).",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-suppressor",
+   "name": "Suppressor",
+   "item_type": "gear",
+   "rarity": "Uncommon",
+   "description": "Attachment for a pistol or rifle. The firearm loses the Loud property.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-extended-magazine",
+   "name": "Extended Magazine",
+   "item_type": "gear",
+   "rarity": "Uncommon",
+   "description": "Attachment. Double the firearm's Reload number.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-kevlar-vest",
+   "name": "Kevlar Vest",
+   "item_type": "armor",
+   "rarity": "Uncommon",
+   "description": "Light armor, AC 13 + Dex modifier. You have resistance to piercing damage from firearms.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-riot-shield",
+   "name": "Riot Shield",
+   "item_type": "armor",
+   "rarity": "Rare",
+   "description": "A shield (+2 AC). When a ranged attack hits you, you can use your reaction to add +3 to your AC against it, which may make it miss.",
+   "source": "Firearms"
+  },
+  {
+   "id": "wd-firecracker-bundle",
+   "name": "Firecracker Bundle",
+   "item_type": "explosive",
+   "rarity": "Common",
+   "qty": 1,
+   "description": "- Area: 10-foot radius \u00b7 Save: Constitution DC 10\n- Effect: No damage. On a failed save, a creature is deafened until the end of its next turn, and has disadvantage on its next attack roll.\n- Very loud. Every creature within 300 feet hears it. Good for distractions.",
+   "damage_entries": [],
+   "save_dc": 10,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-smoke-bomb",
+   "name": "Smoke Bomb",
+   "item_type": "explosive",
+   "rarity": "Common",
+   "qty": 1,
+   "description": "- Area: 20-foot radius \u00b7 Save: none\n- Effect: The area is heavily obscured for 1 minute, or until a strong wind disperses it.",
+   "damage_entries": [],
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-molotov",
+   "name": "Molotov",
+   "item_type": "explosive",
+   "rarity": "Common",
+   "qty": 1,
+   "description": "- Area: 5-foot radius \u00b7 Save: Dexterity DC 12 \u00b7 Damage: 2d6 fire\n- The ground in the area burns for 1 minute. A creature that enters the area or starts its turn there takes 1d6 fire damage. Dud.",
+   "damage_entries": [
+    {
+     "damage": "2d6",
+     "damage_type": "Fire"
+    }
+   ],
+   "save_dc": 12,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-pipe-bomb",
+   "name": "Pipe Bomb",
+   "item_type": "explosive",
+   "rarity": "Common",
+   "qty": 1,
+   "description": "- Area: 10-foot radius \u00b7 Save: Dexterity DC 12 \u00b7 Damage: 3d6 piercing\n- The classic dungeon-made bomb. Bomb Maker (Demolitionist) produces these. Dud.",
+   "damage_entries": [
+    {
+     "damage": "3d6",
+     "damage_type": "Piercing"
+    }
+   ],
+   "save_dc": 12,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-stick-of-dynamite",
+   "name": "Stick of Dynamite",
+   "item_type": "explosive",
+   "rarity": "Common",
+   "qty": 1,
+   "description": "- Area: 5-foot radius \u00b7 Save: Dexterity DC 12 \u00b7 Damage: 3d6 bludgeoning\n- Lighting it is part of the throw, if you have a flame. It has a built-in timed fuse of up to 1 round. Dud.",
+   "damage_entries": [
+    {
+     "damage": "3d6",
+     "damage_type": "Bludgeoning"
+    }
+   ],
+   "save_dc": 12,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-flashbang",
+   "name": "Flashbang",
+   "item_type": "explosive",
+   "rarity": "Common",
+   "qty": 1,
+   "description": "- Area: 15-foot radius \u00b7 Save: Constitution DC 13\n- Effect: No damage. On a failed save, a creature is blinded and deafened until the end of your next turn.",
+   "damage_entries": [],
+   "save_dc": 13,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-frag-grenade",
+   "name": "Frag Grenade",
+   "item_type": "explosive",
+   "rarity": "Uncommon",
+   "qty": 1,
+   "description": "- Area: 20-foot radius \u00b7 Save: Dexterity DC 13 \u00b7 Damage: 5d6 piercing\n- The standard military grenade. Pull the pin, throw, duck.",
+   "damage_entries": [
+    {
+     "damage": "5d6",
+     "damage_type": "Piercing"
+    }
+   ],
+   "save_dc": 13,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-sticky-bomb",
+   "name": "Sticky Bomb",
+   "item_type": "explosive",
+   "rarity": "Uncommon",
+   "qty": 1,
+   "description": "- Area: target + 10-foot radius \u00b7 Save: Dexterity DC 13 (others only) \u00b7 Damage: 4d6 fire\n- Make a ranged attack against a creature (you are proficient). On a hit, the bomb sticks to it. It explodes at the start of the target's next turn. The target takes the full damage with no save. Other creatures within 10 feet make the save.\n- A creature can pull the bomb off as an action with a DC 13 Strength check.",
+   "damage_entries": [
+    {
+     "damage": "4d6",
+     "damage_type": "Fire"
+    }
+   ],
+   "save_dc": 13,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-concussion-grenade",
+   "name": "Concussion Grenade",
+   "item_type": "explosive",
+   "rarity": "Uncommon",
+   "qty": 1,
+   "description": "- Area: 15-foot radius \u00b7 Save: Constitution DC 13 \u00b7 Damage: 3d6 thunder\n- On a failed save, a creature is also pushed 10 feet away from the center and knocked prone.",
+   "damage_entries": [
+    {
+     "damage": "3d6",
+     "damage_type": "Thunder"
+    }
+   ],
+   "save_dc": 13,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-frost-grenade",
+   "name": "Frost Grenade",
+   "item_type": "explosive",
+   "rarity": "Uncommon",
+   "qty": 1,
+   "description": "- Area: 15-foot radius \u00b7 Save: Constitution DC 13 \u00b7 Damage: 3d6 cold\n- On a failed save, a creature's speed is halved until the end of its next turn. The area becomes difficult terrain (ice) for 1 minute.",
+   "damage_entries": [
+    {
+     "damage": "3d6",
+     "damage_type": "Cold"
+    }
+   ],
+   "save_dc": 13,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-acid-bomb",
+   "name": "Acid Bomb",
+   "item_type": "explosive",
+   "rarity": "Uncommon",
+   "qty": 1,
+   "description": "- Area: 10-foot radius \u00b7 Save: Dexterity DC 13 \u00b7 Damage: 4d4 acid\n- On a failed save, a creature takes another 2d4 acid damage at the end of its next turn. Nonmagical armor it wears takes a permanent \u22121 penalty to AC until repaired.",
+   "damage_entries": [
+    {
+     "damage": "4d4",
+     "damage_type": "Acid"
+    }
+   ],
+   "save_dc": 13,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-explosive-arrow",
+   "name": "Explosive Arrow",
+   "item_type": "explosive",
+   "rarity": "Uncommon",
+   "qty": 1,
+   "description": "- Area: 10-foot radius around the target \u00b7 Save: Dexterity DC 13 (others only) \u00b7 Damage: 2d6 fire\n- Fire it from a bow as normal ammunition. On a hit, the target takes the arrow's damage plus 2d6 fire damage with no save. On a miss, it explodes where it lands.",
+   "damage_entries": [
+    {
+     "damage": "2d6",
+     "damage_type": "Fire"
+    }
+   ],
+   "save_dc": 13,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-bundle-of-dynamite",
+   "name": "Bundle of Dynamite",
+   "item_type": "explosive",
+   "rarity": "Uncommon",
+   "qty": 1,
+   "description": "- Area: 20-foot radius \u00b7 Save: Dexterity DC 14 \u00b7 Damage: 6d6 bludgeoning\n- Five sticks taped together. Built-in timed fuse of up to 1 round. Dud.",
+   "damage_entries": [
+    {
+     "damage": "6d6",
+     "damage_type": "Bludgeoning"
+    }
+   ],
+   "save_dc": 14,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-land-mine",
+   "name": "Land Mine",
+   "item_type": "explosive",
+   "rarity": "Uncommon",
+   "qty": 1,
+   "description": "- Area: 10-foot radius \u00b7 Save: Dexterity DC 14 \u00b7 Damage: 4d6 piercing\n- Trigger: Proximity (Perception DC 15 to notice). Arming it takes an action.",
+   "damage_entries": [
+    {
+     "damage": "4d6",
+     "damage_type": "Piercing"
+    }
+   ],
+   "save_dc": 14,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-remote-charge",
+   "name": "Remote Charge",
+   "item_type": "explosive",
+   "rarity": "Uncommon",
+   "qty": 1,
+   "description": "- Area: 15-foot radius \u00b7 Save: Dexterity DC 14 \u00b7 Damage: 5d6 fire\n- Trigger: Remote (needs a Detonator). Deals four times damage to objects and structures, instead of double.",
+   "damage_entries": [
+    {
+     "damage": "5d6",
+     "damage_type": "Fire"
+    }
+   ],
+   "save_dc": 14,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-cluster-bomb",
+   "name": "Cluster Bomb",
+   "item_type": "explosive",
+   "rarity": "Rare",
+   "qty": 1,
+   "description": "- Area: four 10-foot radii \u00b7 Save: Dexterity DC 15 \u00b7 Damage: 3d6 fire each\n- When it lands, it splits into four bomblets. Place each one at a point within 30 feet of where it landed. A creature in more than one area makes a save for each one.",
+   "damage_entries": [
+    {
+     "damage": "3d6",
+     "damage_type": "Fire"
+    }
+   ],
+   "save_dc": 15,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-thermite-charge",
+   "name": "Thermite Charge",
+   "item_type": "explosive",
+   "rarity": "Rare",
+   "qty": 1,
+   "description": "- Area: 5 feet \u00b7 Save: Dexterity DC 15 \u00b7 Damage: 6d6 fire\n- Trigger: Set only. It burns for 1 minute and melts a hole 5 feet deep per round through stone or metal. A creature that starts its turn within 5 feet of it makes the save.",
+   "damage_entries": [
+    {
+     "damage": "6d6",
+     "damage_type": "Fire"
+    }
+   ],
+   "save_dc": 15,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-thunderclap-charge",
+   "name": "Thunderclap Charge",
+   "item_type": "explosive",
+   "rarity": "Rare",
+   "qty": 1,
+   "description": "- Area: 30-foot radius \u00b7 Save: Constitution DC 15 \u00b7 Damage: 6d6 thunder\n- On a failed save, a creature is knocked prone and deafened for 1 minute. It can be heard for miles.",
+   "damage_entries": [
+    {
+     "damage": "6d6",
+     "damage_type": "Thunder"
+    }
+   ],
+   "save_dc": 15,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-gravity-grenade",
+   "name": "Gravity Grenade",
+   "item_type": "explosive",
+   "rarity": "Rare",
+   "qty": 1,
+   "description": "- Area: 20-foot radius \u00b7 Save: Strength DC 15 \u00b7 Damage: 4d10 force\n- On a failed save, a creature is pulled to the center and restrained until the end of your next turn.",
+   "damage_entries": [
+    {
+     "damage": "4d10",
+     "damage_type": "Force"
+    }
+   ],
+   "save_dc": 15,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-bunker-buster",
+   "name": "Bunker Buster",
+   "item_type": "explosive",
+   "rarity": "Very rare",
+   "qty": 1,
+   "description": "- Area: 30-foot radius \u00b7 Save: Dexterity DC 16 \u00b7 Damage: 8d6 fire + 8d6 bludgeoning\n- Trigger: Set or launch only (too heavy to throw). Nonmagical structures in the area are destroyed. Boss arenas and safe rooms are immune.",
+   "damage_entries": [
+    {
+     "damage": "8d6",
+     "damage_type": "Fire"
+    }
+   ],
+   "save_dc": 16,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-banshee-bomb",
+   "name": "Banshee Bomb",
+   "item_type": "explosive",
+   "rarity": "Very rare",
+   "qty": 1,
+   "description": "- Area: 30-foot radius \u00b7 Save: Wisdom DC 17 \u00b7 Damage: 6d10 psychic\n- On a failed save, a creature is frightened for 1 minute. It repeats the save at the end of each of its turns, ending the effect on a success.",
+   "damage_entries": [
+    {
+     "damage": "6d10",
+     "damage_type": "Psychic"
+    }
+   ],
+   "save_dc": 17,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-hellfire-barrel",
+   "name": "Hellfire Barrel",
+   "item_type": "explosive",
+   "rarity": "Very rare",
+   "qty": 1,
+   "description": "- Area: 40-foot radius \u00b7 Save: Dexterity DC 17 \u00b7 Damage: 10d6 fire + 5d6 necrotic\n- Trigger: Set only (100 lb). The area burns for 1 minute. A creature that enters it or starts its turn there takes 3d6 fire damage.",
+   "damage_entries": [
+    {
+     "damage": "10d6",
+     "damage_type": "Fire"
+    }
+   ],
+   "save_dc": 17,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-mini-sun",
+   "name": "Mini Sun",
+   "item_type": "explosive",
+   "rarity": "Legendary",
+   "qty": 1,
+   "description": "- Area: 60-foot radius \u00b7 Save: Dexterity DC 19 \u00b7 Damage: 12d6 fire + 12d6 radiant\n- On a failed save, a creature is also blinded for 1 minute. The area stays in bright light for 1 hour, and undead there take 2d6 radiant damage at the start of each of their turns.",
+   "damage_entries": [
+    {
+     "damage": "12d6",
+     "damage_type": "Fire"
+    }
+   ],
+   "save_dc": 19,
+   "source": "Explosives"
+  },
+  {
+   "id": "wd-stat-potion",
+   "name": "Stat Potion",
+   "rarity": "Uncommon",
+   "description": "When you drink it, you gain 1 Stat Point. If the box says an ability, for example Stat Potion (Charisma), the point must go into that ability.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "potion"
+  },
+  {
+   "id": "wd-skill-book",
+   "name": "Skill Book",
+   "description": "Reading it takes 1 minute, then it crumbles. You learn the named Crawler Skill at Skill Level 1. If you already know it, it gains 1 Skill Level instead (maximum 15).\n\n- Random: roll a d6 for the category (1\u20132 Combat, 3 Survival, 4 Utility, 5 Showmanship, 6 Magic). The GM picks or rolls a Crawler Skill from it.\n- Your choice: you pick any Crawler Skill.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-weapon-upgrade-kit-ii",
+   "name": "Weapon Upgrade Kit (Rank II)",
+   "rarity": "Uncommon",
+   "description": "A box of System-branded whetstones, rivets and glowing grease. Spend 10 minutes working on one weapon, wraps or firearm: it gains one rank, up to the kit's rank and your rank gate (see weapon-ranks). A kit from a box says the highest rank it can give, for example Weapon Upgrade Kit (Rank III). If the weapon gains a trait, choose it then.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear",
+   "kit_rank": 2
+  },
+  {
+   "id": "wd-weapon-upgrade-kit-iii",
+   "name": "Weapon Upgrade Kit (Rank III)",
+   "rarity": "Uncommon",
+   "description": "A box of System-branded whetstones, rivets and glowing grease. Spend 10 minutes working on one weapon, wraps or firearm: it gains one rank, up to the kit's rank and your rank gate (see weapon-ranks). A kit from a box says the highest rank it can give, for example Weapon Upgrade Kit (Rank III). If the weapon gains a trait, choose it then.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear",
+   "kit_rank": 3
+  },
+  {
+   "id": "wd-weapon-upgrade-kit-iv",
+   "name": "Weapon Upgrade Kit (Rank IV)",
+   "rarity": "Rare",
+   "description": "A box of System-branded whetstones, rivets and glowing grease. Spend 10 minutes working on one weapon, wraps or firearm: it gains one rank, up to the kit's rank and your rank gate (see weapon-ranks). A kit from a box says the highest rank it can give, for example Weapon Upgrade Kit (Rank III). If the weapon gains a trait, choose it then.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear",
+   "kit_rank": 4
+  },
+  {
+   "id": "wd-weapon-upgrade-kit-v",
+   "name": "Weapon Upgrade Kit (Rank V)",
+   "rarity": "Rare",
+   "description": "A box of System-branded whetstones, rivets and glowing grease. Spend 10 minutes working on one weapon, wraps or firearm: it gains one rank, up to the kit's rank and your rank gate (see weapon-ranks). A kit from a box says the highest rank it can give, for example Weapon Upgrade Kit (Rank III). If the weapon gains a trait, choose it then.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear",
+   "kit_rank": 5
+  },
+  {
+   "id": "wd-training-manual",
+   "name": "Training Manual",
+   "rarity": "Rare",
+   "description": "Choose a Crawler Skill you know. It gains 2 Skill Levels (maximum 15).",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-manual-of-limits",
+   "name": "Manual of Limits",
+   "rarity": "Legendary",
+   "description": "If you have a Crawler Skill at Skill Level 15, you gain the Limit Breaker feat for it. Otherwise, one Crawler Skill you know gains 3 Skill Levels (maximum 15).",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-mana-potion",
+   "name": "Mana Potion",
+   "rarity": "Common",
+   "description": "You regain 2d4 + 2 mana.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "potion"
+  },
+  {
+   "id": "wd-greater-mana-potion",
+   "name": "Greater Mana Potion",
+   "rarity": "Uncommon",
+   "description": "You regain 4d4 + 4 mana.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "potion"
+  },
+  {
+   "id": "wd-superior-mana-potion",
+   "name": "Superior Mana Potion",
+   "rarity": "Rare",
+   "description": "You regain 8d4 + 8 mana.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "potion"
+  },
+  {
+   "id": "wd-supreme-mana-potion",
+   "name": "Supreme Mana Potion",
+   "rarity": "Very rare",
+   "description": "You regain 10d4 + 20 mana.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "potion"
+  },
+  {
+   "id": "wd-survival-kit",
+   "name": "Survival Kit",
+   "rarity": "Common",
+   "description": "Rations (5 days), a waterskin, 5 torches, 50 feet of rope, a tinderbox, a bedroll and a mess kit. It fills one inventory slot.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-pocket-expander",
+   "name": "Pocket Expander",
+   "rarity": "Uncommon",
+   "description": "A small silver key. Turn it in the air and it vanishes. Your Crawler Inventory permanently gains 5 slots.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-grand-pocket-expander",
+   "name": "Grand Pocket Expander",
+   "rarity": "Very rare",
+   "description": "As a Pocket Expander, but your inventory gains 20 slots.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-stairwell-compass",
+   "name": "Stairwell Compass",
+   "rarity": "Common",
+   "description": "The needle always points to the nearest stairwell on the current floor.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-safe-room-key",
+   "name": "Safe Room Key",
+   "rarity": "Rare",
+   "description": "One use. As an action, touch a wall to open a door into a private safe room for 8 hours. It holds up to 8 creatures. It counts as a safe room for long rests and opening loot boxes, but has no shop. It does not work in a boss arena, or in the last hour of the floor timer.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-whetstone-of-keenness",
+   "name": "Whetstone of Keenness",
+   "rarity": "Common",
+   "description": "Spend 1 minute sharpening a weapon. Its next 10 hits deal +1d4 damage.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-weapon-oil",
+   "name": "Weapon Oil",
+   "rarity": "Common",
+   "description": "As an action, coat a weapon. For 1 minute, it deals +1d4 fire, cold or lightning damage (chosen when the oil is found).",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-duelist-s-gloves",
+   "name": "Duelist's Gloves",
+   "rarity": "Uncommon",
+   "description": "While you wield a one-handed melee weapon and nothing in your other hand, you gain +1 AC and +2 damage with that weapon.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-scabbard-of-quick-draw",
+   "name": "Scabbard of Quick Draw",
+   "rarity": "Uncommon",
+   "description": "While a weapon is in the scabbard, you have +2 to initiative. When you roll initiative, you can draw it for free.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-rope-arrow",
+   "name": "Rope Arrow",
+   "rarity": "Common",
+   "description": "When it hits a surface, it anchors 50 feet of rope between the arrow and a point you choose next to you. The rope holds 500 pounds.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "ammo"
+  },
+  {
+   "id": "wd-glue-arrow",
+   "name": "Glue Arrow",
+   "rarity": "Common",
+   "description": "On a hit, the target must succeed on a Strength save (DC 13) or its speed becomes 0 until it uses an action to pull free.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "ammo"
+  },
+  {
+   "id": "wd-stormstring-bow",
+   "name": "Stormstring Bow",
+   "rarity": "Very rare",
+   "description": "A +2 longbow. On a hit, it deals +1d8 lightning damage, and lightning arcs to another creature within 10 feet of the target for 1d8 lightning damage. Once per long rest, as an action, fire a storm volley at a point within range: each creature in a 30-foot radius makes a Dexterity save (DC 16), taking 6d8 lightning damage on a failure, half on a success.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "weapon",
+   "properties": "Ammunition, Heavy, Two-Handed",
+   "weapon_range": "150/600",
+   "weapon_category": "Martial",
+   "damage_entries": [
+    {
+     "damage": "1d8",
+     "damage_type": "Piercing"
+    },
+    {
+     "damage": "1d8",
+     "damage_type": "Lightning"
+    }
+   ],
+   "attack_bonus_misc": 2,
+   "damage_bonus_misc": 2
+  },
+  {
+   "id": "wd-protein-shake",
+   "name": "Protein Shake",
+   "rarity": "Common",
+   "description": "As a bonus action, drink it. You gain 1d10 temporary hit points and have advantage on Strength checks for 1 hour.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "potion"
+  },
+  {
+   "id": "wd-brass-knuckles",
+   "name": "Brass Knuckles",
+   "rarity": "Common",
+   "description": "Your unarmed strikes deal 1d6 bludgeoning damage, if that is higher than your normal unarmed damage.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-steel-toe-boots",
+   "name": "Steel-Toe Boots",
+   "rarity": "Common",
+   "description": "You can make unarmed strikes with your feet for 1d6 bludgeoning damage, even while your hands are full or you are grappled.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-hand-wraps",
+   "name": "Hand Wraps",
+   "rarity": "Uncommon",
+   "description": "Your unarmed strikes count as magical. You have +2 to Strength (Athletics) checks to grapple and shove.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-iron-knuckles",
+   "name": "Iron Knuckles",
+   "rarity": "Uncommon",
+   "description": "Your unarmed strikes deal at least 1d6 damage, and you have a bonus to attack and damage rolls with them equal to the knuckles' bonus.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-thunder-gloves",
+   "name": "Thunder Gloves",
+   "rarity": "Rare",
+   "description": "When you hit with an unarmed strike, it deals +1d6 thunder damage, and a Large or smaller target is pushed 5 feet away.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-champion-s-belt",
+   "name": "Champion's Belt",
+   "rarity": "Legendary",
+   "description": "Your Strength increases by 2. Your unarmed strikes score a critical hit on a 19 or 20. When you knock out a creature with an unarmed strike, your Audience Meter gains 1 point.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-breath-mints",
+   "name": "Breath Mints",
+   "rarity": "Common",
+   "description": "Eat one as a bonus action. You have advantage on your next Charisma check within 10 minutes.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-perfume-of-first-impressions",
+   "name": "Perfume of First Impressions",
+   "rarity": "Common",
+   "description": "Three uses. For 1 hour, creatures that meet you for the first time start one attitude step friendlier (hostile to unfriendly, unfriendly to indifferent, and so on).",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "potion"
+  },
+  {
+   "id": "wd-megaphone",
+   "name": "Megaphone",
+   "rarity": "Common",
+   "description": "Your voice carries 600 feet. While you use it, the range of Trash Talk and Hype Man features is tripled. It is very loud.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-liar-s-tie",
+   "name": "Liar's Tie",
+   "rarity": "Uncommon",
+   "description": "You have advantage on Charisma (Deception) checks. Wisdom (Insight) checks against you have disadvantage. Magic that detects lies does not work on you.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-silver-lozenge",
+   "name": "Silver Lozenge",
+   "rarity": "Rare",
+   "description": "As an action, put it in your mouth. Within the next minute, you can cast suggestion once (save DC 15) without components.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-fake-vip-pass",
+   "name": "Fake VIP Pass",
+   "rarity": "Rare",
+   "description": "Once per floor, guards, doormen and staff in non-boss areas treat you as a VIP. Very smart creatures can make a Wisdom save (DC 18) to see through it. For that day, safe room shops give you a 20% discount.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-talk-show-mic",
+   "name": "Talk Show Mic",
+   "rarity": "Very rare",
+   "description": "- Interview. As an action, make a Charisma (Persuasion) check against a creature's Wisdom save within 30 feet. If you win, it answers three questions truthfully. Once per creature.\n- Hype the crowd. As a bonus action, allies within 60 feet add 1d4 to their next saving throw. PB times per long rest.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-crown-of-the-talk-show-host",
+   "name": "Crown of the Talk Show Host",
+   "rarity": "Legendary",
+   "description": "Your Charisma increases by 2. Once per long rest, as an action, every creature of your choice within 60 feet that can hear you makes a Wisdom save (DC 19). On a failure, it sits down to watch you: it is charmed and incapacitated for 1 minute. It repeats the save at the end of each of its turns, and the effect ends if it takes damage.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-masterwork-lockpicks",
+   "name": "Masterwork Lockpicks",
+   "rarity": "Uncommon",
+   "description": "Thieves' tools that never break. +2 to checks made with them.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-shadow-goggles",
+   "name": "Shadow Goggles",
+   "rarity": "Rare",
+   "description": "You have darkvision to 120 feet, and you can see invisible creatures and objects within 30 feet.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-mana-crystal",
+   "name": "Mana Crystal",
+   "rarity": "Uncommon",
+   "description": "Stores up to 10 mana. During a short rest, you can move mana from your pool into it. As a bonus action, you can draw mana from it into your pool.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-ink-of-copying",
+   "name": "Ink of Copying",
+   "rarity": "Rare",
+   "description": "One use. Copy a tome spell you know into a new spell tome. You can give or sell the copy, or read it yourself to raise the spell's rank.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-pet-treats",
+   "name": "Pet Treats",
+   "rarity": "Common",
+   "description": "As a bonus action, feed your pet. It regains 2d4 + 2 hit points.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-premium-pet-food",
+   "name": "Premium Pet Food",
+   "rarity": "Uncommon",
+   "description": "As a bonus action, feed your pet. It regains 4d4 + 4 hit points and has advantage on attack rolls for 1 minute.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-squeaky-toy",
+   "name": "Squeaky Toy",
+   "rarity": "Common",
+   "description": "As an action, squeak it. Each beast within 30 feet, except your pet, makes a Wisdom save (DC 12). On a failure, it spends its next turn moving toward the toy.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-pet-barding",
+   "name": "Pet Barding",
+   "rarity": "Uncommon",
+   "description": "Armor for your pet. Its AC increases by the barding's bonus. Barding resizes to fit when your pet grows.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "armor"
+  },
+  {
+   "id": "wd-pet-collar-of-returning",
+   "name": "Pet Collar of Returning",
+   "rarity": "Common",
+   "description": "Once per long rest, as a bonus action, your pet teleports to a space next to you, if it is within 1 mile.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-pet-carrier",
+   "name": "Pet Carrier",
+   "rarity": "Uncommon",
+   "description": "Your willing pet can be stored in your Crawler Inventory. It uses one slot. While stored, it does not age, heal or take damage. Releasing it takes no action.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-leash-of-command",
+   "name": "Leash of Command",
+   "rarity": "Rare",
+   "description": "You can command your pet without using an action. Your pet follows complex commands, not only simple ones.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-pet-egg",
+   "name": "Pet Egg",
+   "rarity": "Common",
+   "description": "It hatches after your next long rest. Roll on its rarity's hatch table in the Pets handbook: CR 0\u20131/4 (common), 1/2\u20131 (uncommon), 2\u20133 (rare), or 4\u20136 (very rare). The hatchling is your pet, even if its CR is higher than you could normally keep.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-pet-revival-stone",
+   "name": "Pet Revival Stone",
+   "rarity": "Uncommon",
+   "description": "Touch it to the body of your pet that died within the last 10 days. The pet returns to life with 1 hit point.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-pet-evolution-crystal",
+   "name": "Pet Evolution Crystal",
+   "rarity": "Rare",
+   "description": "Your pet gains one evolution from the Evolutions table in the Pets handbook (roll a d12 or choose with the GM).",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-blessed-bandage",
+   "name": "Blessed Bandage",
+   "rarity": "Common",
+   "description": "As an action, apply it to a creature. It regains 1d8 + your Wisdom modifier hit points, and one disease on it ends.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-shrine-candle",
+   "name": "Shrine Candle",
+   "rarity": "Uncommon",
+   "description": "Light it at the start of a short rest. Each creature that rests in its light regains an extra 2d8 hit points and one spent Hit Die.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-prayer-card",
+   "name": "Prayer Card",
+   "rarity": "Common",
+   "description": "A card for a random god. Once, add 1d4 to one roll. The god notices you used it.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-divine-favor-token",
+   "name": "Divine Favor Token",
+   "rarity": "Rare",
+   "description": "One use. After you or an ally within 30 feet makes a d20 roll, you can make them reroll it. They use the new roll.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-halo-of-light",
+   "name": "Halo of Light",
+   "rarity": "Rare",
+   "description": "You shed bright light for 20 feet and dim light for 20 feet more (you can turn it off). Undead and fiends in your bright light have disadvantage on attacks against you. Once per long rest, you can cast daylight or cure wounds (at 3rd level) from it.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-angel-feather",
+   "name": "Angel Feather",
+   "rarity": "Very rare",
+   "description": "One use. If you die while carrying it, it burns away and you return to life 1 minute later with half your hit points, if your body still exists. Or, touch it to a creature that died within the last day, as raise dead.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-relic-shard",
+   "name": "Relic Shard",
+   "rarity": "Uncommon",
+   "description": "A piece of a broken holy object. Sell it for 500 gp, or trade 5 shards at a shrine for a Divine Favor Token. A crawler who collects 50 shards can forge them into one Celestial relic (GM's choice).",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-sponsor-s-attention",
+   "name": "Sponsor's Attention",
+   "rarity": "Very rare",
+   "description": "A god (GM's choice) has noticed you. Once, as an action, call out to the god. The GM decides how it helps, at about the power of a 5th-level spell. The god may offer you a sponsorship later.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-fan-mail",
+   "name": "Fan Mail",
+   "rarity": "Common",
+   "description": "A letter from a viewer. It holds a real tip: the GM reveals one useful secret about the current floor (a trap, a shortcut, a boss's weakness). One letter in six is only creepy.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-foam-finger",
+   "name": "Foam Finger",
+   "rarity": "Uncommon",
+   "description": "It says #1. While you wear it, as a bonus action, point at an ally within 60 feet. It has advantage on its next attack roll. PB times per long rest.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-fan-made-weapon",
+   "name": "Fan-Made Weapon",
+   "rarity": "Uncommon",
+   "description": "A magic weapon of a random type, with a bonus to attack and damage rolls. It is covered in fan art and has a terrible name, chosen by the GM.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-celebrity-status",
+   "name": "Celebrity Status",
+   "rarity": "Rare",
+   "description": "Permanent. Non-hostile NPCs recognize you. You have advantage on Persuasion checks with them, and safe room shops give you 10% off. Enemies with a grudge also recognize you.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-a-single-sock",
+   "name": "A Single Sock",
+   "description": "One sock. Slightly damp. It has no use, unless the GM decides it does.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-participation-trophy",
+   "name": "Participation Trophy",
+   "description": "It weighs 10 pounds and cannot be stored in your inventory. If you throw it away, it returns to you at dawn. You can leave it in a safe room for good.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-signed-photo-of-the-system",
+   "name": "Signed Photo of the System",
+   "description": "\"To my favorite crawler!\" Every crawler who gets one gets the same photo.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-rubber-chicken-of-summoning",
+   "name": "Rubber Chicken of Summoning",
+   "description": "Squeeze it to summon one ordinary chicken. The chicken hates you.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-mystery-meat",
+   "name": "Mystery Meat",
+   "description": "Eat it and roll a d6: 1\u20132, you are poisoned for 1 hour; 3\u20135, nothing; 6, you regain 2d4 + 2 hit points.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-bobblehead-of-yourself",
+   "name": "Bobblehead of Yourself",
+   "description": "Once per floor, ask it a yes-or-no question. It nods or shakes its head. It is right half the time.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-golden-toilet",
+   "name": "Golden Toilet",
+   "rarity": "Legendary",
+   "description": "A toilet made of solid gold. It weighs 300 pounds and fills 10 inventory slots. A buyer would pay 5,000 gp for it, but most shops refuse to take it. Using it gives your Audience Meter 2 points, once.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-chocolate-box",
+   "name": "Chocolate Box",
+   "rarity": "Common",
+   "description": "Six chocolates. Eat one as a bonus action to gain 1d4 + 1 temporary hit points, or give one to a creature to gain advantage on your next Charisma check with it.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-body-glitter",
+   "name": "Body Glitter",
+   "rarity": "Common",
+   "description": "For 1 hour, you have advantage on Charisma (Performance) and Charisma (Persuasion) checks against creatures that can see you. You cannot hide. You sparkle.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-scented-candle",
+   "name": "Scented Candle",
+   "rarity": "Common",
+   "description": "A short rest in its light takes only 10 minutes.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-smoldering-gaze-potion",
+   "name": "Smoldering Gaze Potion",
+   "rarity": "Uncommon",
+   "description": "For 1 minute, you can use an action to look at a creature within 30 feet. It must succeed on a Wisdom save (DC 13) or be charmed by you until the end of your next turn.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "potion"
+  },
+  {
+   "id": "wd-fuzzy-handcuffs",
+   "name": "Fuzzy Handcuffs",
+   "rarity": "Uncommon",
+   "description": "Manacles in pink fur. Escaping them needs a DC 20 check (DC 25 for the +1 version, which also stops teleportation). You can put them on a restrained, incapacitated or willing creature.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-love-letter-grenade",
+   "name": "Love Letter Grenade",
+   "rarity": "Uncommon",
+   "description": "Throw it like any explosive (see explosives). It fills a 15-foot radius with pink smoke. Each creature in it makes a Wisdom save (DC 14). On a failure, it is charmed by the nearest other creature until the end of its next turn, and it does not attack anyone.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "explosive"
+  },
+  {
+   "id": "wd-silk-robe-of-distraction",
+   "name": "Silk Robe of Distraction",
+   "rarity": "Rare",
+   "description": "Light armor, AC 12 + Dex modifier. The first time a creature attacks you each turn, it must succeed on a Wisdom save (DC 15) or have disadvantage on that attack.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "armor",
+   "ac_base": 12,
+   "armor_category": "Light"
+  },
+  {
+   "id": "wd-heartbreaker",
+   "name": "Heartbreaker",
+   "rarity": "Rare",
+   "description": "A pink +2 rapier or whip (your choice when found). On a hit, the target must succeed on a Wisdom save (DC 15) or be charmed by you until the end of its next turn.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "weapon",
+   "properties": "Finesse",
+   "weapon_category": "Martial",
+   "damage_entries": [
+    {
+     "damage": "1d8",
+     "damage_type": "Piercing"
+    }
+   ],
+   "attack_bonus_misc": 2,
+   "damage_bonus_misc": 2
+  },
+  {
+   "id": "wd-cupid-s-pistol",
+   "name": "Cupid's Pistol",
+   "rarity": "Legendary",
+   "description": "A +3 flintlock pistol that never needs reloading and never misfires. On a hit, the target must succeed on a Wisdom save (DC 18) or be charmed by a creature you choose for 1 hour, or until that creature harms it.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-novelty-underwear",
+   "name": "Novelty Underwear",
+   "description": "Printed with your own face. Wearing it in public gives your Audience Meter 1 point, once.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-bloodstained-knife",
+   "name": "Bloodstained Knife",
+   "rarity": "Common",
+   "description": "A dagger that never rusts and is never clean. It scores a critical hit on a 19 or 20 against creatures that cannot see you. Magic versions add their bonus to attack and damage rolls.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "weapon",
+   "properties": "Finesse, Light, Thrown",
+   "weapon_range": "20/60",
+   "weapon_category": "Simple",
+   "damage_entries": [
+    {
+     "damage": "1d4",
+     "damage_type": "Piercing"
+    }
+   ]
+  },
+  {
+   "id": "wd-shovel-of-quick-burial",
+   "name": "Shovel of Quick Burial",
+   "rarity": "Common",
+   "description": "Dig a grave in 1 minute. Bodies buried with it do not show on Inspect, and the System's tracking cannot find them. The System still knows.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-hitman-s-suit",
+   "name": "Hitman's Suit",
+   "rarity": "Uncommon",
+   "description": "A sharp suit. It counts as light armor, AC 12 + Dex modifier. You have advantage on Charisma (Deception) checks to seem harmless. Blood never stains it.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "armor",
+   "ac_base": 12,
+   "armor_category": "Light"
+  },
+  {
+   "id": "wd-mask-of-anonymity",
+   "name": "Mask of Anonymity",
+   "rarity": "Rare",
+   "description": "While you wear it, Inspect shows you as Unknown Crawler, and hides your name and your Player Killer mark. Divination magic cannot identify you.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-bounty-contract",
+   "name": "Bounty Contract",
+   "rarity": "Uncommon",
+   "description": "Names a random hostile NPC or mob leader on this floor. If you kill it before the floor ends, you get a Silver Adventurer Box.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-reaper-s-ledger-page",
+   "name": "Reaper's Ledger Page",
+   "rarity": "Legendary",
+   "description": "One use. Write the name of a creature you have Inspected. At the next midnight (dungeon time), it must succeed on a Constitution save (DC 20) or drop to 0 hit points. A boss takes 10d10 necrotic damage instead.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-guilty-conscience",
+   "name": "Guilty Conscience",
+   "description": "A voice whispers your victim's name. Until you finish a long rest, you have disadvantage on Wisdom (Insight) checks.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-boss-trophy",
+   "name": "Boss Trophy",
+   "description": "A part of the boss: a horn, a crown, a tooth. You can sell it for 100 gp \u00d7 the boss's CR, or keep it. A kept trophy counts as rare crafting material for Tinkerer and Alchemy. Showing it off gives your Audience Meter 1 point, once.",
+   "source": "Dungeon Items",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-boss-core-fragment",
+   "name": "Boss Core Fragment",
+   "rarity": "Legendary",
+   "description": "Once per long rest, when you fail a saving throw, you can succeed instead.",
+   "source": "Dungeon Items",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-holy-symbol",
+   "name": "Holy Symbol",
+   "rarity": "Common",
+   "description": "An amulet, emblem or reliquary with a god's symbol (a mushroom skull, a little torch, a gold coin\u2026). It is a spellcasting focus for spells your god's Boons gave you. Once per floor, while holding it, you can ask your god one yes-or-no question as if you were at a shrine.",
+   "source": "Divine Gear",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-indulgence-coupon",
+   "name": "Indulgence Coupon",
+   "rarity": "Uncommon",
+   "description": "A glossy coupon: \"ONE (1) FORGIVENESS. Not valid with other offers.\" Tear it up to remove 1 Lapse at once, whichever god you worship. Every god accepts them. Every god resents them.",
+   "source": "Divine Gear",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-gauntlet-of-the-grudging-peace",
+   "name": "Gauntlet of the Grudging Peace",
+   "rarity": "Rare",
+   "description": "A heavy iron gauntlet engraved with one god's symbol, made for keeping the peace between the faithful and everyone else, whether everyone else likes it or not.\n\n- Bonus. While you wear it, you have +1 AC, and your unarmed strikes with this hand deal 1d8 bludgeoning damage and count as magical. They deal an extra 2d6 force damage to apostates of the sworn god.\n- The Peace. You can't attack a worshipper of the sworn god, or target one with a harmful spell or effect. If you try, the attack misses or the spell fizzles (mana spent), and you take 2d6 psychic damage as the gauntlet squeezes.\n- Curse. Once attuned, you can't take the gauntlet off. Only a worshipper of the sworn god can remove it, and only if they want to. You don't have to worship the sworn god to wear it, which is the point.\n\n> \"Note: this item will not stop the sworn god's worshippers from punching YOU.\"",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-prayer-beads-of-the-fence-sitter",
+   "name": "Prayer Beads of the Fence-Sitter",
+   "rarity": "Rare",
+   "description": "Two strings of beads knotted together, each with a different god's symbol. While attuned, you can secretly worship two major gods at once (keep two Favor and Lapse tracks). Each god's Rite and Offering must be done separately.\n\n- Found out. If either god's avatar, minor deity or Chosen worshipper Inspects you, both gods know. You gain 2 Lapses with each.\n- The beads snap if the two gods are rivals.",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-apostate-s-salve",
+   "name": "Apostate's Salve",
+   "rarity": "Rare",
+   "description": "A jar of grey ointment that smells faintly of a dozen temples. Rubbing it on ends one lasting effect of an Apostate's Smite from the rank of Zealot or lower. Against a Chosen's permanent smite, it only suppresses the effect until the end of the floor.",
+   "source": "Divine Gear",
+   "attunement": false,
+   "item_type": "potion"
+  },
+  {
+   "id": "wd-sporemother-s-veil",
+   "name": "Sporemother's Veil",
+   "rarity": "Rare",
+   "description": "A veil of fine white mycelium. You are immune to poison damage and the Poisoned condition. As an action, you can breathe spores in a 15-foot cone: each creature there makes a DC 15 Constitution saving throw or has the Poisoned condition for 1 minute (save at the end of each of its turns). Once per long rest.",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-compost-cleaver",
+   "name": "Compost Cleaver",
+   "rarity": "Rare",
+   "description": "A rusted cleaver with fungus in the grain. +2 to attack and damage rolls. A hit deals an extra 2d6 necrotic damage. When it kills a creature, a mushroom sprouts from the body: you or an ally can eat it as a bonus action to regain 2d8 hit points (it rots after 1 minute).",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "weapon",
+   "properties": "Heavy, Two-Handed",
+   "weapon_category": "Martial",
+   "damage_entries": [
+    {
+     "damage": "1d12",
+     "damage_type": "Slashing"
+    },
+    {
+     "damage": "2d6",
+     "damage_type": "Necrotic"
+    }
+   ],
+   "attack_bonus_misc": 2,
+   "damage_bonus_misc": 2
+  },
+  {
+   "id": "wd-torch-of-the-unquenched",
+   "name": "Torch of the Unquenched",
+   "rarity": "Uncommon",
+   "description": "A torch that never goes out (not even underwater, which upsets fish). As a weapon it is a club that deals an extra 1d6 fire damage. A worshipper of Embrix holding it casts Torch at Rank III or their own rank, whichever is higher.",
+   "source": "Divine Gear",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-ember-halo",
+   "name": "Ember Halo",
+   "rarity": "Rare",
+   "description": "A ring of floating embers that hovers over your head. You have resistance to fire damage. As a bonus action, three times per long rest, you can set your weapons alight for 1 minute: your weapon attacks deal an extra 1d6 fire damage, and you shed bright light in a 20-foot radius.",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-tithe-purse",
+   "name": "Tithe Purse",
+   "rarity": "Uncommon",
+   "description": "A purse with a gold coin stitched on it. When you take the stairs down, it automatically takes 10% of the gold you gained on the floor, and that counts as your Offering. It also holds 500 gp that doesn't take an inventory slot.",
+   "source": "Divine Gear",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-contract-quill",
+   "name": "Contract Quill",
+   "rarity": "Rare",
+   "description": "A gold-nibbed quill that writes in very small print. Once per floor, you can write a contract and have a creature sign it: the creature is bound as if by Terms of Service (Rank I), no save if it signed willingly. If you break your side of the deal, you take 5d10 psychic damage.",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-grudge-ledger",
+   "name": "Grudge Ledger",
+   "rarity": "Uncommon",
+   "description": "A heavy book with a brass lock. Write a creature's name in it to put it on your Grudge List. When a creature named in it comes within 300 feet of you, its name glows and the book hums.",
+   "source": "Divine Gear",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-stormhorn",
+   "name": "Stormhorn",
+   "rarity": "Rare",
+   "description": "A horn carved from a storm beast's antler. As an action, blow it: each creature of your choice within 30 feet makes a DC 15 Constitution saving throw. Failure: 6d8 thunder damage and the Deafened condition for 1 minute. Success: half damage only. Once per long rest (twice for a worshipper of Thrumm).",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-hushcloak",
+   "name": "Hushcloak",
+   "rarity": "Rare",
+   "description": "A black cloak that swallows sound. You make no sound when you move. While you are in dim light or darkness, you can take the Hide action as a bonus action, and a worshipper of Nyx-Ra has advantage on the Stealth check.",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-bone-of-remembering",
+   "name": "Bone of Remembering",
+   "rarity": "Uncommon",
+   "description": "A small finger bone tied with black thread. Once per day, touch it to a corpse to cast Exit Interview at Rank I without mana. A worshipper of Nyx-Ra casts it at Rank III.",
+   "source": "Divine Gear",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-warden-s-key",
+   "name": "Warden's Key",
+   "rarity": "Rare",
+   "description": "A brass key as long as your forearm. Once per turn, you can touch a door, gate or lock and lock or unlock it (as Open Sesame and Deadbolt at Rank I), without mana and silently. A door you lock with it can't be opened by anyone but you for 1 hour, except by a god.",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-bailiff-s-shackles",
+   "name": "Bailiff's Shackles",
+   "rarity": "Uncommon",
+   "description": "Brass manacles. A creature shackled in them (it must be Grappled, Incapacitated or willing) is Restrained, can't teleport or change shape, and needs a DC 20 Strength or Dexterity check to escape.",
+   "source": "Divine Gear",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-rubber-chicken-of-smiting",
+   "name": "Rubber Chicken of Smiting",
+   "rarity": "Rare",
+   "description": "A rubber chicken that squeaks. +1 to attack and damage rolls, and it deals 1d4 bludgeoning damage plus 2d8 thunder damage. When you roll a 20 on an attack with it, also roll on Wobblegob's Gag table (see pantheon).\n\n> \"Somewhere, a god is laughing. It's this one. It's the chicken.\"",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "weapon",
+   "properties": "Light",
+   "weapon_category": "Simple",
+   "damage_entries": [
+    {
+     "damage": "1d4",
+     "damage_type": "Bludgeoning"
+    },
+    {
+     "damage": "2d8",
+     "damage_type": "Thunder"
+    }
+   ],
+   "attack_bonus_misc": 1,
+   "damage_bonus_misc": 1
+  },
+  {
+   "id": "wd-whoopee-aegis",
+   "name": "Whoopee Aegis",
+   "rarity": "Rare",
+   "description": "A +1 shield with a deflated cushion on the front. When a creature hits you with a melee attack, you can use your reaction to make the shield blow a loud raspberry: the attacker has disadvantage on attack rolls until the end of its next turn (it is too embarrassed). Three times per long rest.",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "armor",
+   "armor_category": "Shield",
+   "ac_base": 2,
+   "ac_bonus": 1
+  },
+  {
+   "id": "wd-ladle-of-plenty",
+   "name": "Ladle of Plenty",
+   "rarity": "Uncommon",
+   "description": "A wooden ladle, warm to the touch. Once per day, stir any pot of water with it to make a hot meal for ten. Each creature that eats it regains 1d8 hit points, and it counts as a shared meal for Tuul's Rite.",
+   "source": "Divine Gear",
+   "attunement": false,
+   "item_type": "gear"
+  },
+  {
+   "id": "wd-hearthstone-amulet",
+   "name": "Hearthstone Amulet",
+   "rarity": "Rare",
+   "description": "A smooth warm stone on a cord. Once per floor, as an action, you teleport to the last safe room you rested in on this floor. You can bring one willing creature you are touching.",
+   "source": "Divine Gear",
+   "attunement": true,
+   "item_type": "gear"
+  }
+ ],
  "prestige": {
   "Barbarian": {
    "scaling": "Rage damage <strong>+1 per 2 prestige levels</strong>. One extra Rage per long rest every 4 prestige levels.",

@@ -106,7 +106,7 @@ export default function SpellsTab({ st, d, update, conn }) {
   const abilities = [...new Set(['INT', ...tome.map((sp) => spellAbilityFor(sp, d))])];
   const sources = ['All', ...new Set(tome.map(sourceLabel))];
   const shown = tome.filter((sp) => filter === 'All' || sourceLabel(sp) === filter)
-    .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+    .sort((a, b) => a.name.localeCompare(b.name)); // A to Z, like the spell books
   const setSpell = (sp, fn) => update((s) => { const x = s.spells.find((y) => keyOf(y) === keyOf(sp)); if (x) fn(x, s); return s; });
   const rankUpsLeft = (cls) => { const a = allowance.find((x) => x.cls === cls); return a ? a.rankUps - a.rankUpsSpent : 0; };
 
@@ -259,7 +259,7 @@ function SpellLibrary({ mode, cls, st, d, conn, onClose, update }) {
 
   const wizard = d.classes.Wizard;
   const max = mode === 'tome' ? d.tomeLimit : mode === 'class' ? a.maxLevel : 9;
-  const filtered = useMemo(() => (rows || []).filter((sp) => (lvl === 'all' || String(sp.level) === lvl)
+  const filtered = useMemo(() => [...(rows || [])].sort((x, y) => x.name.localeCompare(y.name)).filter((sp) => (lvl === 'all' || String(sp.level) === lvl)
     && (mode !== 'class' || a.lists.some((l) => onList(sp, l)))
     && sp.name.toLowerCase().includes(q.toLowerCase())), [rows, q, lvl, mode, a]);
   const known = (sp) => st.spells.find((s) => s.id === sp.id || s.name === sp.name);
